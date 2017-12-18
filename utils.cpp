@@ -23,6 +23,9 @@ namespace
     {
         RECT rect = { 0, 0, static_cast<LONG>(clientResolution.m_width), static_cast<LONG>(clientResolution.m_height) };
         BOOL result = AdjustWindowRect(&rect, style, FALSE);
+#if NDEBUG
+        result;
+#endif
         assert(result);
         const unsigned int  windowWidth = rect.right - rect.left;
         const unsigned int windowHeight = rect.bottom - rect.top;
@@ -74,6 +77,9 @@ namespace
         /// Register window class
         {
             HRESULT result = RegisterClassEx(&wc);
+#if NDEBUG
+            result;
+#endif
             assert(SUCCEEDED(result));
         }
 
@@ -87,6 +93,9 @@ namespace
 
 void Utils::AssertIfFailed(HRESULT hr)
 {
+#if NDEBUG
+    hr;
+#endif
     assert(SUCCEEDED(hr));
 }
 

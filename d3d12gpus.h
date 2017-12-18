@@ -127,6 +127,8 @@ namespace D3D12Render
         ID3D12GpuJobPtr m_job;
 
         unsigned int m_backbufferIndex;
+        
+        ID3D12ResourcePtr m_vertexBuffer;
 
         void WaitForGPU();
 
@@ -134,8 +136,10 @@ namespace D3D12Render
 
         void CreateCommandList();
 
+        void CreateResources();
+
         // TODO: does visual studio 2017 support string views already? Check it and investigate when its appropriate
         // to use it
-        void CreateCommitedBuffer(ID3D12ResourcePtr** buffer, unsigned int bufferDataSize, const std::wstring& bufferName);
+        ID3D12ResourcePtr CreateCommitedBuffer(ID3D12ResourcePtr* buffer, void* bufferData, unsigned int bufferDataSize, const std::wstring& bufferName);
     };
 }

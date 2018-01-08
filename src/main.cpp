@@ -21,18 +21,11 @@
 // app includes
 #include "utils.h"
 #include "d3d12gpus.h"
+#include "d3d12resources.h"
+#include "d3d12simplematerial.h"
 
 //c includes
 #include <cassert>
-
-// c++ includes
-//#include <string>
-//#include <array>
-//
-//// direct3d includes
-
-//#include "d3dx12.h"
-//
 
 // windows includes
 #include <windows.h>
@@ -40,74 +33,22 @@
 
 namespace
 {
-    class D3D12GpuJob : public D3D12Render::ID3D12GpuJob
+    const size_t g_vertexElemsCount = 5;
+    const size_t g_verticesCount = 4;
+    float g_vertices[g_verticesCount * g_vertexElemsCount]
     {
-    public:
-        D3D12GpuJob(D3D12Render::ID3D12GraphicsCommandListPtr commandList) : ID3D12GpuJob(commandList)
-        {
-
-        }
-
-        void D3D12GpuJob::Record(D3D12_CPU_DESCRIPTOR_HANDLE backbufferRT)
-        {
-            const float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
-            m_commandList->ClearRenderTargetView(backbufferRT, clearColor, 0, nullptr);
-        }
+        //Position                                                                 UV
+        0.5f, 0.5f*Utils::CustomWindow::GetResolution().m_aspectRatio, 0.0f,       1.0f, 0.0f,
+        0.5f, -0.5f*Utils::CustomWindow::GetResolution().m_aspectRatio, 0.0f,      1.0f, 1.0f,
+        -0.5f, 0.5f*Utils::CustomWindow::GetResolution().m_aspectRatio, 0.0f,      0.0f, 0.0f,
+        -0.5f, -0.5f*Utils::CustomWindow::GetResolution().m_aspectRatio, 0.0f,     0.0f, 1.0f,
     };
-// 
+    const size_t g_vertexSize = g_vertexElemsCount * sizeof(float);
+    const size_t g_vertexBufferSize = g_verticesCount * g_vertexSize;
 
-
-//    struct FrameResources
-//    {
-//        ID3D12ResourcePtr m_renderTarget;
-//        ID3D12CommandAllocatorPtr m_commandAllocator;
-//    };
-//
-
-//    const uint8_t g_backBuffersCount = 2;
-//
-//    typedef std::array<FrameResources, g_backBuffersCount> FrameResouresArray;
-//
-
-
-
-
-
-//    ID3D12DescriptorHeapPtr CreateRTVDescriptorHeap(ID3D12Device* device)
-//    {
-//        // Describe and create a render target view (RTV) descriptor heap.
-//        D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
-//        rtvHeapDesc.NumDescriptors = g_backBuffersCount;
-//        rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-//        rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-//        
-//        ID3D12DescriptorHeapPtr rtvDescriptorHeap;
-//        AssertIfFailed(device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&rtvDescriptorHeap)));
-//
-//        return rtvDescriptorHeap;
-//    }
-//
-//    void CreateFrameResources(FrameResouresArray& frameResourcesArray, unsigned int rtvDescriptorSize, ID3D12DescriptorHeap* rtvDescriptorHeap, IDXGISwapChain3* swapChain, ID3D12Device* device)
-//    {
-//        assert(rtvDescriptorHeap && swapChain && device);
-//
-//        CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
-//
-//        FrameResources frameResources;
-//
-//        // Create a RTV and a command allocator for each frame.
-//        for (uint8_t i = 0; i < g_backBuffersCount; ++i)
-//        {
-//            FrameResources& frameResources = frameResourcesArray[i];
-//
-//            AssertIfFailed(swapChain->GetBuffer(i, IID_PPV_ARGS(&frameResources.m_renderTarget)));
-//            device->CreateRenderTargetView(frameResources.m_renderTarget.Get(), nullptr, rtvHandle);
-//            rtvHandle.Offset(1, rtvDescriptorSize);
-//
-//            AssertIfFailed(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&frameResources.m_commandAllocator)));
-//        }
-//    }
-
+    // NOTE:  Assuming working directory contains the data folder
+    const char* g_texture256FileName = "./data/texture_256.png";
+    const char* g_texture1024FileName = "./data/texture_1024.jpg";
 }
 
 int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /*szCmdLine*/, int /*iCmdShow*/)
@@ -116,14 +57,34 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     Utils::CustomWindow customWindow;
     
+    // Create main gpu
     D3D12Render::D3D12Gpus gpus;
     assert(gpus.Count());
-
     const D3D12Render::D3D12Gpus::GpuID mainGpuID = 0;
     D3D12Render::D3D12GpuPtr gpu = gpus.CreateGpu(mainGpuID, customWindow.GetHWND());
-    D3D12Render::ID3D12GpuJobPtr gpuJob = std::make_shared<D3D12GpuJob>(gpu->GetCommandList());
-    gpu->SetJob(gpuJob);
+    
+    // Load resources for the scene
+    const size_t vertexBufferResourceID = D3D12Render::CreateD3D12VertexBuffer(g_vertices, g_vertexBufferSize, L"vb - Viewport Quad", gpu);
+    D3D12Render::CreateD3D12Texture(g_texture256FileName, L"texture2d - Texture 256", gpu);
+    gpu->Execute();
 
+    D3D12Render::D3D12GpuRenderTask clearRTRenderTask;
+    clearRTRenderTask.m_simpleMaterial = nullptr;
+    const float clearColor[4]{ 0.0f, 0.2f, 0.4f, 1.0f };
+    memcpy(clearRTRenderTask.m_clearColor, clearColor, sizeof(float)*4);
+
+    D3D12_VIEWPORT viewport = { 0.0f, 0.0f, static_cast<float>(Utils::CustomWindow::GetResolution().m_width), static_cast<float>(Utils::CustomWindow::GetResolution().m_height), D3D12_MIN_DEPTH, D3D12_MAX_DEPTH };
+    RECT scissorRect = { 0L, 0L, static_cast<long>(Utils::CustomWindow::GetResolution().m_width), static_cast<long>(Utils::CustomWindow::GetResolution().m_height) };
+    D3D12Render::D3D12SimpleMaterialPtr simpleMaterial = std::make_shared<D3D12Render::D3D12SimpleMaterial>(gpu->GetDevice());
+
+    D3D12Render::D3D12GpuRenderTask viewportQuadRenderTask;
+    viewportQuadRenderTask.m_simpleMaterial = simpleMaterial;
+    viewportQuadRenderTask.m_viewport = viewport;
+    viewportQuadRenderTask.m_scissorRect = scissorRect;
+    viewportQuadRenderTask.m_vertexBufferResourceID = vertexBufferResourceID;
+    viewportQuadRenderTask.m_vertexCount = g_verticesCount;
+    viewportQuadRenderTask.m_vertexSize = g_vertexSize;
+  
     // Main loop
     while (1)
     {
@@ -144,7 +105,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         {
             // Record the command list
             {
-
+                gpu->AddRenderTask(clearRTRenderTask);
+                gpu->AddRenderTask(viewportQuadRenderTask);
             }
 
             // Execute command list
@@ -155,11 +117,6 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
             // Present
             {
                 gpu->Flush();
-            }
-
-            // Next frame
-            {
-
             }
         }
     }

@@ -2,7 +2,6 @@
 
 // windows includes
 #include <windows.h>
-//#include <wrl.h>
 
 namespace Utils
 {
@@ -10,8 +9,9 @@ namespace Utils
     
     struct Resolution
     {
-        unsigned int m_width;
-        unsigned int m_height;
+        unsigned int    m_width;
+        unsigned int    m_height;
+        float           m_aspectRatio;
     };
 
     class CustomWindow

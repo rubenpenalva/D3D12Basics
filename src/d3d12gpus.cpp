@@ -1,7 +1,5 @@
 #include "d3d12gpus.h"
 
-#include "utils.h"
-
 // C includes
 #include <cassert>
 
@@ -17,29 +15,15 @@
 #include <d3d12.h>
 #include <d3dcompiler.h>
 
-using ID3D12DescriptorHeapPtr   = Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>;
-using ID3D12ResourcePtr         = Microsoft::WRL::ComPtr<ID3D12Resource>;
-using ID3D12CommandListPtr      = Microsoft::WRL::ComPtr<ID3D12CommandList>;
-using ID3D12CommandAllocatorPtr = Microsoft::WRL::ComPtr<ID3D12CommandAllocator>;
-
-using ID3DBlobPtr               = Microsoft::WRL::ComPtr<ID3DBlob>;
+// Project includes
+#include "utils.h"
+#include "d3d12simplematerial.h"
 
 using namespace D3D12Render;
 using namespace Utils;
 
 namespace
 {
-    const size_t g_vertexElemsCount = 3;
-    const size_t g_verticesCount = 3;
-    float g_vertices[g_verticesCount * g_vertexElemsCount]
-    {
-        0.0f, 0.5f, 0.0f,
-        0.5f, -0.5f, 0.0f,
-        -0.5f, -0.5f, 0.0f,
-    };
-    const size_t g_vertexSize = g_vertexElemsCount * sizeof(float);
-    const size_t g_vertexBufferSize = g_verticesCount * g_vertexSize;
-
     IDXGIFactory4Ptr CreateFactory()
     {
         // NOTE: Enabling the debug layer after device creation will invalidate the active device.
@@ -53,49 +37,6 @@ namespace
         AssertIfFailed(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&factory)));
 
         return factory;
-    }
-
-    D3D12_RASTERIZER_DESC CreateDefaultRasterizerState()
-    {
-        return  D3D12_RASTERIZER_DESC 
-        {
-                /*FillMode*/                D3D12_FILL_MODE_SOLID,
-                /*CullMode*/                D3D12_CULL_MODE_BACK,
-                /*FrontCounterClockwise*/   FALSE,
-                /*DepthBias*/               D3D12_DEFAULT_DEPTH_BIAS,
-                /*DepthBiasClamp*/          D3D12_DEFAULT_DEPTH_BIAS_CLAMP,
-                /*SlopeScaledDepthBias*/    D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS,
-                /*DepthClipEnable*/         TRUE,
-                /*MultisampleEnable*/       FALSE,
-                /*AntialiasedLineEnable*/   FALSE,
-                /*ForcedSampleCount*/       0,
-                /*ConservativeRaster*/      D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF 
-        };
-    }
-
-    // TODO: is there a more elegant way of constructing a D3D12_BLEND_DESC object?
-    D3D12_BLEND_DESC CreateDefaultBlendState()
-    {
-        const D3D12_RENDER_TARGET_BLEND_DESC defaultRenderTargetBlendDesc =
-        {
-            FALSE,FALSE,
-            D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
-            D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
-            D3D12_LOGIC_OP_NOOP,
-            D3D12_COLOR_WRITE_ENABLE_ALL,
-        };
-        
-        D3D12_BLEND_DESC blendDesc
-        {
-            /*AlphaToCoverageEnable*/   FALSE,
-            /*IndependentBlendEnable*/  FALSE,
-            /*RenderTarget*/ {}
-        };
-
-        for (UINT i = 0; i < D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
-            blendDesc.RenderTarget[i] = defaultRenderTargetBlendDesc;
-
-        return blendDesc;
     }
 }
 
@@ -216,17 +157,13 @@ void D3D12Gpus::DiscoverAdapters()
     }
 }
 
-ID3D12GpuJob::ID3D12GpuJob(ID3D12GraphicsCommandListPtr commandList) : m_commandList(commandList)
-{
-    assert(m_commandList);
-}
-
-D3D12Gpu::D3D12Gpu(IDXGIFactory4Ptr factory, IDXGIAdapterPtr adapter, HWND hwnd) : m_backbufferIndex(0)
+D3D12Gpu::D3D12Gpu(IDXGIFactory4Ptr factory, IDXGIAdapterPtr adapter, HWND hwnd) : m_backbufferIndex(0), m_srvDesciptorOffset(0)
 {
     assert(factory);
     assert(hwnd);
 
     AssertIfFailed(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_device)));
+    assert(m_device);
 
     // Describe and create the command queue.
     {
@@ -273,12 +210,22 @@ D3D12Gpu::D3D12Gpu(IDXGIFactory4Ptr factory, IDXGIAdapterPtr adapter, HWND hwnd)
     }
     
     m_backbuffers = std::make_shared<D3D12BackBuffers<BackBuffersCount>>(m_device, m_swapChain);
+    assert(m_backbuffers);
 
-    CreateDefaultPipelineState();
+    m_simpleMaterial = std::make_shared<D3D12SimpleMaterial>(m_device);
+    assert(m_simpleMaterial);
 
     CreateCommandList();
 
-    CreateResources();
+    // Create descriptor heap
+    {
+        D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+        srvHeapDesc.NumDescriptors = 1;
+        srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        AssertIfFailed(m_device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_srvDescriptorHeap)));
+        m_srvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+    }
 }
 
 D3D12Gpu::~D3D12Gpu()
@@ -289,52 +236,113 @@ D3D12Gpu::~D3D12Gpu()
     CloseHandle(m_fenceEvent);
 }
 
-ID3D12GraphicsCommandListPtr D3D12Gpu::GetCommandList()
+void D3D12Gpu::AddUploadTexture2DTask(const D3D12GpuUploadTexture2DTask& uploadTask)
 {
-    assert(m_commandList);
-    
-    return m_commandList;
+    const size_t resourceID = m_resources.size();
+    m_resources.push_back(nullptr);
+
+    m_uploadTexture2DTasks.push_back({ resourceID, uploadTask });
 }
 
-void D3D12Gpu::SetJob(ID3D12GpuJobPtr job)
+size_t D3D12Gpu::AddUploadBufferTask(const D3D12GpuUploadBufferTask& uploadTask)
 {
-    assert(job);
+    const size_t resourceID = m_resources.size();
+    m_resources.push_back(nullptr);
+    
+    m_uploadBufferTasks.push_back({ resourceID, uploadTask });
 
-    m_job = job;
+    return resourceID;
+}
+
+void D3D12Gpu::AddRenderTask(const D3D12GpuRenderTask& renderTask)
+{
+    m_renderTasks.push_back(renderTask);
 }
 
 void D3D12Gpu::Execute()
 {
-    AssertIfFailed(m_commandAllocator->Reset());
-    AssertIfFailed(m_commandList->Reset(m_commandAllocator.Get(), m_defaultPSO.Get()));
-
-    m_commandList->ResourceBarrier(1, &m_backbuffers->Transition(m_backbufferIndex, D3D12Gpu::D3D12BackBuffers<BackBuffersCount>::TransitionType::Present_To_RenderTarget));
-
-    auto backbufferRT = m_backbuffers->GetRenderTarget(m_backbufferIndex);
-
-    m_job->Record(backbufferRT);
-    
-    // TODO move this to the job
+    // Execute the resources copying commands
+    const size_t uploadBufferTasksCount = m_uploadBufferTasks.size();
+    const size_t uploadTextures2DTasksCount = m_uploadTexture2DTasks.size();
+    if (uploadBufferTasksCount != 0 || uploadTextures2DTasksCount != 0)
     {
-        m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
+        std::vector<ID3D12ResourcePtr> uploadHeaps;
+        AssertIfFailed(m_commandAllocator->Reset());
+        AssertIfFailed(m_commandList->Reset(m_commandAllocator.Get(), m_simpleMaterial->GetPSO().Get()));
 
-        D3D12_VIEWPORT viewport = { 0.0f, 0.0f, static_cast<float>(CustomWindow::GetResolution().m_width), static_cast<float>(CustomWindow::GetResolution().m_height), D3D12_MIN_DEPTH, D3D12_MAX_DEPTH };
-        RECT scissorRect = { 0L, 0L, static_cast<long>(CustomWindow::GetResolution().m_width), static_cast<long>(CustomWindow::GetResolution().m_height) };
-        m_commandList->RSSetViewports(1, &viewport);
-        m_commandList->RSSetScissorRects(1, &scissorRect);
-        m_commandList->OMSetRenderTargets(1, &backbufferRT, FALSE, nullptr);
-        m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-        D3D12_VERTEX_BUFFER_VIEW vertexBufferView{ m_vertexBuffer->GetGPUVirtualAddress(), g_vertexBufferSize, g_vertexSize };
-        m_commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
-        m_commandList->DrawInstanced(3, 1, 0, 0);
+        if (uploadBufferTasksCount)
+        {
+            for (const auto& uploadBufferTask : m_uploadBufferTasks)
+            {
+                ID3D12ResourcePtr uploadHeapPtr = CreateCommitedBuffer(&m_resources[uploadBufferTask.first], uploadBufferTask.second.m_bufferData,
+                                                                        uploadBufferTask.second.m_bufferDataSize, uploadBufferTask.second.m_bufferName);
+                uploadHeaps.push_back(uploadHeapPtr);
+            }
+            m_uploadBufferTasks.clear();
+        }
+        if (uploadTextures2DTasksCount)
+        {
+            for (const auto& uploadTexture2DTask : m_uploadTexture2DTasks)
+            {
+                ID3D12ResourcePtr uploadHeapPtr = CreateCommitedTexture2D(&m_resources[uploadTexture2DTask.first], uploadTexture2DTask.second.m_data,
+                                                                            uploadTexture2DTask.second.m_dataSize, uploadTexture2DTask.second.m_width, 
+                                                                            uploadTexture2DTask.second.m_height, uploadTexture2DTask.second.m_debugName);
+
+                uploadHeaps.push_back(uploadHeapPtr);
+
+                D3D12_CPU_DESCRIPTOR_HANDLE destDesc = m_srvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+                destDesc.ptr += m_srvDesciptorOffset++ * m_srvDescriptorSize;
+                m_device->CreateShaderResourceView(m_resources[uploadTexture2DTask.first].Get(), &uploadTexture2DTask.second.m_desc, destDesc);
+            }
+            m_uploadTexture2DTasks.clear();
+        }
+
+        AssertIfFailed(m_commandList->Close());
+        ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
+        m_commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+        
+        WaitForGPU();
     }
 
-    m_commandList->ResourceBarrier(1, &m_backbuffers->Transition(m_backbufferIndex, D3D12Gpu::D3D12BackBuffers<BackBuffersCount>::TransitionType::RenderTarget_To_Present));
-    AssertIfFailed(m_commandList->Close());
+    // Execute the graphics commands
+    if (m_renderTasks.size())
+    {
+        AssertIfFailed(m_commandAllocator->Reset());
+        AssertIfFailed(m_commandList->Reset(m_commandAllocator.Get(), m_simpleMaterial->GetPSO().Get()));
 
-    // Execute the command list.
-    ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
-    m_commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+        m_commandList->ResourceBarrier(1, &m_backbuffers->Transition(m_backbufferIndex, D3D12Gpu::D3D12BackBuffers<BackBuffersCount>::TransitionType::Present_To_RenderTarget));
+
+        auto backbufferRT = m_backbuffers->GetRenderTarget(m_backbufferIndex);
+        m_commandList->OMSetRenderTargets(1, &backbufferRT, FALSE, nullptr);
+
+        if (m_renderTasks.size())
+        {
+            if (!m_renderTasks[0].m_simpleMaterial)
+                m_commandList->ClearRenderTargetView(backbufferRT, m_renderTasks[0].m_clearColor, 0, nullptr);
+
+            if (m_renderTasks.size() > 1)
+            {
+                // All render tasks have the same root signature
+                m_commandList->SetGraphicsRootSignature(m_renderTasks[1].m_simpleMaterial->GetRootSignature().Get());
+
+                ID3D12DescriptorHeap* ppHeaps[] = { m_srvDescriptorHeap.Get() };
+                m_commandList->SetDescriptorHeaps(1, ppHeaps);
+                m_commandList->SetGraphicsRootDescriptorTable(0, m_srvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+
+                for (const auto& renderTask : m_renderTasks)
+                    RecordRenderTask(renderTask, backbufferRT);
+            }
+
+            m_renderTasks.clear();
+        }
+
+        m_commandList->ResourceBarrier(1, &m_backbuffers->Transition(m_backbufferIndex, D3D12Gpu::D3D12BackBuffers<BackBuffersCount>::TransitionType::RenderTarget_To_Present));
+        AssertIfFailed(m_commandList->Close());
+
+        // Execute the command list.
+        ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
+        m_commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+    }
 }
 
 void D3D12Gpu::Flush()
@@ -372,87 +380,16 @@ void D3D12Gpu::WaitForGPU()
     }
 }
 
-void D3D12Gpu::CreateDefaultPipelineState()
-{
-    assert(m_device);
-
-    D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc{ 0, nullptr, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT };
-    ID3DBlobPtr signature;
-    AssertIfFailed(D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, nullptr));
-    AssertIfFailed(m_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_rootSignature)));
-    m_rootSignature->SetName(L"Root Signature");
-
-    // Define the vertex input layout.
-    const size_t inputElementDescsCount = 1;
-    D3D12_INPUT_ELEMENT_DESC inputElementDescs[inputElementDescsCount] =
-    {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
-    };
-    
-    const UINT compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-    ID3DBlobPtr vertexShader;
-    {
-        const char* vertexShaderSrc = R"(float4 VertexShaderMain(float4 position : POSITION) : SV_POSITION
-                                         {
-                                            return position;
-                                        })";
-        AssertIfFailed(D3DCompile(vertexShaderSrc, strlen(vertexShaderSrc), nullptr, nullptr, nullptr, "VertexShaderMain", "vs_5_0", compileFlags, 0, &vertexShader, nullptr));
-    }
-
-    ID3DBlobPtr pixelShader;
-    {
-        const char* pixelShaderSrc = R"(static const float4 FixedColor = float4(1.0f, 0.0f, 0.0f, 1.0f);
-                                     float4 PixelShaderMain(float4 position : SV_POSITION) : SV_TARGET
-                                     {
-                                        return FixedColor;
-                                     })";
-        AssertIfFailed(D3DCompile(pixelShaderSrc, strlen(pixelShaderSrc), nullptr, nullptr, nullptr, "PixelShaderMain", "ps_5_0", compileFlags, 0, &pixelShader, nullptr));
-    }
-    
-
-    // Describe and create the graphics pipeline state object (PSO).
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-    psoDesc.InputLayout = { inputElementDescs , inputElementDescsCount };
-    psoDesc.pRootSignature = m_rootSignature.Get();
-    psoDesc.VS = { vertexShader->GetBufferPointer(), vertexShader->GetBufferSize() };
-    psoDesc.PS = { pixelShader->GetBufferPointer(), pixelShader->GetBufferSize() };
-    psoDesc.RasterizerState = CreateDefaultRasterizerState();
-    psoDesc.BlendState = CreateDefaultBlendState();
-    psoDesc.DepthStencilState.DepthEnable = FALSE;
-    psoDesc.DepthStencilState.StencilEnable = FALSE;
-    psoDesc.SampleMask = UINT_MAX;
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    psoDesc.NumRenderTargets = 1;
-    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-    psoDesc.SampleDesc.Count = 1;
-    AssertIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_defaultPSO)));
-    m_defaultPSO->SetName(L"Default PSO");
-}
-
 void D3D12Gpu::CreateCommandList()
 {
     assert(m_device);
-    assert(m_defaultPSO);
 
     AssertIfFailed(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_commandAllocator)));
     m_commandAllocator->SetName(L"Command Allocator");
 
-    AssertIfFailed(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_commandAllocator.Get(), m_defaultPSO.Get(), IID_PPV_ARGS(&m_commandList)));
+    AssertIfFailed(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_commandAllocator.Get(), nullptr, IID_PPV_ARGS(&m_commandList)));
     m_commandList->SetName(L"Command List");
-}
-
-void D3D12Gpu::CreateResources()
-{
-    ID3D12ResourcePtr uploadHeap = CreateCommitedBuffer(&m_vertexBuffer, g_vertices, g_vertexBufferSize, L"Triangle vb");
-
-    // Execute the resources copying commands
-    {
-        AssertIfFailed(m_commandList->Close());
-        ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
-        m_commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
-
-        WaitForGPU();
-    }
+    AssertIfFailed(m_commandList->Close());
 }
 
 ID3D12ResourcePtr D3D12Gpu::CreateCommitedBuffer(ID3D12ResourcePtr* buffer, void* bufferData, unsigned int bufferDataSize, const std::wstring& bufferName)
@@ -549,4 +486,136 @@ ID3D12ResourcePtr D3D12Gpu::CreateCommitedBuffer(ID3D12ResourcePtr* buffer, void
     m_commandList->ResourceBarrier(1, &copyDestToReadDest);
 
     return bufferUploadHeap;
+}
+
+ID3D12ResourcePtr D3D12Gpu::CreateCommitedTexture2D(ID3D12ResourcePtr* resource, void* data, unsigned int dataSize, 
+                                                    unsigned int width, unsigned int height, const std::wstring& debugName)
+{
+    D3D12_HEAP_PROPERTIES defaultHeapProps
+    {
+        /*D3D12_HEAP_TYPE Type*/ D3D12_HEAP_TYPE_DEFAULT,
+        /*D3D12_CPU_PAGE_PROPERTY CPUPageProperty*/ D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+        /*D3D12_MEMORY_POOL MemoryPoolPreference*/ D3D12_MEMORY_POOL_UNKNOWN,
+        /*UINT CreationNodeMask*/ 1,
+        /*UINT VisibleNodeMask*/ 1
+    };
+
+    D3D12_RESOURCE_DESC heapResourceDesc
+    {
+        /*D3D12_RESOURCE_DIMENSION Dimension*/ D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+        /*UINT64 Alignment*/ 0,
+        /*UINT64 Width*/ width,
+        /*UINT Height*/ height,
+        /*UINT16 DepthOrArraySize*/ 1,
+        /*UINT16 MipLevels*/ 1,
+        /*DXGI_FORMAT Format*/ DXGI_FORMAT_R8G8B8A8_UNORM,
+        /*DXGI_SAMPLE_DESC SampleDesc*/{ 1, 0 },
+        /*D3D12_TEXTURE_LAYOUT Layout*/ D3D12_TEXTURE_LAYOUT_UNKNOWN,
+        /*D3D12_RESOURCE_FLAGS Flags*/ D3D12_RESOURCE_FLAG_NONE
+    };
+
+    AssertIfFailed(m_device->CreateCommittedResource(&defaultHeapProps, D3D12_HEAP_FLAG_NONE, &heapResourceDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&*resource)));
+    (*resource)->SetName(debugName.c_str());
+
+    D3D12_HEAP_PROPERTIES uploadHeapProps
+    {
+        /*D3D12_HEAP_TYPE Type*/ D3D12_HEAP_TYPE_UPLOAD,
+        /*D3D12_CPU_PAGE_PROPERTY CPUPageProperty*/ D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+        /*D3D12_MEMORY_POOL MemoryPoolPreference*/ D3D12_MEMORY_POOL_UNKNOWN,
+        /*UINT CreationNodeMask*/ 1,
+        /*UINT VisibleNodeMask*/ 1
+    };
+    ID3D12ResourcePtr uploadHeap;
+    
+    const unsigned int firstSubresource = 0;
+    const unsigned int numSubresources = 1;
+    const unsigned int intermediateOffset = 0;
+    UINT64 requiredSize = 0;
+    const size_t maxSubresources = 1;
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT layouts[maxSubresources];
+    unsigned int numRows[maxSubresources];
+    UINT64 rowSizesInBytes[maxSubresources];
+    m_device->GetCopyableFootprints(&heapResourceDesc, firstSubresource, numSubresources, intermediateOffset, layouts, numRows, rowSizesInBytes, &requiredSize);
+
+    D3D12_RESOURCE_DESC uploadHeapResourceDesc
+    {
+        /*D3D12_RESOURCE_DIMENSION Dimension*/ D3D12_RESOURCE_DIMENSION_BUFFER,
+        /*UINT64 Alignment*/ 0,
+        /*UINT64 Width*/ requiredSize,
+        /*UINT Height*/ 1,
+        /*UINT16 DepthOrArraySize*/ 1,
+        /*UINT16 MipLevels*/ 1,
+        /*DXGI_FORMAT Format*/ DXGI_FORMAT_UNKNOWN,
+        /*DXGI_SAMPLE_DESC SampleDesc*/{ 1, 0 },
+        /*D3D12_TEXTURE_LAYOUT Layout*/ D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+        /*D3D12_RESOURCE_FLAGS Flags*/ D3D12_RESOURCE_FLAG_NONE
+    };
+    AssertIfFailed(m_device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &uploadHeapResourceDesc,
+                                                     D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&uploadHeap)));
+    uploadHeap->SetName((debugName + L" upload heap").c_str());
+
+    D3D12_SUBRESOURCE_DATA subResourceData = {};
+    subResourceData.pData = data;
+    subResourceData.RowPitch = width * 4;
+    subResourceData.SlicePitch = subResourceData.RowPitch * height;
+
+    // Copy cpu data to staging buffer aka upload heap
+    {
+        BYTE* pData;
+        AssertIfFailed(uploadHeap->Map(0, NULL, reinterpret_cast<void**>(&pData)));
+
+        // NOTE: Check code from d3dx12.h MemcpySubresource to see 
+        // how the copy of a resource (subresources, type and dimensions)
+        // is done properly
+        // MemcpySubresource(&DestData, &pSrcData[i], (SIZE_T)pRowSizesInBytes[i], pNumRows[i], pLayouts[i].Footprint.Depth);
+        BYTE* pDestSlice = reinterpret_cast<BYTE*>(pData);
+        const BYTE* pSrcSlice = reinterpret_cast<const BYTE*>(subResourceData.pData);
+        memcpy(pDestSlice, pSrcSlice, dataSize);
+
+        uploadHeap->Unmap(0, NULL);
+    }
+
+    D3D12_TEXTURE_COPY_LOCATION dest
+    {
+        /*ID3D12Resource *pResource*/ resource->Get(),
+        /*D3D12_TEXTURE_COPY_TYPE Type*/ D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+        /*UINT SubresourceIndex*/ 0
+    }; 
+    D3D12_TEXTURE_COPY_LOCATION src
+    {
+        /*ID3D12Resource *pResource*/ uploadHeap.Get(),
+        /*D3D12_TEXTURE_COPY_TYPE Type*/ D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+        /*UINT SubresourceIndex*/ layouts[0]
+    };
+    m_commandList->CopyTextureRegion(&dest, 0, 0, 0, &src, nullptr);
+
+    // TODO: this is ugly af. Is there a better way of exposing this functionality? Check d3d12x.h for ideas.
+    D3D12_RESOURCE_BARRIER copyDestToReadDest
+    {
+        D3D12_RESOURCE_BARRIER_TYPE_TRANSITION, D3D12_RESOURCE_BARRIER_FLAG_NONE,
+    {
+        resource->Get(), D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+    }
+    };
+    m_commandList->ResourceBarrier(1, &copyDestToReadDest);
+
+    return uploadHeap;
+}
+
+void D3D12Gpu::RecordRenderTask(const D3D12GpuRenderTask& renderTask, D3D12_CPU_DESCRIPTOR_HANDLE backbufferRT)
+{
+    if (!renderTask.m_simpleMaterial)
+    {
+        m_commandList->ClearRenderTargetView(backbufferRT, m_renderTasks[0].m_clearColor, 0, nullptr);
+        return;
+    }
+
+    m_commandList->RSSetViewports(1, &renderTask.m_viewport);
+    m_commandList->RSSetScissorRects(1, &renderTask.m_scissorRect);
+    m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+    
+    D3D12_VERTEX_BUFFER_VIEW vertexBufferView { m_resources[renderTask.m_vertexBufferResourceID]->GetGPUVirtualAddress(), renderTask.m_vertexSize * renderTask.m_vertexCount, renderTask.m_vertexSize };
+    m_commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
+
+    m_commandList->DrawInstanced(renderTask.m_vertexCount, 1, 0, 0);
 }

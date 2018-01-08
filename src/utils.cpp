@@ -13,7 +13,7 @@
 
 using namespace Utils;
 
-Utils::Resolution g_resolution{ 720, 576 };
+Utils::Resolution g_resolution{ 720, 576 , 720.0f / 576.0f};
 
 namespace
 {

@@ -83,11 +83,17 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\d3d12gpus.cpp" />
+    <ClCompile Include="src\d3d12simplematerial.cpp" />
+    <ClCompile Include="src\d3d12resources.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\utils.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\d3d12basicsfwd.h" />
+    <ClInclude Include="src\d3d12fwd.h" />
     <ClInclude Include="src\d3d12gpus.h" />
+    <ClInclude Include="src\d3d12simplematerial.h" />
+    <ClInclude Include="src\d3d12resources.h" />
     <ClInclude Include="src\stb_image.h" />
     <ClInclude Include="src\utils.h" />
   </ItemGroup>

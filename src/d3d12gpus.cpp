@@ -212,9 +212,6 @@ D3D12Gpu::D3D12Gpu(IDXGIFactory4Ptr factory, IDXGIAdapterPtr adapter, HWND hwnd)
     m_backbuffers = std::make_shared<D3D12BackBuffers<BackBuffersCount>>(m_device, m_swapChain);
     assert(m_backbuffers);
 
-    m_simpleMaterial = std::make_shared<D3D12SimpleMaterial>(m_device);
-    assert(m_simpleMaterial);
-
     CreateCommandList();
 
     // Create descriptor heap
@@ -268,7 +265,7 @@ void D3D12Gpu::Execute()
     {
         std::vector<ID3D12ResourcePtr> uploadHeaps;
         AssertIfFailed(m_commandAllocator->Reset());
-        AssertIfFailed(m_commandList->Reset(m_commandAllocator.Get(), m_simpleMaterial->GetPSO().Get()));
+        AssertIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
 
         if (uploadBufferTasksCount)
         {
@@ -308,33 +305,33 @@ void D3D12Gpu::Execute()
     if (m_renderTasks.size())
     {
         AssertIfFailed(m_commandAllocator->Reset());
-        AssertIfFailed(m_commandList->Reset(m_commandAllocator.Get(), m_simpleMaterial->GetPSO().Get()));
+        AssertIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
 
         m_commandList->ResourceBarrier(1, &m_backbuffers->Transition(m_backbufferIndex, D3D12Gpu::D3D12BackBuffers<BackBuffersCount>::TransitionType::Present_To_RenderTarget));
 
         auto backbufferRT = m_backbuffers->GetRenderTarget(m_backbufferIndex);
         m_commandList->OMSetRenderTargets(1, &backbufferRT, FALSE, nullptr);
 
-        if (m_renderTasks.size())
+        // TODO rework this
+        if (!m_renderTasks[0].m_simpleMaterial)
+            m_commandList->ClearRenderTargetView(backbufferRT, m_renderTasks[0].m_clearColor, 0, nullptr);
+
+        if (m_renderTasks.size() > 1)
         {
-            if (!m_renderTasks[0].m_simpleMaterial)
-                m_commandList->ClearRenderTargetView(backbufferRT, m_renderTasks[0].m_clearColor, 0, nullptr);
+            m_commandList->SetPipelineState(m_renderTasks[1].m_simpleMaterial->GetPSO().Get());
 
-            if (m_renderTasks.size() > 1)
-            {
-                // All render tasks have the same root signature
-                m_commandList->SetGraphicsRootSignature(m_renderTasks[1].m_simpleMaterial->GetRootSignature().Get());
+            // All render tasks have the same root signature
+            m_commandList->SetGraphicsRootSignature(m_renderTasks[1].m_simpleMaterial->GetRootSignature().Get());
 
-                ID3D12DescriptorHeap* ppHeaps[] = { m_srvDescriptorHeap.Get() };
-                m_commandList->SetDescriptorHeaps(1, ppHeaps);
-                m_commandList->SetGraphicsRootDescriptorTable(0, m_srvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+            ID3D12DescriptorHeap* ppHeaps[] = { m_srvDescriptorHeap.Get() };
+            m_commandList->SetDescriptorHeaps(1, ppHeaps);
+            m_commandList->SetGraphicsRootDescriptorTable(0, m_srvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
-                for (const auto& renderTask : m_renderTasks)
-                    RecordRenderTask(renderTask, backbufferRT);
-            }
-
-            m_renderTasks.clear();
+            for (const auto& renderTask : m_renderTasks)
+                RecordRenderTask(renderTask, backbufferRT);
         }
+
+        m_renderTasks.clear();
 
         m_commandList->ResourceBarrier(1, &m_backbuffers->Transition(m_backbufferIndex, D3D12Gpu::D3D12BackBuffers<BackBuffersCount>::TransitionType::RenderTarget_To_Present));
         AssertIfFailed(m_commandList->Close());
@@ -526,7 +523,7 @@ ID3D12ResourcePtr D3D12Gpu::CreateCommitedTexture2D(ID3D12ResourcePtr* resource,
         /*UINT VisibleNodeMask*/ 1
     };
     ID3D12ResourcePtr uploadHeap;
-    
+
     const unsigned int firstSubresource = 0;
     const unsigned int numSubresources = 1;
     const unsigned int intermediateOffset = 0;

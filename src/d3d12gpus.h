@@ -123,16 +123,10 @@ namespace D3D12Render
         ID3D12GpuJobPtr m_job;
 
         unsigned int m_backbufferIndex;
-        
-        ID3D12ResourcePtr m_vertexBuffer;
-        
+                
         ID3D12DescriptorHeapPtr m_srvDescriptorHeap;
         unsigned int m_srvDescriptorSize;
         size_t m_srvDesciptorOffset;
-        
-        ID3D12ResourcePtr m_texture256;
-
-        D3D12SimpleMaterialPtr m_simpleMaterial;
 
         std::vector<D3D12GpuUploadTexture2DTaskExt>    m_uploadTexture2DTasks;
         std::vector<D3D12GpuUploadBufferTaskExt>       m_uploadBufferTasks;

@@ -64,7 +64,7 @@ namespace
     ID3DBlobPtr CompileShader(const char* src, const char* mainName, const char* shaderModel, unsigned int compileFlags)
     {
         ID3DBlobPtr shader;
-#if DEBUG
+#if _DEBUG
         ID3DBlobPtr errors;
         AssertIfFailed(D3DCompile(src, strlen(src), nullptr, nullptr, nullptr, mainName, shaderModel, compileFlags, 0, &shader, &errors));
         if (errors)
@@ -77,6 +77,51 @@ namespace
         AssertIfFailed(D3DCompile(src, strlen(src), nullptr, nullptr, nullptr, mainName, shaderModel, compileFlags, 0, &shader, nullptr));
 #endif
         return shader;
+    }
+
+    D3D12_DESCRIPTOR_RANGE1 CreateDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE rangeType, unsigned int descriptorsCount)
+    {
+        D3D12_DESCRIPTOR_RANGE1 range;
+        range.RangeType = rangeType;
+        range.NumDescriptors = descriptorsCount;
+        range.BaseShaderRegister = 0;
+        range.RegisterSpace = 0;
+        range.Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE;
+        range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+        return range;
+    }
+
+    D3D12_ROOT_PARAMETER1 CreateDescTableRootParameter(D3D12_DESCRIPTOR_RANGE1* ranges, unsigned int rangesCount, 
+                                                        D3D12_SHADER_VISIBILITY shaderVisibility)
+    {
+        D3D12_ROOT_PARAMETER1 rootParameter;
+        rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        rootParameter.DescriptorTable.NumDescriptorRanges = rangesCount;
+        rootParameter.DescriptorTable.pDescriptorRanges = ranges;
+        rootParameter.ShaderVisibility = shaderVisibility;
+        return rootParameter;
+    }
+
+    D3D12_STATIC_SAMPLER_DESC CreateStaticSamplerDesc(D3D12_FILTER filter, D3D12_TEXTURE_ADDRESS_MODE adddresMode)
+    {
+        D3D12_STATIC_SAMPLER_DESC staticSamplerDesc
+        {
+            /*D3D12_FILTER Filter*/ filter,
+            /*D3D12_TEXTURE_ADDRESS_MODE AddressU*/ adddresMode,
+            /*D3D12_TEXTURE_ADDRESS_MODE AddressV*/ adddresMode,
+            /*D3D12_TEXTURE_ADDRESS_MODE AddressW*/ adddresMode,
+            /*FLOAT MipLODBias*/ 0.0f,
+            /*UINT MaxAnisotropy*/ 1,
+            /*D3D12_COMPARISON_FUNC ComparisonFunc*/ D3D12_COMPARISON_FUNC_ALWAYS,
+            /*D3D12_STATIC_BORDER_COLOR BorderColor*/ D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK,
+            /*FLOAT MinLOD*/ 0.0f,
+            /*FLOAT MaxLOD*/ D3D12_FLOAT32_MAX,
+            /*UINT ShaderRegister*/ 0,
+            /*UINT RegisterSpace*/ 0,
+            /*D3D12_SHADER_VISIBILITY ShaderVisibility*/ D3D12_SHADER_VISIBILITY_PIXEL
+        };
+
+        return staticSamplerDesc;
     }
 }
 
@@ -92,48 +137,25 @@ D3D12SimpleMaterial::~D3D12SimpleMaterial()
 
 void D3D12SimpleMaterial::Load()
 {
-    D3D12_DESCRIPTOR_RANGE1 range
-    {
-        /*D3D12_DESCRIPTOR_RANGE_TYPE RangeType*/D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
-        /*UINT NumDescriptors*/1,
-        /*UINT BaseShaderRegister*/0,
-        /*UINT RegisterSpace*/0,
-        /*D3D12_DESCRIPTOR_RANGE_FLAGS Flags*/D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
-        /*UINT OffsetInDescriptorsFromTableStart*/D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
+    D3D12_DESCRIPTOR_RANGE1 vertexCBVRanges = CreateDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1);
+    D3D12_DESCRIPTOR_RANGE1 pixelSRVRanges = CreateDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1);
+    
+    const unsigned rootParametersCount = 2;
+    D3D12_ROOT_PARAMETER1 rootParameters[rootParametersCount]
+    { 
+        CreateDescTableRootParameter(&vertexCBVRanges, 1, D3D12_SHADER_VISIBILITY_VERTEX),
+        CreateDescTableRootParameter(&pixelSRVRanges, 1, D3D12_SHADER_VISIBILITY_PIXEL) 
     };
     
-    D3D12_ROOT_PARAMETER1 rootParameter
-    {
-        /*D3D12_ROOT_PARAMETER_TYPE ParameterType*/ D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-        /*D3D12_ROOT_DESCRIPTOR_TABLE1 DescriptorTable*/
-        /*UINT NumDescriptorRanges*/ 1,
-        /*_Field_size_full_(NumDescriptorRanges)  const D3D12_DESCRIPTOR_RANGE1 *pDescriptorRanges*/&range,
-        /*D3D12_SHADER_VISIBILITY ShaderVisibility */D3D12_SHADER_VISIBILITY_PIXEL
-    };
-    
-    D3D12_STATIC_SAMPLER_DESC staticSamplerDesc
-    {
-        /*D3D12_FILTER Filter*/ D3D12_FILTER_MIN_MAG_MIP_LINEAR,
-        /*D3D12_TEXTURE_ADDRESS_MODE AddressU*/ D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-        /*D3D12_TEXTURE_ADDRESS_MODE AddressV*/ D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-        /*D3D12_TEXTURE_ADDRESS_MODE AddressW*/ D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-        /*FLOAT MipLODBias*/ 0.0f,
-        /*UINT MaxAnisotropy*/ 1,
-        /*D3D12_COMPARISON_FUNC ComparisonFunc*/ D3D12_COMPARISON_FUNC_ALWAYS,
-        /*D3D12_STATIC_BORDER_COLOR BorderColor*/ D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK,
-        /*FLOAT MinLOD*/ 0.0f,
-        /*FLOAT MaxLOD*/ D3D12_FLOAT32_MAX,
-        /*UINT ShaderRegister*/ 0,
-        /*UINT RegisterSpace*/ 0,
-        /*D3D12_SHADER_VISIBILITY ShaderVisibility*/ D3D12_SHADER_VISIBILITY_PIXEL
-    };
+    const unsigned int staticSamplerDescsCount = 1;
+    D3D12_STATIC_SAMPLER_DESC staticSamplerDesc { CreateStaticSamplerDesc(D3D12_FILTER_MIN_MAG_MIP_LINEAR, D3D12_TEXTURE_ADDRESS_MODE_WRAP) };
     
     D3D12_FEATURE_DATA_ROOT_SIGNATURE d3d12FeatureDataRootSignature = GetFeatureRootSignatureHighestVerSupported();
     D3D12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc;
     rootSignatureDesc.Version = d3d12FeatureDataRootSignature.HighestVersion;
-    rootSignatureDesc.Desc_1_1.NumParameters = 1;
-    rootSignatureDesc.Desc_1_1.pParameters = &rootParameter;
-    rootSignatureDesc.Desc_1_1.NumStaticSamplers = 1;
+    rootSignatureDesc.Desc_1_1.NumParameters = rootParametersCount;
+    rootSignatureDesc.Desc_1_1.pParameters = rootParameters;
+    rootSignatureDesc.Desc_1_1.NumStaticSamplers = staticSamplerDescsCount;
     rootSignatureDesc.Desc_1_1.pStaticSamplers = &staticSamplerDesc;
     rootSignatureDesc.Desc_1_1.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
@@ -152,21 +174,27 @@ void D3D12SimpleMaterial::Load()
         
     const UINT compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
     const char* vertexShaderSrc = R"(   
+                                        struct Transformations
+                                        {
+                                            float4x4 worldCamProj;
+                                        };
+                                        ConstantBuffer<Transformations> transformations : register(b0, space0);
+
                                         struct Interpolators
                                         {
                                             float4 m_position : SV_POSITION;
                                             float2 m_uv : TEXCOORD;
                                         };
     
-                                        Interpolators VertexShaderMain(float4 position : POSITION, float4 uv : TEXCOORD)
+                                        Interpolators VertexShaderMain(float4 position : POSITION, float2 uv : TEXCOORD)
                                         {
                                             Interpolators result;
-                                            result.m_position = position;
+                                            result.m_position = mul(position, transformations.worldCamProj);
                                             result.m_uv = uv;
                                             return result;
                                         }
                                     )";
-    ID3DBlobPtr vertexShader = CompileShader(vertexShaderSrc, "VertexShaderMain", "vs_5_0", compileFlags);
+    ID3DBlobPtr vertexShader = CompileShader(vertexShaderSrc, "VertexShaderMain", "vs_5_1", compileFlags);
 
     const char* pixelShaderSrc = R"(
                                         struct Interpolators
@@ -183,7 +211,7 @@ void D3D12SimpleMaterial::Load()
                                             return colorTexture.Sample(linearSampler, interpolators.m_uv);
                                         }
                                     )";
-    ID3DBlobPtr pixelShader = CompileShader(pixelShaderSrc, "PixelShaderMain", "ps_5_0", compileFlags);
+    ID3DBlobPtr pixelShader = CompileShader(pixelShaderSrc, "PixelShaderMain", "ps_5_1", compileFlags);
 
     // Describe and create the graphics pipeline state object (PSO).
     D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};

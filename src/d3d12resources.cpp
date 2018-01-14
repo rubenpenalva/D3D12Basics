@@ -5,7 +5,7 @@
 
 // Third party libraries
 #define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
+#include "stb/stb_image.h"
 
 // Project includes
 #include "d3d12gpus.h"

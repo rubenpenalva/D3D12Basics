@@ -1,0 +1,51 @@
+API REFERENCE
+	ID3D12Device
+		// Resources creation
+		CreateCommittedResource
+
+		
+		CreateDescriptorHeap
+
+		// Descriptors
+		CreateConstantBufferView
+
+		// Create root signature
+		CreateRootSignature
+
+	ID3D12GraphicsCommandList
+
+		// [begin]
+		// Setting up a root signature in the pipeline
+		SetGraphicsRootSignature
+
+		//Setting Root Signature arguments
+		// Descriptor table
+		SetGraphicsRootDescriptorTable
+		// Root descriptors
+		SetGraphicsRootConstantBufferView
+		SetGraphicsRootShaderResourceView
+		SetGraphicsRootUnorderedAccessView
+		// Root constants
+		SetGraphicsRoot32BitConstant
+		SetGraphicsRoot32BitConstants
+		// [end]
+
+		SetDescriptorHeaps
+
+
+	ID3D12Resource
+		GetGPUVirtualAddress
+			Only valid for buffer resources. Q? Why?
+		Map
+
+	ID3D12DescriptorHeap
+		GetCPUDescriptorHandleForHeapStart
+
+NOTES
+Setting up views
+	Create a descriptor heap
+		Inputs: Type: cbv_srv_uav, rtv, etc... | Flags: shader visible
+		Output: ID3D12DescriptorHeap
+	Grab desc heap size increment: ID3D12DescriptorHeapPtr->GetDescriptorHandleIncrementSize
+	Create a view GetCPUDescriptorHandleForHeapStart
+	

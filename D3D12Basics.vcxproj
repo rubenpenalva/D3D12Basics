@@ -57,6 +57,7 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <TreatWarningAsError>true</TreatWarningAsError>
+      <AdditionalIncludeDirectories>./thirdparty;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -73,6 +74,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <TreatWarningAsError>true</TreatWarningAsError>
+      <AdditionalIncludeDirectories>./thirdparty;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -94,10 +96,30 @@
     <ClInclude Include="src\d3d12gpus.h" />
     <ClInclude Include="src\d3d12simplematerial.h" />
     <ClInclude Include="src\d3d12resources.h" />
-    <ClInclude Include="src\stb_image.h" />
     <ClInclude Include="src\utils.h" />
+    <ClInclude Include="thirdparty\directxmath\Inc\DirectXCollision.h" />
+    <ClInclude Include="thirdparty\directxmath\Inc\DirectXColors.h" />
+    <ClInclude Include="thirdparty\directxmath\Inc\DirectXMath.h" />
+    <ClInclude Include="thirdparty\directxmath\Inc\DirectXPackedVector.h" />
+    <ClInclude Include="thirdparty\stb\stb_image.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+    <None Include="thirdparty\directxmath\Inc\DirectXCollision.inl" />
+    <None Include="thirdparty\directxmath\Inc\DirectXMathConvert.inl" />
+    <None Include="thirdparty\directxmath\Inc\DirectXMathMatrix.inl" />
+    <None Include="thirdparty\directxmath\Inc\DirectXMathMisc.inl" />
+    <None Include="thirdparty\directxmath\Inc\DirectXMathVector.inl" />
+    <None Include="thirdparty\directxmath\Inc\DirectXPackedVector.inl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
+    <Import Project="packages\WinPixEventRuntime.1.0.170918004\build\WinPixEventRuntime.targets" Condition="Exists('packages\WinPixEventRuntime.1.0.170918004\build\WinPixEventRuntime.targets')" />
   </ImportGroup>
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('packages\WinPixEventRuntime.1.0.170918004\build\WinPixEventRuntime.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\WinPixEventRuntime.1.0.170918004\build\WinPixEventRuntime.targets'))" />
+  </Target>
 </Project>

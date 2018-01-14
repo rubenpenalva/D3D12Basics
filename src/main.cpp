@@ -27,9 +27,16 @@
 //c includes
 #include <cassert>
 
+// c++ includes
+#include <chrono>
+#include <sstream>
+
 // windows includes
 #include <windows.h>
 #include <d3d12.h>
+
+// thirdparty includes
+#include "DirectxMath/Inc/DirectXMath.h"
 
 namespace
 {
@@ -66,6 +73,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     // Load resources for the scene
     const size_t vertexBufferResourceID = D3D12Render::CreateD3D12VertexBuffer(g_vertices, g_vertexBufferSize, L"vb - Viewport Quad", gpu);
     D3D12Render::CreateD3D12Texture(g_texture256FileName, L"texture2d - Texture 256", gpu);
+    const size_t dynamicConstantBufferID = gpu->CreateDynamicConstantBuffer(sizeof(DirectX::XMFLOAT4X4));
     gpu->Execute();
 
     D3D12Render::D3D12GpuRenderTask clearRTRenderTask;
@@ -85,6 +93,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     viewportQuadRenderTask.m_vertexCount = g_verticesCount;
     viewportQuadRenderTask.m_vertexSize = g_vertexSize;
   
+    float lastDelta = 0.0f;
+    float accumulatedTime = 0.0f;
     // Main loop
     while (1)
     {
@@ -103,6 +113,13 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         }
         else
         {
+            const auto frameBeginTick = std::chrono::high_resolution_clock::now();
+
+            {
+                DirectX::XMMATRIX transform = DirectX::XMMatrixTranslation(sinf(accumulatedTime), cosf(accumulatedTime), 0.0f);
+                gpu->UpdateDynamicConstantBuffer(dynamicConstantBufferID, &transform);
+            }
+
             // Record the command list
             {
                 gpu->AddRenderTask(clearRTRenderTask);
@@ -118,10 +135,13 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
             {
                 gpu->Flush();
             }
+
+            const auto frameEndTick = std::chrono::high_resolution_clock::now();
+
+            lastDelta = std::chrono::duration<float>(frameEndTick - frameBeginTick).count();
+            accumulatedTime += lastDelta;
         }
     }
-
-    
 
     return 0;
 }

@@ -2,3 +2,6 @@
 /x64
 /Debug
 /.vs
+/packages
+packages.config
+*AutoRecover*.vcxproj

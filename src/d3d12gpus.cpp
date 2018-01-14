@@ -38,6 +38,29 @@ namespace
 
         return factory;
     }
+
+    D3D12_RESOURCE_DESC CreateBufferDesc(uint64_t sizeInBytes)
+    {
+        D3D12_RESOURCE_DESC resourceDesc;
+        resourceDesc.Dimension           = D3D12_RESOURCE_DIMENSION_BUFFER;
+        resourceDesc.Alignment           = 0;
+        resourceDesc.Width               = sizeInBytes;
+        resourceDesc.Height              = 1;
+        resourceDesc.DepthOrArraySize    = 1;
+        resourceDesc.MipLevels           = 1;
+        resourceDesc.Format              = DXGI_FORMAT_UNKNOWN;
+        resourceDesc.SampleDesc          = { 1, 0 };
+        resourceDesc.Layout              = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        resourceDesc.Flags               = D3D12_RESOURCE_FLAG_NONE;
+
+        return resourceDesc;
+    }
+
+    unsigned int CalculateConstantBufferRequiredSize(unsigned int requestedSizeInBytes)
+    {
+        const unsigned int requiredAlignmentForCB = 256;
+        return (requestedSizeInBytes + (requiredAlignmentForCB - 1)) & ~(requiredAlignmentForCB - 1);
+    }
 }
 
 template<unsigned int BackBuffersCount>
@@ -157,12 +180,12 @@ void D3D12Gpus::DiscoverAdapters()
     }
 }
 
-D3D12Gpu::D3D12Gpu(IDXGIFactory4Ptr factory, IDXGIAdapterPtr adapter, HWND hwnd) : m_backbufferIndex(0), m_srvDesciptorOffset(0)
+D3D12Gpu::D3D12Gpu(IDXGIFactory4Ptr factory, IDXGIAdapterPtr adapter, HWND hwnd)    :   m_backbufferIndex(0), m_cbvsrvuavDescriptorOffset(0)
 {
     assert(factory);
     assert(hwnd);
 
-    AssertIfFailed(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_device)));
+    Utils::AssertIfFailed(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_device)));
     assert(m_device);
 
     // Describe and create the command queue.
@@ -216,12 +239,35 @@ D3D12Gpu::D3D12Gpu(IDXGIFactory4Ptr factory, IDXGIAdapterPtr adapter, HWND hwnd)
 
     // Create descriptor heap
     {
-        D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-        srvHeapDesc.NumDescriptors = 1;
-        srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-        AssertIfFailed(m_device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_srvDescriptorHeap)));
-        m_srvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+        D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+        heapDesc.NumDescriptors = 1024;
+        heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        AssertIfFailed(m_device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_cbvsrvuavDescriptorHeap)));
+        m_cbvsrvuavDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    }
+
+    // Create dynamic constant buffers heap
+    {
+        D3D12_HEAP_PROPERTIES heapProperties;
+        //D3D12_HEAP_TYPE Type;
+        heapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
+        heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+        heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+        heapProperties.CreationNodeMask = 1;
+        heapProperties.VisibleNodeMask = 1;
+
+        const uint64_t page_size_64kb_in_bytes = 1024 * 64;
+        D3D12_RESOURCE_DESC uploadHeapDesc = CreateBufferDesc(page_size_64kb_in_bytes);
+        D3D12_RESOURCE_STATES initialResourceState = D3D12_RESOURCE_STATE_GENERIC_READ;
+        Utils::AssertIfFailed(m_device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &uploadHeapDesc, 
+                                                                 initialResourceState, nullptr, IID_PPV_ARGS(&m_dynamicConstantBuffersHeap)));
+
+        m_dynamicConstantBufferHeapCurrentPtr = m_dynamicConstantBuffersHeap->GetGPUVirtualAddress();
+        
+        // NOTE: Leaving the constant buffer memory mapped is used to avoid map/unmap pattern
+        D3D12_RANGE readRange{ 0, 0 };
+        Utils::AssertIfFailed(m_dynamicConstantBuffersHeap->Map(0, &readRange, &m_dynamicConstantBuffersMemPtr));
     }
 }
 
@@ -256,6 +302,48 @@ void D3D12Gpu::AddRenderTask(const D3D12GpuRenderTask& renderTask)
     m_renderTasks.push_back(renderTask);
 }
 
+size_t D3D12Gpu::CreateDynamicConstantBuffer(unsigned int sizeInBytes)
+{
+    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+    cbvDesc.BufferLocation = m_dynamicConstantBufferHeapCurrentPtr;
+    cbvDesc.SizeInBytes = CalculateConstantBufferRequiredSize(sizeInBytes);
+
+    auto cpuDescHandle = m_cbvsrvuavDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+    cpuDescHandle.ptr += m_cbvsrvuavDescriptorOffset++ * m_cbvsrvuavDescriptorSize;
+    m_device->CreateConstantBufferView(&cbvDesc, cpuDescHandle);
+
+    m_dynamicConstantBufferHeapCurrentPtr += cbvDesc.SizeInBytes;
+    
+    const size_t cbID = m_dynamicConstantBuffers.size();
+    
+    void* currentBuffersMemPtr = nullptr;
+    if (cbID == 0)
+        currentBuffersMemPtr = m_dynamicConstantBuffersMemPtr;
+    else
+    {
+        DynamicConstantBuffer& prevDynamicConstantBuffer = m_dynamicConstantBuffers.back();
+        currentBuffersMemPtr = static_cast<char*>(prevDynamicConstantBuffer.m_memPtr) + prevDynamicConstantBuffer.m_requiredSizeInBytes;
+    }
+
+    DynamicConstantBuffer dynamicConstantBuffer;
+    dynamicConstantBuffer.m_sizeInBytes = sizeInBytes;
+    dynamicConstantBuffer.m_requiredSizeInBytes = cbvDesc.SizeInBytes;
+    dynamicConstantBuffer.m_memPtr = currentBuffersMemPtr;
+
+    m_dynamicConstantBuffers.push_back(dynamicConstantBuffer);
+    
+    return cbID;
+}
+
+void D3D12Gpu::UpdateDynamicConstantBuffer(size_t id, void* data)
+{
+    assert(id < m_dynamicConstantBuffers.size());
+
+    auto& dynamicConstantBuffer = m_dynamicConstantBuffers[id];
+
+    memcpy(dynamicConstantBuffer.m_memPtr, data, dynamicConstantBuffer.m_sizeInBytes);
+}
+
 void D3D12Gpu::Execute()
 {
     // Execute the resources copying commands
@@ -287,8 +375,8 @@ void D3D12Gpu::Execute()
 
                 uploadHeaps.push_back(uploadHeapPtr);
 
-                D3D12_CPU_DESCRIPTOR_HANDLE destDesc = m_srvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-                destDesc.ptr += m_srvDesciptorOffset++ * m_srvDescriptorSize;
+                D3D12_CPU_DESCRIPTOR_HANDLE destDesc = m_cbvsrvuavDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+                destDesc.ptr += m_cbvsrvuavDescriptorOffset++ * m_cbvsrvuavDescriptorSize;
                 m_device->CreateShaderResourceView(m_resources[uploadTexture2DTask.first].Get(), &uploadTexture2DTask.second.m_desc, destDesc);
             }
             m_uploadTexture2DTasks.clear();
@@ -323,9 +411,13 @@ void D3D12Gpu::Execute()
             // All render tasks have the same root signature
             m_commandList->SetGraphicsRootSignature(m_renderTasks[1].m_simpleMaterial->GetRootSignature().Get());
 
-            ID3D12DescriptorHeap* ppHeaps[] = { m_srvDescriptorHeap.Get() };
+            ID3D12DescriptorHeap* ppHeaps[] = { m_cbvsrvuavDescriptorHeap.Get() };
             m_commandList->SetDescriptorHeaps(1, ppHeaps);
-            m_commandList->SetGraphicsRootDescriptorTable(0, m_srvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+            m_commandList->SetGraphicsRootDescriptorTable(0, m_cbvsrvuavDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+            
+            auto gpuDescriptorHandle = m_cbvsrvuavDescriptorHeap->GetGPUDescriptorHandleForHeapStart();
+            gpuDescriptorHandle.ptr += m_cbvsrvuavDescriptorSize;
+            m_commandList->SetGraphicsRootDescriptorTable(1, gpuDescriptorHandle);
 
             for (const auto& renderTask : m_renderTasks)
                 RecordRenderTask(renderTask, backbufferRT);
@@ -345,7 +437,7 @@ void D3D12Gpu::Execute()
 void D3D12Gpu::Flush()
 {
     // Present the frame.
-    AssertIfFailed(m_swapChain->Present(1, 0));
+    AssertIfFailed(m_swapChain->Present(0, 0));
 
     WaitForGPU();
 
@@ -389,6 +481,7 @@ void D3D12Gpu::CreateCommandList()
     AssertIfFailed(m_commandList->Close());
 }
 
+// TODO check alignment requirements https://www.braynzarsoft.net/viewtutorial/q16390-directx-12-constant-buffers-root-descriptor-tables
 ID3D12ResourcePtr D3D12Gpu::CreateCommitedBuffer(ID3D12ResourcePtr* buffer, void* bufferData, unsigned int bufferDataSize, const std::wstring& bufferName)
 {
     D3D12_HEAP_PROPERTIES defaultHeapProps 
@@ -400,19 +493,7 @@ ID3D12ResourcePtr D3D12Gpu::CreateCommitedBuffer(ID3D12ResourcePtr* buffer, void
         /*UINT VisibleNodeMask*/ 1
     };
 
-    D3D12_RESOURCE_DESC heapResourceDesc
-    {
-        /*D3D12_RESOURCE_DIMENSION Dimension*/ D3D12_RESOURCE_DIMENSION_BUFFER,
-        /*UINT64 Alignment*/ 0,
-        /*UINT64 Width*/ bufferDataSize,
-        /*UINT Height*/ 1,
-        /*UINT16 DepthOrArraySize*/ 1,
-        /*UINT16 MipLevels*/ 1,
-        /*DXGI_FORMAT Format*/ DXGI_FORMAT_UNKNOWN,
-        /*DXGI_SAMPLE_DESC SampleDesc*/ { 1, 0 },
-        /*D3D12_TEXTURE_LAYOUT Layout*/ D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-        /*D3D12_RESOURCE_FLAGS Flags*/ D3D12_RESOURCE_FLAG_NONE
-    };
+    D3D12_RESOURCE_DESC heapResourceDesc = CreateBufferDesc(bufferDataSize);
 
     AssertIfFailed(m_device->CreateCommittedResource(&defaultHeapProps, D3D12_HEAP_FLAG_NONE, &heapResourceDesc,
                                                      D3D12_RESOURCE_STATE_COPY_DEST, nullptr, 
@@ -534,19 +615,8 @@ ID3D12ResourcePtr D3D12Gpu::CreateCommitedTexture2D(ID3D12ResourcePtr* resource,
     UINT64 rowSizesInBytes[maxSubresources];
     m_device->GetCopyableFootprints(&heapResourceDesc, firstSubresource, numSubresources, intermediateOffset, layouts, numRows, rowSizesInBytes, &requiredSize);
 
-    D3D12_RESOURCE_DESC uploadHeapResourceDesc
-    {
-        /*D3D12_RESOURCE_DIMENSION Dimension*/ D3D12_RESOURCE_DIMENSION_BUFFER,
-        /*UINT64 Alignment*/ 0,
-        /*UINT64 Width*/ requiredSize,
-        /*UINT Height*/ 1,
-        /*UINT16 DepthOrArraySize*/ 1,
-        /*UINT16 MipLevels*/ 1,
-        /*DXGI_FORMAT Format*/ DXGI_FORMAT_UNKNOWN,
-        /*DXGI_SAMPLE_DESC SampleDesc*/{ 1, 0 },
-        /*D3D12_TEXTURE_LAYOUT Layout*/ D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-        /*D3D12_RESOURCE_FLAGS Flags*/ D3D12_RESOURCE_FLAG_NONE
-    };
+    D3D12_RESOURCE_DESC uploadHeapResourceDesc = CreateBufferDesc(dataSize);
+
     AssertIfFailed(m_device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &uploadHeapResourceDesc,
                                                      D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&uploadHeap)));
     uploadHeap->SetName((debugName + L" upload heap").c_str());

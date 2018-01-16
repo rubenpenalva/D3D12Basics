@@ -53,15 +53,40 @@ namespace
     const size_t g_vertexSize = g_vertexElemsCount * sizeof(float);
     const size_t g_vertexBufferSize = g_verticesCount * g_vertexSize;
 
+    const size_t g_indexCount = 6;
+    uint16_t g_indices[g_indexCount] = { 0, 1, 2, 1, 3, 2 };
+    const size_t g_indexBufferSize = sizeof(uint16_t) * g_indexCount;
+
     // NOTE:  Assuming working directory contains the data folder
     const char* g_texture256FileName = "./data/texture_256.png";
     const char* g_texture1024FileName = "./data/texture_1024.jpg";
+
+    struct Mesh
+    {
+        using Float2 = DirectX::XMFLOAT2;
+        using Float3 = DirectX::XMFLOAT3;
+
+        std::vector<Float3>     m_vertexPositions;
+        std::vector<Float2>     m_vertexUVs;
+
+        std::vector<uint16_t>   m_indices;
+    };
+
+    Mesh CreatePlane()
+    {
+        Mesh planeMesh;
+
+        planeMesh.m_vertexPositions = { { -0.5f, -0.5f, 0.0f }, { -0.5f, 0.5f, 0.0f }, { 0.5f, 0.5f, 0.0f }, { 0.5f, -0.5f, 0.0f } };
+        planeMesh.m_vertexUVs = { {0.0f, 1.0f}, { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 1.0f, 1.0f } };
+
+        planeMesh.m_indices = { 0, 1, 2, 0, 2, 3 };
+
+        return planeMesh;
+    }
 }
 
 int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /*szCmdLine*/, int /*iCmdShow*/)
 {
-    //float elapsedTime = 0.0f;
-
     Utils::CustomWindow customWindow;
     
     // Create main gpu
@@ -71,7 +96,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     D3D12Render::D3D12GpuPtr gpu = gpus.CreateGpu(mainGpuID, customWindow.GetHWND());
     
     // Load resources for the scene
-    const size_t vertexBufferResourceID = D3D12Render::CreateD3D12VertexBuffer(g_vertices, g_vertexBufferSize, L"vb - Viewport Quad", gpu);
+    const size_t vertexBufferResourceID = D3D12Render::CreateD3D12Buffer(g_vertices, g_vertexBufferSize, L"vb - Viewport Quad", gpu);
+    const size_t indexBufferResourceID = D3D12Render::CreateD3D12Buffer(g_indices, g_indexBufferSize, L"ib - Viewport Quad", gpu);
     D3D12Render::CreateD3D12Texture(g_texture256FileName, L"texture2d - Texture 256", gpu);
     const size_t dynamicConstantBufferID = gpu->CreateDynamicConstantBuffer(sizeof(DirectX::XMFLOAT4X4));
     gpu->Execute();
@@ -90,11 +116,14 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     viewportQuadRenderTask.m_viewport = viewport;
     viewportQuadRenderTask.m_scissorRect = scissorRect;
     viewportQuadRenderTask.m_vertexBufferResourceID = vertexBufferResourceID;
+    viewportQuadRenderTask.m_indexBufferResourceID = indexBufferResourceID;
     viewportQuadRenderTask.m_vertexCount = g_verticesCount;
     viewportQuadRenderTask.m_vertexSize = g_vertexSize;
+    viewportQuadRenderTask.m_indexCount = g_indexCount;
   
     float lastDelta = 0.0f;
     float accumulatedTime = 0.0f;
+
     // Main loop
     while (1)
     {

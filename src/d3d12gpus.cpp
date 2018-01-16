@@ -679,10 +679,13 @@ void D3D12Gpu::RecordRenderTask(const D3D12GpuRenderTask& renderTask, D3D12_CPU_
 
     m_commandList->RSSetViewports(1, &renderTask.m_viewport);
     m_commandList->RSSetScissorRects(1, &renderTask.m_scissorRect);
-    m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+    m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     
     D3D12_VERTEX_BUFFER_VIEW vertexBufferView { m_resources[renderTask.m_vertexBufferResourceID]->GetGPUVirtualAddress(), renderTask.m_vertexSize * renderTask.m_vertexCount, renderTask.m_vertexSize };
     m_commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
 
-    m_commandList->DrawInstanced(renderTask.m_vertexCount, 1, 0, 0);
+    D3D12_INDEX_BUFFER_VIEW indexBufferView{ m_resources[renderTask.m_indexBufferResourceID]->GetGPUVirtualAddress(), renderTask.m_indexCount * sizeof(uint16_t), DXGI_FORMAT_R16_UINT };
+    m_commandList->IASetIndexBuffer(&indexBufferView);
+
+    m_commandList->DrawIndexedInstanced(renderTask.m_indexCount, 1, 0, 0, 0);
 }

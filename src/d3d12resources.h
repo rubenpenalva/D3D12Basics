@@ -15,6 +15,6 @@ namespace D3D12Render
     void CreateD3D12Texture(const char* textureFileName, const wchar_t* debugName, 
                             D3D12GpuPtr d3d12Gpu);
 
-    size_t CreateD3D12VertexBuffer(void* bufferData, unsigned int bufferDataSize, 
-                                   const wchar_t* debugName, D3D12GpuPtr d3d12Gpu);
+    size_t CreateD3D12Buffer(void* bufferData, unsigned int bufferDataSize, 
+                             const wchar_t* debugName, D3D12GpuPtr d3d12Gpu);
 }

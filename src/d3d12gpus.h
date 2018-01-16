@@ -61,8 +61,10 @@ namespace D3D12Render
         D3D12_VIEWPORT              m_viewport;
         RECT                        m_scissorRect;
         size_t                      m_vertexBufferResourceID;
+        size_t                      m_indexBufferResourceID;
         unsigned int                m_vertexCount;
         unsigned int                m_vertexSize;
+        unsigned int                m_indexCount;
         float                       m_clearColor[4];
     };
 

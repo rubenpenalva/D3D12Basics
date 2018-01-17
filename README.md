@@ -1,5 +1,5 @@
 # D3D12Basics
-Project to explore the basics of d3d12
+Project to explore the basics of d3d12. This is a wip repo and as such, it grows organically and it is not production ready.
 
 Third party libraries credits:
 https://github.com/nothings/stb

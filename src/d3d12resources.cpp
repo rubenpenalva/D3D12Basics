@@ -12,14 +12,10 @@
 
 using namespace D3D12Render;
 
-void D3D12Render::CreateD3D12Texture(const char* textureFileName, const wchar_t* debugName,
-                         D3D12GpuPtr d3d12Gpu)
+D3D12ResourceID D3D12Render::CreateD3D12Texture(const char* textureFileName, const wchar_t* debugName,
+                                                D3D12GpuPtr d3d12Gpu)
 {
     assert(d3d12Gpu);
-    ID3D12DevicePtr d3d12Device = d3d12Gpu->GetDevice();
-    assert(d3d12Device);
-    ID3D12DescriptorHeapPtr descriptorHeap = d3d12Gpu->GetSRVDescriptorHeap();
-    assert(descriptorHeap);
 
     // NOTE: move this to a struct so it can be const when loading the data
     int textureWidth;
@@ -44,10 +40,10 @@ void D3D12Render::CreateD3D12Texture(const char* textureFileName, const wchar_t*
     textureUploadTask.m_desc.Texture2D.PlaneSlice = 0;
     textureUploadTask.m_desc.Texture2D.ResourceMinLODClamp = 0.0f;
 
-    d3d12Gpu->AddUploadTexture2DTask(textureUploadTask);
+    return d3d12Gpu->AddUploadTexture2DTask(textureUploadTask);
 }
 
-size_t D3D12Render::CreateD3D12Buffer(void* bufferData, unsigned int bufferDataSize, const wchar_t* debugName, D3D12GpuPtr d3d12Gpu)
+D3D12ResourceID D3D12Render::CreateD3D12Buffer(void* bufferData, unsigned int bufferDataSize, const wchar_t* debugName, D3D12GpuPtr d3d12Gpu)
 {
     D3D12GpuUploadBufferTask bufferUploadTask;
     bufferUploadTask.m_bufferData = bufferData;

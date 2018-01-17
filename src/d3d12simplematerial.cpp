@@ -12,6 +12,7 @@
 
 // project includes
 #include "utils.h"
+#include "d3d12descriptorheap.h"
 
 using namespace D3D12Render;
 using namespace Utils;
@@ -134,6 +135,13 @@ D3D12SimpleMaterial::D3D12SimpleMaterial(ID3D12DevicePtr d3d12Device) : m_device
 
 D3D12SimpleMaterial::~D3D12SimpleMaterial()
 {}
+
+void D3D12SimpleMaterial::Apply(ID3D12GraphicsCommandListPtr commandList, D3D12DescriptorHeapPtr descriptorHeap,
+                                const std::vector<D3D12ResourceExt>& resources)
+{
+    commandList->SetGraphicsRootDescriptorTable(0, descriptorHeap->GetGPUDescHandle(resources[m_cbID].m_resourceViewID));
+    commandList->SetGraphicsRootDescriptorTable(1, descriptorHeap->GetGPUDescHandle(resources[m_textureID].m_resourceViewID));
+}
 
 void D3D12SimpleMaterial::Load()
 {

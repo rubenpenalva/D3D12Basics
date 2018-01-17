@@ -18,6 +18,7 @@
 // Project includes
 #include "utils.h"
 #include "d3d12simplematerial.h"
+#include "d3d12descriptorheap.h"
 
 using namespace D3D12Render;
 using namespace Utils;
@@ -180,7 +181,7 @@ void D3D12Gpus::DiscoverAdapters()
     }
 }
 
-D3D12Gpu::D3D12Gpu(IDXGIFactory4Ptr factory, IDXGIAdapterPtr adapter, HWND hwnd)    :   m_backbufferIndex(0), m_cbvsrvuavDescriptorOffset(0)
+D3D12Gpu::D3D12Gpu(IDXGIFactory4Ptr factory, IDXGIAdapterPtr adapter, HWND hwnd)    :   m_backbufferIndex(0), m_srvDescHeap()
 {
     assert(factory);
     assert(hwnd);
@@ -238,14 +239,7 @@ D3D12Gpu::D3D12Gpu(IDXGIFactory4Ptr factory, IDXGIAdapterPtr adapter, HWND hwnd)
     CreateCommandList();
 
     // Create descriptor heap
-    {
-        D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-        heapDesc.NumDescriptors = 1024;
-        heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-        AssertIfFailed(m_device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_cbvsrvuavDescriptorHeap)));
-        m_cbvsrvuavDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-    }
+    m_srvDescHeap = std::make_shared<D3D12DescriptorHeap>(m_device);
 
     // Create dynamic constant buffers heap
     {
@@ -279,18 +273,20 @@ D3D12Gpu::~D3D12Gpu()
     CloseHandle(m_fenceEvent);
 }
 
-void D3D12Gpu::AddUploadTexture2DTask(const D3D12GpuUploadTexture2DTask& uploadTask)
+D3D12ResourceID D3D12Gpu::AddUploadTexture2DTask(const D3D12GpuUploadTexture2DTask& uploadTask)
 {
     const size_t resourceID = m_resources.size();
-    m_resources.push_back(nullptr);
+    m_resources.push_back({ 0, nullptr });
 
     m_uploadTexture2DTasks.push_back({ resourceID, uploadTask });
+
+    return resourceID;
 }
 
-size_t D3D12Gpu::AddUploadBufferTask(const D3D12GpuUploadBufferTask& uploadTask)
+D3D12ResourceID D3D12Gpu::AddUploadBufferTask(const D3D12GpuUploadBufferTask& uploadTask)
 {
     const size_t resourceID = m_resources.size();
-    m_resources.push_back(nullptr);
+    m_resources.push_back({0, nullptr });
     
     m_uploadBufferTasks.push_back({ resourceID, uploadTask });
 
@@ -302,17 +298,13 @@ void D3D12Gpu::AddRenderTask(const D3D12GpuRenderTask& renderTask)
     m_renderTasks.push_back(renderTask);
 }
 
-size_t D3D12Gpu::CreateDynamicConstantBuffer(unsigned int sizeInBytes)
+D3D12DynamicResourceID D3D12Gpu::CreateDynamicConstantBuffer(unsigned int sizeInBytes)
 {
-    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
-    cbvDesc.BufferLocation = m_dynamicConstantBufferHeapCurrentPtr;
-    cbvDesc.SizeInBytes = CalculateConstantBufferRequiredSize(sizeInBytes);
+    const unsigned int actualSize = CalculateConstantBufferRequiredSize(sizeInBytes);
 
-    auto cpuDescHandle = m_cbvsrvuavDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-    cpuDescHandle.ptr += m_cbvsrvuavDescriptorOffset++ * m_cbvsrvuavDescriptorSize;
-    m_device->CreateConstantBufferView(&cbvDesc, cpuDescHandle);
-
-    m_dynamicConstantBufferHeapCurrentPtr += cbvDesc.SizeInBytes;
+    const D3D12DescriptorID cbvID = m_srvDescHeap->CreateCBV(m_dynamicConstantBufferHeapCurrentPtr, actualSize);
+    
+    m_dynamicConstantBufferHeapCurrentPtr += actualSize;
     
     const size_t cbID = m_dynamicConstantBuffers.size();
     
@@ -327,15 +319,16 @@ size_t D3D12Gpu::CreateDynamicConstantBuffer(unsigned int sizeInBytes)
 
     DynamicConstantBuffer dynamicConstantBuffer;
     dynamicConstantBuffer.m_sizeInBytes = sizeInBytes;
-    dynamicConstantBuffer.m_requiredSizeInBytes = cbvDesc.SizeInBytes;
+    dynamicConstantBuffer.m_requiredSizeInBytes = actualSize;
     dynamicConstantBuffer.m_memPtr = currentBuffersMemPtr;
+    dynamicConstantBuffer.m_cbvID = cbvID;
 
     m_dynamicConstantBuffers.push_back(dynamicConstantBuffer);
-    
+
     return cbID;
 }
 
-void D3D12Gpu::UpdateDynamicConstantBuffer(size_t id, void* data)
+void D3D12Gpu::UpdateDynamicConstantBuffer(D3D12DynamicResourceID id, void* data)
 {
     assert(id < m_dynamicConstantBuffers.size());
 
@@ -344,7 +337,49 @@ void D3D12Gpu::UpdateDynamicConstantBuffer(size_t id, void* data)
     memcpy(dynamicConstantBuffer.m_memPtr, data, dynamicConstantBuffer.m_sizeInBytes);
 }
 
-void D3D12Gpu::Execute()
+void D3D12Gpu::ExecuteGraphicsCommands()
+{
+    // Execute the graphics commands
+    if (!m_renderTasks.size())
+        return;
+
+    AssertIfFailed(m_commandAllocator->Reset());
+    AssertIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
+
+    m_commandList->ResourceBarrier(1, &m_backbuffers->Transition(m_backbufferIndex, D3D12Gpu::D3D12BackBuffers<BackBuffersCount>::TransitionType::Present_To_RenderTarget));
+
+    auto backbufferRT = m_backbuffers->GetRenderTarget(m_backbufferIndex);
+    m_commandList->OMSetRenderTargets(1, &backbufferRT, FALSE, nullptr);
+
+    // TODO rework this
+    if (!m_renderTasks[0].m_simpleMaterial)
+        m_commandList->ClearRenderTargetView(backbufferRT, m_renderTasks[0].m_clearColor, 0, nullptr);
+
+    if (m_renderTasks.size() > 1)
+    {
+        m_commandList->SetPipelineState(m_renderTasks[1].m_simpleMaterial->GetPSO().Get());
+
+        // All render tasks have the same root signature
+        m_commandList->SetGraphicsRootSignature(m_renderTasks[1].m_simpleMaterial->GetRootSignature().Get());
+
+        ID3D12DescriptorHeap* ppHeaps[] = { m_srvDescHeap->GetDescriptorHeap().Get() };
+        m_commandList->SetDescriptorHeaps(1, ppHeaps);
+
+        for (const auto& renderTask : m_renderTasks)
+            RecordRenderTask(renderTask, backbufferRT);
+    }
+
+    m_renderTasks.clear();
+
+    m_commandList->ResourceBarrier(1, &m_backbuffers->Transition(m_backbufferIndex, D3D12Gpu::D3D12BackBuffers<BackBuffersCount>::TransitionType::RenderTarget_To_Present));
+    AssertIfFailed(m_commandList->Close());
+
+    // Execute the command list.
+    ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
+    m_commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+}
+
+void D3D12Gpu::ExecuteCopyCommands()
 {
     // Execute the resources copying commands
     const size_t uploadBufferTasksCount = m_uploadBufferTasks.size();
@@ -359,8 +394,10 @@ void D3D12Gpu::Execute()
         {
             for (const auto& uploadBufferTask : m_uploadBufferTasks)
             {
-                ID3D12ResourcePtr uploadHeapPtr = CreateCommitedBuffer(&m_resources[uploadBufferTask.first], uploadBufferTask.second.m_bufferData,
-                                                                        uploadBufferTask.second.m_bufferDataSize, uploadBufferTask.second.m_bufferName);
+                ID3D12ResourcePtr uploadHeapPtr = CreateCommitedBuffer(&m_resources[uploadBufferTask.m_resourceID].m_resource, 
+                                                                        uploadBufferTask.m_task.m_bufferData,
+                                                                        uploadBufferTask.m_task.m_bufferDataSize,
+                                                                        uploadBufferTask.m_task.m_bufferName);
                 uploadHeaps.push_back(uploadHeapPtr);
             }
             m_uploadBufferTasks.clear();
@@ -369,15 +406,20 @@ void D3D12Gpu::Execute()
         {
             for (const auto& uploadTexture2DTask : m_uploadTexture2DTasks)
             {
-                ID3D12ResourcePtr uploadHeapPtr = CreateCommitedTexture2D(&m_resources[uploadTexture2DTask.first], uploadTexture2DTask.second.m_data,
-                                                                            uploadTexture2DTask.second.m_dataSize, uploadTexture2DTask.second.m_width, 
-                                                                            uploadTexture2DTask.second.m_height, uploadTexture2DTask.second.m_debugName);
+                auto& resource = m_resources[uploadTexture2DTask.m_resourceID];
+                ID3D12ResourcePtr uploadHeapPtr = CreateCommitedTexture2D(&resource.m_resource,
+                                                                            uploadTexture2DTask.m_task.m_data,
+                                                                            uploadTexture2DTask.m_task.m_dataSize,
+                                                                            uploadTexture2DTask.m_task.m_width,
+                                                                            uploadTexture2DTask.m_task.m_height,
+                                                                            uploadTexture2DTask.m_task.m_debugName);
 
                 uploadHeaps.push_back(uploadHeapPtr);
 
-                D3D12_CPU_DESCRIPTOR_HANDLE destDesc = m_cbvsrvuavDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-                destDesc.ptr += m_cbvsrvuavDescriptorOffset++ * m_cbvsrvuavDescriptorSize;
-                m_device->CreateShaderResourceView(m_resources[uploadTexture2DTask.first].Get(), &uploadTexture2DTask.second.m_desc, destDesc);
+                const D3D12DescriptorID srvID = m_srvDescHeap->CreateSRV(resource.m_resource.Get(),
+                                                                         uploadTexture2DTask.m_task.m_desc);
+
+                resource.m_resourceViewID = srvID;
             }
             m_uploadTexture2DTasks.clear();
         }
@@ -385,52 +427,8 @@ void D3D12Gpu::Execute()
         AssertIfFailed(m_commandList->Close());
         ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
         m_commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
-        
+
         WaitForGPU();
-    }
-
-    // Execute the graphics commands
-    if (m_renderTasks.size())
-    {
-        AssertIfFailed(m_commandAllocator->Reset());
-        AssertIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
-
-        m_commandList->ResourceBarrier(1, &m_backbuffers->Transition(m_backbufferIndex, D3D12Gpu::D3D12BackBuffers<BackBuffersCount>::TransitionType::Present_To_RenderTarget));
-
-        auto backbufferRT = m_backbuffers->GetRenderTarget(m_backbufferIndex);
-        m_commandList->OMSetRenderTargets(1, &backbufferRT, FALSE, nullptr);
-
-        // TODO rework this
-        if (!m_renderTasks[0].m_simpleMaterial)
-            m_commandList->ClearRenderTargetView(backbufferRT, m_renderTasks[0].m_clearColor, 0, nullptr);
-
-        if (m_renderTasks.size() > 1)
-        {
-            m_commandList->SetPipelineState(m_renderTasks[1].m_simpleMaterial->GetPSO().Get());
-
-            // All render tasks have the same root signature
-            m_commandList->SetGraphicsRootSignature(m_renderTasks[1].m_simpleMaterial->GetRootSignature().Get());
-
-            ID3D12DescriptorHeap* ppHeaps[] = { m_cbvsrvuavDescriptorHeap.Get() };
-            m_commandList->SetDescriptorHeaps(1, ppHeaps);
-            m_commandList->SetGraphicsRootDescriptorTable(0, m_cbvsrvuavDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-            
-            auto gpuDescriptorHandle = m_cbvsrvuavDescriptorHeap->GetGPUDescriptorHandleForHeapStart();
-            gpuDescriptorHandle.ptr += m_cbvsrvuavDescriptorSize;
-            m_commandList->SetGraphicsRootDescriptorTable(1, gpuDescriptorHandle);
-
-            for (const auto& renderTask : m_renderTasks)
-                RecordRenderTask(renderTask, backbufferRT);
-        }
-
-        m_renderTasks.clear();
-
-        m_commandList->ResourceBarrier(1, &m_backbuffers->Transition(m_backbufferIndex, D3D12Gpu::D3D12BackBuffers<BackBuffersCount>::TransitionType::RenderTarget_To_Present));
-        AssertIfFailed(m_commandList->Close());
-
-        // Execute the command list.
-        ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
-        m_commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
     }
 }
 
@@ -677,14 +675,24 @@ void D3D12Gpu::RecordRenderTask(const D3D12GpuRenderTask& renderTask, D3D12_CPU_
         return;
     }
 
+    renderTask.m_simpleMaterial->Apply(m_commandList, m_srvDescHeap, m_resources);
+
     m_commandList->RSSetViewports(1, &renderTask.m_viewport);
     m_commandList->RSSetScissorRects(1, &renderTask.m_scissorRect);
     m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     
-    D3D12_VERTEX_BUFFER_VIEW vertexBufferView { m_resources[renderTask.m_vertexBufferResourceID]->GetGPUVirtualAddress(), renderTask.m_vertexSize * renderTask.m_vertexCount, renderTask.m_vertexSize };
+    D3D12_VERTEX_BUFFER_VIEW vertexBufferView 
+    {
+        m_resources[renderTask.m_vertexBufferResourceID].m_resource->GetGPUVirtualAddress(), 
+        renderTask.m_vertexSize * renderTask.m_vertexCount, renderTask.m_vertexSize 
+    };
     m_commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
 
-    D3D12_INDEX_BUFFER_VIEW indexBufferView{ m_resources[renderTask.m_indexBufferResourceID]->GetGPUVirtualAddress(), renderTask.m_indexCount * sizeof(uint16_t), DXGI_FORMAT_R16_UINT };
+    D3D12_INDEX_BUFFER_VIEW indexBufferView
+    {
+        m_resources[renderTask.m_indexBufferResourceID].m_resource->GetGPUVirtualAddress(), 
+        renderTask.m_indexCount * sizeof(uint16_t), DXGI_FORMAT_R16_UINT 
+    };
     m_commandList->IASetIndexBuffer(&indexBufferView);
 
     m_commandList->DrawIndexedInstanced(renderTask.m_indexCount, 1, 0, 0, 0);

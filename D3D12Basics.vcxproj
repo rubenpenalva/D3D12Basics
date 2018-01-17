@@ -84,6 +84,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\d3d12descriptorheap.cpp" />
     <ClCompile Include="src\d3d12gpus.cpp" />
     <ClCompile Include="src\d3d12simplematerial.cpp" />
     <ClCompile Include="src\d3d12resources.cpp" />
@@ -92,6 +93,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\d3d12basicsfwd.h" />
+    <ClInclude Include="src\d3d12descriptorheap.h" />
     <ClInclude Include="src\d3d12fwd.h" />
     <ClInclude Include="src\d3d12gpus.h" />
     <ClInclude Include="src\d3d12simplematerial.h" />

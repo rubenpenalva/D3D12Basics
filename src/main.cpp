@@ -40,6 +40,10 @@
 
 namespace
 {
+    using Float2    = DirectX::XMFLOAT2;
+    using Float3    = DirectX::XMFLOAT3;
+    using Matrix44  = DirectX::XMFLOAT4X4;
+
     const size_t g_vertexElemsCount = 5;
     const size_t g_verticesCount = 4;
     float g_vertices[g_verticesCount * g_vertexElemsCount]
@@ -63,9 +67,6 @@ namespace
 
     struct Mesh
     {
-        using Float2 = DirectX::XMFLOAT2;
-        using Float3 = DirectX::XMFLOAT3;
-
         std::vector<Float3>     m_vertexPositions;
         std::vector<Float2>     m_vertexUVs;
 
@@ -83,6 +84,20 @@ namespace
 
         return planeMesh;
     }
+
+    struct Camera
+    {
+        // Camera matrix
+        Matrix44 m_worldToCamera;
+
+        // Projection matrix
+        Matrix44 m_cameraToClip;
+        
+        Camera()
+        {
+
+        }
+    };
 }
 
 int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /*szCmdLine*/, int /*iCmdShow*/)
@@ -96,12 +111,13 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     D3D12Render::D3D12GpuPtr gpu = gpus.CreateGpu(mainGpuID, customWindow.GetHWND());
     
     // Load resources for the scene
-    const size_t vertexBufferResourceID = D3D12Render::CreateD3D12Buffer(g_vertices, g_vertexBufferSize, L"vb - Viewport Quad", gpu);
-    const size_t indexBufferResourceID = D3D12Render::CreateD3D12Buffer(g_indices, g_indexBufferSize, L"ib - Viewport Quad", gpu);
-    D3D12Render::CreateD3D12Texture(g_texture256FileName, L"texture2d - Texture 256", gpu);
-    const size_t dynamicConstantBufferID = gpu->CreateDynamicConstantBuffer(sizeof(DirectX::XMFLOAT4X4));
-    gpu->Execute();
+    const D3D12Render::D3D12ResourceID vertexBufferResourceID = D3D12Render::CreateD3D12Buffer(g_vertices, g_vertexBufferSize, L"vb - Viewport Quad", gpu);
+    const D3D12Render::D3D12ResourceID indexBufferResourceID = D3D12Render::CreateD3D12Buffer(g_indices, g_indexBufferSize, L"ib - Viewport Quad", gpu);
+    const D3D12Render::D3D12ResourceID texture256ID = D3D12Render::CreateD3D12Texture(g_texture256FileName, L"texture2d - Texture 256", gpu);
+    const D3D12Render::D3D12ResourceID dynamicConstantBufferID = gpu->CreateDynamicConstantBuffer(sizeof(DirectX::XMFLOAT4X4));
+    gpu->ExecuteCopyCommands();
 
+    // Create tasks for the gpu
     D3D12Render::D3D12GpuRenderTask clearRTRenderTask;
     clearRTRenderTask.m_simpleMaterial = nullptr;
     const float clearColor[4]{ 0.0f, 0.2f, 0.4f, 1.0f };
@@ -110,6 +126,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     D3D12_VIEWPORT viewport = { 0.0f, 0.0f, static_cast<float>(Utils::CustomWindow::GetResolution().m_width), static_cast<float>(Utils::CustomWindow::GetResolution().m_height), D3D12_MIN_DEPTH, D3D12_MAX_DEPTH };
     RECT scissorRect = { 0L, 0L, static_cast<long>(Utils::CustomWindow::GetResolution().m_width), static_cast<long>(Utils::CustomWindow::GetResolution().m_height) };
     D3D12Render::D3D12SimpleMaterialPtr simpleMaterial = std::make_shared<D3D12Render::D3D12SimpleMaterial>(gpu->GetDevice());
+    simpleMaterial->SetConstantBuffer(dynamicConstantBufferID);
+    simpleMaterial->SetTexture(texture256ID);
 
     D3D12Render::D3D12GpuRenderTask viewportQuadRenderTask;
     viewportQuadRenderTask.m_simpleMaterial = simpleMaterial;
@@ -157,7 +175,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
             // Execute command list
             {
-                gpu->Execute();
+                gpu->ExecuteGraphicsCommands();
             }
 
             // Present

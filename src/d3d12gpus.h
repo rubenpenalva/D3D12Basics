@@ -14,6 +14,7 @@
 
 // project includes
 #include "d3d12basicsfwd.h"
+#include "d3d12descriptorheap.h"
 
 namespace D3D12Render
 {
@@ -67,6 +68,12 @@ namespace D3D12Render
         unsigned int                m_indexCount;
         float                       m_clearColor[4];
     };
+    
+    struct D3D12ResourceExt
+    {
+        D3D12DescriptorID m_resourceViewID;
+        ID3D12ResourcePtr m_resource;
+    };
 
     class D3D12Gpu
     {
@@ -83,25 +90,35 @@ namespace D3D12Render
 
         ID3D12DevicePtr GetDevice() const { return m_device; }
 
-        ID3D12DescriptorHeapPtr GetSRVDescriptorHeap() const { return m_cbvsrvuavDescriptorHeap; };
+        D3D12ResourceID AddUploadTexture2DTask(const D3D12GpuUploadTexture2DTask& uploadTask);
 
-        void AddUploadTexture2DTask(const D3D12GpuUploadTexture2DTask& uploadTask);
-        
-        size_t AddUploadBufferTask(const D3D12GpuUploadBufferTask& uploadTask);
+        D3D12ResourceID AddUploadBufferTask(const D3D12GpuUploadBufferTask& uploadTask);
 
         void AddRenderTask(const D3D12GpuRenderTask& renderTask);
 
-        size_t CreateDynamicConstantBuffer(unsigned int sizeInBytes);
+        D3D12DynamicResourceID CreateDynamicConstantBuffer(unsigned int sizeInBytes);
 
-        void UpdateDynamicConstantBuffer(size_t id, void* data);
+        void UpdateDynamicConstantBuffer(D3D12DynamicResourceID id, void* data);
 
-        void Execute();
+        void ExecuteGraphicsCommands();
+
+        void ExecuteCopyCommands();
 
         void Flush();
 
     private:
-        using D3D12GpuUploadBufferTaskExt = std::pair<size_t, D3D12GpuUploadBufferTask>;
-        using D3D12GpuUploadTexture2DTaskExt = std::pair<size_t, D3D12GpuUploadTexture2DTask>;
+        // TODO unify buffer and texture 2d resources code path
+        struct D3D12GpuUploadBufferTaskExt
+        {
+            D3D12ResourceID             m_resourceID;
+            D3D12GpuUploadBufferTask    m_task;
+        };
+
+        struct D3D12GpuUploadTexture2DTaskExt
+        {
+            D3D12ResourceID             m_resourceID;
+            D3D12GpuUploadTexture2DTask m_task;
+        };
 
         template<unsigned int BackBuffersCount>
         class D3D12BackBuffers;
@@ -129,26 +146,25 @@ namespace D3D12Render
         ID3D12GpuJobPtr m_job;
 
         unsigned int m_backbufferIndex;
-                
-        ID3D12DescriptorHeapPtr m_cbvsrvuavDescriptorHeap;
-        unsigned int m_cbvsrvuavDescriptorSize;
-        size_t m_cbvsrvuavDescriptorOffset;
+
+        D3D12DescriptorHeapPtr m_srvDescHeap;
 
         std::vector<D3D12GpuUploadTexture2DTaskExt>    m_uploadTexture2DTasks;
         std::vector<D3D12GpuUploadBufferTaskExt>       m_uploadBufferTasks;
 
         std::vector<D3D12GpuRenderTask> m_renderTasks;
 
-        std::vector<ID3D12ResourcePtr> m_resources;
+        std::vector<D3D12ResourceExt> m_resources;
 
         ID3D12ResourcePtr m_dynamicConstantBuffersHeap;
         D3D12_GPU_VIRTUAL_ADDRESS m_dynamicConstantBufferHeapCurrentPtr;
         void* m_dynamicConstantBuffersMemPtr;
         struct DynamicConstantBuffer
         {
-            uint64_t m_sizeInBytes;
-            uint64_t m_requiredSizeInBytes;
-            void* m_memPtr;
+            uint64_t            m_sizeInBytes;
+            uint64_t            m_requiredSizeInBytes;
+            void*               m_memPtr;
+            D3D12DescriptorID   m_cbvID;
         };
         std::vector<DynamicConstantBuffer> m_dynamicConstantBuffers;
 
@@ -165,6 +181,4 @@ namespace D3D12Render
 
         void RecordRenderTask(const D3D12GpuRenderTask& renderTask, D3D12_CPU_DESCRIPTOR_HANDLE backbufferRT);
     };
-
-
 }

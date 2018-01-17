@@ -39,6 +39,9 @@
     <ClCompile Include="src\d3d12resources.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\d3d12descriptorheap.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\d3d12gpus.h">
@@ -73,6 +76,9 @@
     </ClInclude>
     <ClInclude Include="thirdparty\directxmath\Inc\DirectXPackedVector.h">
       <Filter>ThirdParty\DirectxMath</Filter>
+    </ClInclude>
+    <ClInclude Include="src\d3d12descriptorheap.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

@@ -98,7 +98,7 @@ namespace D3D12Render
 
         D3D12DynamicResourceID CreateDynamicConstantBuffer(unsigned int sizeInBytes);
 
-        void UpdateDynamicConstantBuffer(D3D12DynamicResourceID id, void* data);
+        void UpdateDynamicConstantBuffer(D3D12DynamicResourceID id, const void* data);
 
         void ExecuteGraphicsCommands();
 

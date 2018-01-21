@@ -36,23 +36,27 @@
 #include <d3d12.h>
 
 // thirdparty includes
-#include "DirectxMath/Inc/DirectXMath.h"
+#include "DirectXTK12/Inc/SimpleMath.h"
 
 namespace
 {
-    using Float2    = DirectX::XMFLOAT2;
-    using Float3    = DirectX::XMFLOAT3;
-    using Matrix44  = DirectX::XMFLOAT4X4;
+    using Float2    = DirectX::SimpleMath::Vector2;
+    using Float3    = DirectX::SimpleMath::Vector3;
+    using Matrix44  = DirectX::SimpleMath::Matrix;
+
+    // NOTE: https://www.gnu.org/software/libc/manual/html_node/Mathematical-Constants.html
+    constexpr auto M_PI     = 3.14159265358979323846;
+    constexpr auto M_PI_2   = M_PI * 0.5;
 
     const size_t g_vertexElemsCount = 5;
     const size_t g_verticesCount = 4;
     float g_vertices[g_verticesCount * g_vertexElemsCount]
     {
-        //Position                                                                 UV
-        0.5f, 0.5f*Utils::CustomWindow::GetResolution().m_aspectRatio, 0.0f,       1.0f, 0.0f,
-        0.5f, -0.5f*Utils::CustomWindow::GetResolution().m_aspectRatio, 0.0f,      1.0f, 1.0f,
-        -0.5f, 0.5f*Utils::CustomWindow::GetResolution().m_aspectRatio, 0.0f,      0.0f, 0.0f,
-        -0.5f, -0.5f*Utils::CustomWindow::GetResolution().m_aspectRatio, 0.0f,     0.0f, 1.0f,
+        //Position              UV
+        0.5f, 0.5f, 0.0f,       1.0f, 0.0f,
+        0.5f, -0.5f, 0.0f,      1.0f, 1.0f,
+        -0.5f, 0.5f, 0.0f,      0.0f, 0.0f,
+        -0.5f, -0.5f, 0.0f,     0.0f, 1.0f,
     };
     const size_t g_vertexSize = g_vertexElemsCount * sizeof(float);
     const size_t g_vertexBufferSize = g_verticesCount * g_vertexSize;
@@ -71,7 +75,34 @@ namespace
         std::vector<Float2>     m_vertexUVs;
 
         std::vector<uint16_t>   m_indices;
+
+        Mesh()
+        {}
+
+        Mesh(unsigned int verticesCount, unsigned int indicesCount) :   m_vertexPositions(verticesCount), m_vertexUVs(verticesCount),
+                                                                        m_indices(indicesCount)
+        {
+            m_vertexPositions.resize(verticesCount);
+            m_vertexUVs.resize(verticesCount);
+
+            m_indices.resize(indicesCount);
+        }
     };
+
+    Float3 SphericalToCartersian(float longitude, float latitude, float altitude = 1.0f)
+    {
+        const float sinLat = sinf(latitude);
+        const float sinLon = sinf(longitude);
+        
+        const float cosLat = cosf(latitude);
+        const float cosLon = cosf(longitude);
+
+        Float3 cartesianCoordinates;
+        cartesianCoordinates.x = sinLat * cosLon;
+        cartesianCoordinates.y = cosLat;
+        cartesianCoordinates.x = sinLat * sinLon;
+        return cartesianCoordinates * altitude;
+    }
 
     Mesh CreatePlane()
     {
@@ -85,18 +116,32 @@ namespace
         return planeMesh;
     }
 
-    struct Camera
+    class Camera
     {
-        // Camera matrix
-        Matrix44 m_worldToCamera;
-
-        // Projection matrix
-        Matrix44 m_cameraToClip;
-        
-        Camera()
+    public:
+        // NOTE Operating on a LH coordinate system
+        // NOTE fov is in radians
+        Camera( const Float3& position, const Float3& target = Float3::Zero, float fov = M_PI_2, 
+                float aspectRatio = Utils::CustomWindow::GetResolution().m_aspectRatio,
+                float nearPlane = 0.1f, float farPlane = 1000.0f, const Float3& up = Float3::UnitY)
         {
+            m_cameraToClip = Matrix44::CreatePerspectiveFieldOfViewLH(fov, aspectRatio, nearPlane, farPlane);
 
+            m_worldToCamera = Matrix44::CreateLookAtLH(position, target, up);
         }
+
+        void TranslateLookingAt(const Float3& position, const Float3& target, const Float3& up = Float3::UnitY)
+        {
+            m_worldToCamera = Matrix44::CreateLookAtLH(position, target, up);
+        }
+
+        const Matrix44& CameraToClip() const { return m_cameraToClip; }
+        
+        const Matrix44& WorldToCamera() const { return m_worldToCamera; }
+
+    private:
+        Matrix44 m_worldToCamera;
+        Matrix44 m_cameraToClip;
     };
 }
 
@@ -110,7 +155,10 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     const D3D12Render::D3D12Gpus::GpuID mainGpuID = 0;
     D3D12Render::D3D12GpuPtr gpu = gpus.CreateGpu(mainGpuID, customWindow.GetHWND());
     
-    // Load resources for the scene
+    // Create scene cpu resources 
+    Camera camera(Float3(0.0f, 0.0f, -1.0f));
+
+    // Load scene gpu resources
     const D3D12Render::D3D12ResourceID vertexBufferResourceID = D3D12Render::CreateD3D12Buffer(g_vertices, g_vertexBufferSize, L"vb - Viewport Quad", gpu);
     const D3D12Render::D3D12ResourceID indexBufferResourceID = D3D12Render::CreateD3D12Buffer(g_indices, g_indexBufferSize, L"ib - Viewport Quad", gpu);
     const D3D12Render::D3D12ResourceID texture256ID = D3D12Render::CreateD3D12Texture(g_texture256FileName, L"texture2d - Texture 256", gpu);
@@ -162,9 +210,22 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         {
             const auto frameBeginTick = std::chrono::high_resolution_clock::now();
 
+            // Update scene
             {
-                DirectX::XMMATRIX transform = DirectX::XMMatrixTranslation(sinf(accumulatedTime), cosf(accumulatedTime), 0.0f);
-                gpu->UpdateDynamicConstantBuffer(dynamicConstantBufferID, &transform);
+                const Float3 origin(0.0f, 0.0f, -1.0f);
+                const Float3 destination(0.0f, 0.0f, -2.0f);
+                const float interpolator = sinf(accumulatedTime) * 0.5f + 0.5f;
+                const Float3 lerpedPosition = Float3::Lerp(origin, destination, interpolator);
+
+                camera.TranslateLookingAt(lerpedPosition, Float3::Zero);
+            }
+
+            // Update gpu resources
+            {
+                const Matrix44& localToWorld = Matrix44::Identity;
+                const Matrix44 localToClip = localToWorld * camera.WorldToCamera() * camera.CameraToClip();
+
+                gpu->UpdateDynamicConstantBuffer(dynamicConstantBufferID, &localToClip);
             }
 
             // Record the command list

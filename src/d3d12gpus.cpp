@@ -328,7 +328,7 @@ D3D12DynamicResourceID D3D12Gpu::CreateDynamicConstantBuffer(unsigned int sizeIn
     return cbID;
 }
 
-void D3D12Gpu::UpdateDynamicConstantBuffer(D3D12DynamicResourceID id, void* data)
+void D3D12Gpu::UpdateDynamicConstantBuffer(D3D12DynamicResourceID id, const void* data)
 {
     assert(id < m_dynamicConstantBuffers.size());
 

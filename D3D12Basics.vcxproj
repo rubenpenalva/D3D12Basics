@@ -90,6 +90,7 @@
     <ClCompile Include="src\d3d12resources.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\utils.cpp" />
+    <ClCompile Include="thirdparty\directxtk12\Src\SimpleMath.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\d3d12basicsfwd.h" />
@@ -103,6 +104,7 @@
     <ClInclude Include="thirdparty\directxmath\Inc\DirectXColors.h" />
     <ClInclude Include="thirdparty\directxmath\Inc\DirectXMath.h" />
     <ClInclude Include="thirdparty\directxmath\Inc\DirectXPackedVector.h" />
+    <ClInclude Include="thirdparty\directxtk12\Inc\SimpleMath.h" />
     <ClInclude Include="thirdparty\stb\stb_image.h" />
   </ItemGroup>
   <ItemGroup>
@@ -113,6 +115,8 @@
     <None Include="thirdparty\directxmath\Inc\DirectXMathMisc.inl" />
     <None Include="thirdparty\directxmath\Inc\DirectXMathVector.inl" />
     <None Include="thirdparty\directxmath\Inc\DirectXPackedVector.inl" />
+    <None Include="thirdparty\directxtk12\Inc\SimpleMath.inl" />
+    <None Include="thirdparty\directxtk12\Src\TeapotData.inc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

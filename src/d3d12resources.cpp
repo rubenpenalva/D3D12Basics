@@ -43,7 +43,7 @@ D3D12ResourceID D3D12Render::CreateD3D12Texture(const char* textureFileName, con
     return d3d12Gpu->AddUploadTexture2DTask(textureUploadTask);
 }
 
-D3D12ResourceID D3D12Render::CreateD3D12Buffer(void* bufferData, unsigned int bufferDataSize, const wchar_t* debugName, D3D12GpuPtr d3d12Gpu)
+D3D12ResourceID D3D12Render::CreateD3D12Buffer(const void* bufferData, size_t  bufferDataSize, const wchar_t* debugName, D3D12GpuPtr d3d12Gpu)
 {
     D3D12GpuUploadBufferTask bufferUploadTask;
     bufferUploadTask.m_bufferData = bufferData;

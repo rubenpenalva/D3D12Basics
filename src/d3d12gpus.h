@@ -42,7 +42,7 @@ namespace D3D12Render
     struct D3D12GpuUploadTexture2DTask
     {
         void*                               m_data;
-        unsigned int                        m_dataSize;
+        size_t                              m_dataSize;
         unsigned int                        m_width;
         unsigned int                        m_height;
         D3D12_SHADER_RESOURCE_VIEW_DESC     m_desc;
@@ -51,8 +51,8 @@ namespace D3D12Render
 
     struct D3D12GpuUploadBufferTask
     {
-        void*           m_bufferData;
-        unsigned int    m_bufferDataSize;
+        const void*     m_bufferData;
+        size_t          m_bufferDataSize;
         std::wstring    m_bufferName;
     };
 
@@ -63,9 +63,9 @@ namespace D3D12Render
         RECT                        m_scissorRect;
         size_t                      m_vertexBufferResourceID;
         size_t                      m_indexBufferResourceID;
-        unsigned int                m_vertexCount;
-        unsigned int                m_vertexSize;
-        unsigned int                m_indexCount;
+        size_t                      m_vertexCount;
+        size_t                      m_vertexSize;
+        size_t                      m_indexCount;
         float                       m_clearColor[4];
     };
     
@@ -174,9 +174,10 @@ namespace D3D12Render
 
         // TODO: does visual studio 2017 support string views already? Check it and investigate when its appropriate
         // to use it
-        ID3D12ResourcePtr CreateCommitedBuffer(ID3D12ResourcePtr* buffer, void* bufferData, unsigned int bufferDataSize, const std::wstring& bufferName);
+        ID3D12ResourcePtr CreateCommitedBuffer( ID3D12ResourcePtr* buffer, const void* bufferData, size_t bufferDataSize, 
+                                                const std::wstring& bufferName);
 
-        ID3D12ResourcePtr CreateCommitedTexture2D(ID3D12ResourcePtr* resource, void* data, unsigned int dataSize,
+        ID3D12ResourcePtr CreateCommitedTexture2D(ID3D12ResourcePtr* resource, const void* data, size_t  dataSize,
                                                   unsigned int width, unsigned int height, const std::wstring& debugName);
 
         void RecordRenderTask(const D3D12GpuRenderTask& renderTask, D3D12_CPU_DESCRIPTOR_HANDLE backbufferRT);

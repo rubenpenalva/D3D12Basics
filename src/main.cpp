@@ -45,25 +45,10 @@ namespace
     using Matrix44  = DirectX::SimpleMath::Matrix;
 
     // NOTE: https://www.gnu.org/software/libc/manual/html_node/Mathematical-Constants.html
-    constexpr auto M_PI     = 3.14159265358979323846;
-    constexpr auto M_PI_2   = M_PI * 0.5;
+    constexpr float M_PI     = 3.14159265358979323846f;
+    constexpr float M_PI_2   = M_PI * 0.5f;
 
-    const size_t g_vertexElemsCount = 5;
-    const size_t g_verticesCount = 4;
-    float g_vertices[g_verticesCount * g_vertexElemsCount]
-    {
-        //Position              UV
-        0.5f, 0.5f, 0.0f,       1.0f, 0.0f,
-        0.5f, -0.5f, 0.0f,      1.0f, 1.0f,
-        -0.5f, 0.5f, 0.0f,      0.0f, 0.0f,
-        -0.5f, -0.5f, 0.0f,     0.0f, 1.0f,
-    };
-    const size_t g_vertexSize = g_vertexElemsCount * sizeof(float);
-    const size_t g_vertexBufferSize = g_verticesCount * g_vertexSize;
 
-    const size_t g_indexCount = 6;
-    uint16_t g_indices[g_indexCount] = { 0, 1, 2, 1, 3, 2 };
-    const size_t g_indexBufferSize = sizeof(uint16_t) * g_indexCount;
 
     // NOTE:  Assuming working directory contains the data folder
     const char* g_texture256FileName = "./data/texture_256.png";
@@ -71,49 +56,140 @@ namespace
 
     struct Mesh
     {
-        std::vector<Float3>     m_vertexPositions;
-        std::vector<Float2>     m_vertexUVs;
+        const static size_t VertexElemsCount = 5;
+        const static size_t VertexSize       = VertexElemsCount * sizeof(float);
 
+        struct Vertex
+        {
+            Float3 m_position;
+            Float2 m_uv;
+        };
+
+        std::vector<Vertex>     m_vertices;
         std::vector<uint16_t>   m_indices;
 
         Mesh()
         {}
 
-        Mesh(unsigned int verticesCount, unsigned int indicesCount) :   m_vertexPositions(verticesCount), m_vertexUVs(verticesCount),
-                                                                        m_indices(indicesCount)
+        Mesh(size_t verticesCount, size_t indicesCount) :    m_vertices(verticesCount * VertexElemsCount), 
+                                                            m_indices(indicesCount)
         {
-            m_vertexPositions.resize(verticesCount);
-            m_vertexUVs.resize(verticesCount);
-
-            m_indices.resize(indicesCount);
         }
+
+        size_t VertexBufferSizeInBytes() const { return m_vertices.size() * VertexSize; }
+        size_t IndexBufferSizeInBytes() const { return m_indices.size() * sizeof(uint16_t); }
     };
 
+    // TODO move to utils
     Float3 SphericalToCartersian(float longitude, float latitude, float altitude = 1.0f)
     {
         const float sinLat = sinf(latitude);
         const float sinLon = sinf(longitude);
-        
+
         const float cosLat = cosf(latitude);
         const float cosLon = cosf(longitude);
 
         Float3 cartesianCoordinates;
         cartesianCoordinates.x = sinLat * cosLon;
         cartesianCoordinates.y = cosLat;
-        cartesianCoordinates.x = sinLat * sinLon;
+        cartesianCoordinates.z = sinLat * sinLon;
         return cartesianCoordinates * altitude;
     }
 
+    // TODO move these mesh functions to a file
     Mesh CreatePlane()
     {
         Mesh planeMesh;
 
-        planeMesh.m_vertexPositions = { { -0.5f, -0.5f, 0.0f }, { -0.5f, 0.5f, 0.0f }, { 0.5f, 0.5f, 0.0f }, { 0.5f, -0.5f, 0.0f } };
-        planeMesh.m_vertexUVs = { {0.0f, 1.0f}, { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 1.0f, 1.0f } };
+        planeMesh.m_vertices = 
+        { 
+            // Positions                UVs
+            { { -0.5f, -0.5f, 0.0f },   { 0.0f, 1.0f } },
+            { { -0.5f, 0.5f, 0.0f },    { 0.0f, 0.0f } },
+            { { 0.5f, 0.5f, 0.0f },     { 1.0f, 0.0f } },
+            { { 0.5f, -0.5f, 0.0f },    { 1.0f, 1.0f } }
+        };
 
         planeMesh.m_indices = { 0, 1, 2, 0, 2, 3 };
 
         return planeMesh;
+    }
+
+    // NOTE: Check https://github.com/caosdoar/spheres
+    // Review of ways of creating a mesh sphere by @caosdoar
+    // TODO fix uv issues
+    Mesh CreateSphere(unsigned int parallelsCount = 2, unsigned int meridiansCount = 4)
+    {
+        assert(parallelsCount > 1 && meridiansCount > 3);
+
+        const unsigned int polesCount = 2; // north and south pole vertices
+        const unsigned int verticesCount = parallelsCount * meridiansCount + polesCount;
+        const unsigned int indicesPerTri = 3;
+        const unsigned int indicesCount = indicesPerTri * (2 * meridiansCount * (parallelsCount - 1) + polesCount * meridiansCount);
+        Mesh mesh(parallelsCount * meridiansCount, indicesCount);
+
+        // parallels = latitude = altitude = phi 
+        // meridians = longitude = azimuth = theta
+        const float latitudeDiff = M_PI / (parallelsCount + 1);
+        const float longitudeDiff = 2.0f * M_PI / meridiansCount;
+
+        // Build sphere rings
+        size_t currentVertexIndex = 0;
+        size_t currentPrimitive = 0;
+        const uint16_t parallelVerticesCount = static_cast<uint16_t>(meridiansCount);
+        
+        for (unsigned int j = 0; j < parallelsCount; ++j)
+        {
+            // Build rings vertices
+            uint16_t verticesIndexed = static_cast<uint16_t>(meridiansCount * j);
+            const float latitude = (j+1) * latitudeDiff;
+            for (uint16_t i = 0; i < meridiansCount; ++i, ++currentVertexIndex)
+            {
+                const float longitude = i * longitudeDiff;
+                const Mesh::Vertex vertex
+                { 
+                    SphericalToCartersian(longitude, latitude), 
+                    Float2(latitude, longitude) // NOTE: this mapping has horrendous distortions on the poles
+                };
+                auto& currentVertex = mesh.m_vertices[currentVertexIndex];
+                currentVertex = vertex;
+
+                // Build rings indices
+                if (j < parallelsCount -1)
+                {
+                    const bool isLastRingQuad = i == meridiansCount - 1;
+
+                    const uint16_t vertexN1 = !isLastRingQuad ? verticesIndexed + parallelVerticesCount + i + 1 : verticesIndexed + parallelVerticesCount;
+                    mesh.m_indices[currentPrimitive++] = verticesIndexed + i;
+                    mesh.m_indices[currentPrimitive++] = !isLastRingQuad? (verticesIndexed + i + 1) : verticesIndexed;
+                    mesh.m_indices[currentPrimitive++] = vertexN1;
+
+                    mesh.m_indices[currentPrimitive++] = verticesIndexed + i;
+                    mesh.m_indices[currentPrimitive++] = vertexN1;
+                    mesh.m_indices[currentPrimitive++] = verticesIndexed + parallelVerticesCount + i;
+                }
+            }
+        }
+
+        // Build poles
+        mesh.m_vertices[verticesCount - 2] = { Float3(0.0f, 1.0f, 0.0f), Float2(0.0f, 0.0f) };
+        mesh.m_vertices[verticesCount - 1] = { Float3(0.0f, -1.0f, 0.0f), Float2(0.0f, 1.0f) };
+        for (uint16_t i = 0; i < meridiansCount; ++i)
+        {
+            mesh.m_indices[currentPrimitive++] = static_cast<uint16_t>(verticesCount - 2);
+            mesh.m_indices[currentPrimitive++] = i == meridiansCount - 1? 0 : i + 1;
+            mesh.m_indices[currentPrimitive++] = i;
+        }
+
+        const uint16_t verticesBuilt = static_cast<uint16_t>((parallelsCount - 1) * meridiansCount);
+        for (uint16_t i = 0; i < meridiansCount; ++i)
+        {
+            mesh.m_indices[currentPrimitive++] = static_cast<uint16_t>(verticesCount - 1);
+            mesh.m_indices[currentPrimitive++] = verticesBuilt + i;
+            mesh.m_indices[currentPrimitive++] = i == meridiansCount - 1 ? verticesBuilt : verticesBuilt + i + 1;
+        }
+
+        return mesh;
     }
 
     class Camera
@@ -155,12 +231,15 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     const D3D12Render::D3D12Gpus::GpuID mainGpuID = 0;
     D3D12Render::D3D12GpuPtr gpu = gpus.CreateGpu(mainGpuID, customWindow.GetHWND());
     
+    // TODO Create two spheres, two boxes and a plane
     // Create scene cpu resources 
-    Camera camera(Float3(0.0f, 0.0f, -1.0f));
+    Camera camera(Float3(0.0f, 0.0f, -5.0f));
+    //Mesh plane = CreatePlane();
+    Mesh sphere = CreateSphere(20, 20);
 
     // Load scene gpu resources
-    const D3D12Render::D3D12ResourceID vertexBufferResourceID = D3D12Render::CreateD3D12Buffer(g_vertices, g_vertexBufferSize, L"vb - Viewport Quad", gpu);
-    const D3D12Render::D3D12ResourceID indexBufferResourceID = D3D12Render::CreateD3D12Buffer(g_indices, g_indexBufferSize, L"ib - Viewport Quad", gpu);
+    const D3D12Render::D3D12ResourceID vertexBufferResourceID = D3D12Render::CreateD3D12Buffer(sphere.m_vertices.data(), sphere.VertexBufferSizeInBytes(), L"vb - Viewport Quad", gpu);
+    const D3D12Render::D3D12ResourceID indexBufferResourceID = D3D12Render::CreateD3D12Buffer(sphere.m_indices.data(), sphere.IndexBufferSizeInBytes(), L"ib - Viewport Quad", gpu);
     const D3D12Render::D3D12ResourceID texture256ID = D3D12Render::CreateD3D12Texture(g_texture256FileName, L"texture2d - Texture 256", gpu);
     const D3D12Render::D3D12ResourceID dynamicConstantBufferID = gpu->CreateDynamicConstantBuffer(sizeof(DirectX::XMFLOAT4X4));
     gpu->ExecuteCopyCommands();
@@ -171,8 +250,19 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     const float clearColor[4]{ 0.0f, 0.2f, 0.4f, 1.0f };
     memcpy(clearRTRenderTask.m_clearColor, clearColor, sizeof(float)*4);
 
-    D3D12_VIEWPORT viewport = { 0.0f, 0.0f, static_cast<float>(Utils::CustomWindow::GetResolution().m_width), static_cast<float>(Utils::CustomWindow::GetResolution().m_height), D3D12_MIN_DEPTH, D3D12_MAX_DEPTH };
-    RECT scissorRect = { 0L, 0L, static_cast<long>(Utils::CustomWindow::GetResolution().m_width), static_cast<long>(Utils::CustomWindow::GetResolution().m_height) };
+    D3D12_VIEWPORT viewport = 
+    { 
+        0.0f, 0.0f, 
+        static_cast<float>(Utils::CustomWindow::GetResolution().m_width), 
+        static_cast<float>(Utils::CustomWindow::GetResolution().m_height), 
+        D3D12_MIN_DEPTH, D3D12_MAX_DEPTH 
+    };
+    RECT scissorRect = 
+    { 
+        0L, 0L, 
+        static_cast<long>(Utils::CustomWindow::GetResolution().m_width), 
+        static_cast<long>(Utils::CustomWindow::GetResolution().m_height) 
+    };
     D3D12Render::D3D12SimpleMaterialPtr simpleMaterial = std::make_shared<D3D12Render::D3D12SimpleMaterial>(gpu->GetDevice());
     simpleMaterial->SetConstantBuffer(dynamicConstantBufferID);
     simpleMaterial->SetTexture(texture256ID);
@@ -183,9 +273,9 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     viewportQuadRenderTask.m_scissorRect = scissorRect;
     viewportQuadRenderTask.m_vertexBufferResourceID = vertexBufferResourceID;
     viewportQuadRenderTask.m_indexBufferResourceID = indexBufferResourceID;
-    viewportQuadRenderTask.m_vertexCount = g_verticesCount;
-    viewportQuadRenderTask.m_vertexSize = g_vertexSize;
-    viewportQuadRenderTask.m_indexCount = g_indexCount;
+    viewportQuadRenderTask.m_vertexCount = sphere.m_vertices.size();
+    viewportQuadRenderTask.m_vertexSize = Mesh::VertexSize;
+    viewportQuadRenderTask.m_indexCount = sphere.m_indices.size();
   
     float lastDelta = 0.0f;
     float accumulatedTime = 0.0f;
@@ -212,8 +302,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
             // Update scene
             {
-                const Float3 origin(0.0f, 0.0f, -1.0f);
-                const Float3 destination(0.0f, 0.0f, -2.0f);
+                const Float3 origin(0.0f, 3.0f, -2.0f);
+                const Float3 destination(0.0f, -3.0f, -2.0f);
                 const float interpolator = sinf(accumulatedTime) * 0.5f + 0.5f;
                 const Float3 lerpedPosition = Float3::Lerp(origin, destination, interpolator);
 
@@ -223,7 +313,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
             // Update gpu resources
             {
                 const Matrix44& localToWorld = Matrix44::Identity;
-                const Matrix44 localToClip = localToWorld * camera.WorldToCamera() * camera.CameraToClip();
+                const Matrix44 localToClip = (localToWorld * camera.WorldToCamera() * camera.CameraToClip()).Transpose();
 
                 gpu->UpdateDynamicConstantBuffer(dynamicConstantBufferID, &localToClip);
             }

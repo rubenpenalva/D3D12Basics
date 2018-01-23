@@ -480,7 +480,7 @@ void D3D12Gpu::CreateCommandList()
 }
 
 // TODO check alignment requirements https://www.braynzarsoft.net/viewtutorial/q16390-directx-12-constant-buffers-root-descriptor-tables
-ID3D12ResourcePtr D3D12Gpu::CreateCommitedBuffer(ID3D12ResourcePtr* buffer, void* bufferData, unsigned int bufferDataSize, const std::wstring& bufferName)
+ID3D12ResourcePtr D3D12Gpu::CreateCommitedBuffer(ID3D12ResourcePtr* buffer, const void* bufferData, size_t bufferDataSize, const std::wstring& bufferName)
 {
     D3D12_HEAP_PROPERTIES defaultHeapProps 
     {
@@ -564,7 +564,7 @@ ID3D12ResourcePtr D3D12Gpu::CreateCommitedBuffer(ID3D12ResourcePtr* buffer, void
     return bufferUploadHeap;
 }
 
-ID3D12ResourcePtr D3D12Gpu::CreateCommitedTexture2D(ID3D12ResourcePtr* resource, void* data, unsigned int dataSize, 
+ID3D12ResourcePtr D3D12Gpu::CreateCommitedTexture2D(ID3D12ResourcePtr* resource, const void* data, size_t dataSize, 
                                                     unsigned int width, unsigned int height, const std::wstring& debugName)
 {
     D3D12_HEAP_PROPERTIES defaultHeapProps
@@ -684,16 +684,17 @@ void D3D12Gpu::RecordRenderTask(const D3D12GpuRenderTask& renderTask, D3D12_CPU_
     D3D12_VERTEX_BUFFER_VIEW vertexBufferView 
     {
         m_resources[renderTask.m_vertexBufferResourceID].m_resource->GetGPUVirtualAddress(), 
-        renderTask.m_vertexSize * renderTask.m_vertexCount, renderTask.m_vertexSize 
+        static_cast<UINT>(renderTask.m_vertexSize * renderTask.m_vertexCount), 
+        static_cast<UINT>(renderTask.m_vertexSize)
     };
     m_commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
 
     D3D12_INDEX_BUFFER_VIEW indexBufferView
     {
         m_resources[renderTask.m_indexBufferResourceID].m_resource->GetGPUVirtualAddress(), 
-        renderTask.m_indexCount * sizeof(uint16_t), DXGI_FORMAT_R16_UINT 
+        static_cast<UINT>(renderTask.m_indexCount * sizeof(uint16_t)), DXGI_FORMAT_R16_UINT
     };
     m_commandList->IASetIndexBuffer(&indexBufferView);
 
-    m_commandList->DrawIndexedInstanced(renderTask.m_indexCount, 1, 0, 0, 0);
+    m_commandList->DrawIndexedInstanced(static_cast<UINT>(renderTask.m_indexCount), 1, 0, 0, 0);
 }

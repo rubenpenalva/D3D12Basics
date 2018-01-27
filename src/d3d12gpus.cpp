@@ -21,7 +21,7 @@
 #include "d3d12descriptorheap.h"
 
 using namespace D3D12Render;
-using namespace Utils;
+using namespace D3D12Basics;
 
 namespace
 {
@@ -186,7 +186,7 @@ D3D12Gpu::D3D12Gpu(IDXGIFactory4Ptr factory, IDXGIAdapterPtr adapter, HWND hwnd)
     assert(factory);
     assert(hwnd);
 
-    Utils::AssertIfFailed(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_device)));
+    D3D12Basics::AssertIfFailed(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_device)));
     assert(m_device);
 
     // Describe and create the command queue.
@@ -251,17 +251,17 @@ D3D12Gpu::D3D12Gpu(IDXGIFactory4Ptr factory, IDXGIAdapterPtr adapter, HWND hwnd)
         heapProperties.CreationNodeMask = 1;
         heapProperties.VisibleNodeMask = 1;
 
-        const uint64_t page_size_64kb_in_bytes = 1024 * 64;
+        const uint64_t page_size_64kb_in_bytes = 1024 * 64; // 64 << 10
         D3D12_RESOURCE_DESC uploadHeapDesc = CreateBufferDesc(page_size_64kb_in_bytes);
         D3D12_RESOURCE_STATES initialResourceState = D3D12_RESOURCE_STATE_GENERIC_READ;
-        Utils::AssertIfFailed(m_device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &uploadHeapDesc, 
-                                                                 initialResourceState, nullptr, IID_PPV_ARGS(&m_dynamicConstantBuffersHeap)));
+        D3D12Basics::AssertIfFailed(m_device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &uploadHeapDesc,
+                                                                       initialResourceState, nullptr, IID_PPV_ARGS(&m_dynamicConstantBuffersHeap)));
 
         m_dynamicConstantBufferHeapCurrentPtr = m_dynamicConstantBuffersHeap->GetGPUVirtualAddress();
         
         // NOTE: Leaving the constant buffer memory mapped is used to avoid map/unmap pattern
         D3D12_RANGE readRange{ 0, 0 };
-        Utils::AssertIfFailed(m_dynamicConstantBuffersHeap->Map(0, &readRange, &m_dynamicConstantBuffersMemPtr));
+        D3D12Basics::AssertIfFailed(m_dynamicConstantBuffersHeap->Map(0, &readRange, &m_dynamicConstantBuffersMemPtr));
     }
 }
 
@@ -675,7 +675,15 @@ void D3D12Gpu::RecordRenderTask(const D3D12GpuRenderTask& renderTask, D3D12_CPU_
         return;
     }
 
-    renderTask.m_simpleMaterial->Apply(m_commandList, m_srvDescHeap, m_resources);
+    // Bind the resources to the pipeline
+    {
+        const auto& cbDescID = m_dynamicConstantBuffers[renderTask.m_simpleMaterialResources.m_cbID].m_cbvID;
+        const auto& cbGpuHandle = m_srvDescHeap->GetGPUDescHandle(cbDescID);
+        const auto& srvDescID = m_resources[renderTask.m_simpleMaterialResources.m_textureID].m_resourceViewID;
+        const auto& srvGpuHandle = m_srvDescHeap->GetGPUDescHandle(srvDescID);
+        
+        renderTask.m_simpleMaterial->Apply(m_commandList, cbGpuHandle, srvGpuHandle);
+    }
 
     m_commandList->RSSetViewports(1, &renderTask.m_viewport);
     m_commandList->RSSetScissorRects(1, &renderTask.m_scissorRect);

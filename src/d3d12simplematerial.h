@@ -4,13 +4,21 @@
 #include "d3d12fwd.h"
 #include "d3d12basicsfwd.h"
 
-#include "d3d12gpus.h"
+// d3d12 includes
+#include <d3d12.h>
 
 namespace D3D12Render
 {
+    struct D3D12SimpleMaterialResources
+    {
+        D3D12ResourceID m_cbID;
+        D3D12ResourceID m_textureID;
+    };
+
     class D3D12SimpleMaterial
     {
     public:
+        
         D3D12SimpleMaterial(ID3D12DevicePtr d3d12Device);
         
         ~D3D12SimpleMaterial();
@@ -19,23 +27,16 @@ namespace D3D12Render
 
         ID3D12RootSignaturePtr GetRootSignature() const { return m_rootSignature; }
 
-        void SetConstantBuffer(D3D12ResourceID cbID) { m_cbID = cbID; }
-
-        void SetTexture(D3D12ResourceID textureID) { m_textureID = textureID; }
-
-        void Apply(ID3D12GraphicsCommandListPtr commandList, D3D12DescriptorHeapPtr descriptorHeap, 
-                   const std::vector<D3D12ResourceExt>& resources);
+        void Apply(ID3D12GraphicsCommandListPtr commandList, D3D12_GPU_DESCRIPTOR_HANDLE cbv,
+                    D3D12_GPU_DESCRIPTOR_HANDLE srv);
 
     private:
         void Load();
 
-        ID3D12DevicePtr         m_device;
+        ID3D12DevicePtr                 m_device;
 
-        ID3D12PipelineStatePtr  m_defaultPSO;
-        ID3D12RootSignaturePtr  m_rootSignature;
-
-        D3D12ResourceID         m_cbID;
-        D3D12ResourceID         m_textureID;
+        ID3D12PipelineStatePtr          m_defaultPSO;
+        ID3D12RootSignaturePtr          m_rootSignature;
 
         D3D12_FEATURE_DATA_ROOT_SIGNATURE GetFeatureRootSignatureHighestVerSupported();
     };

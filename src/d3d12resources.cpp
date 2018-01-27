@@ -21,13 +21,14 @@ D3D12ResourceID D3D12Render::CreateD3D12Texture(const char* textureFileName, con
     int textureWidth;
     int textureHeight;
     int textureChannelsCount;
+    const int requestedChannelsCount = 4;
     unsigned char* textureData = stbi_load(textureFileName, &textureWidth, &textureHeight, 
-                                            &textureChannelsCount, 0);
+                                            &textureChannelsCount, requestedChannelsCount);
     assert(textureData);
 
     D3D12GpuUploadTexture2DTask textureUploadTask;
     textureUploadTask.m_data = textureData;
-    textureUploadTask.m_dataSize = textureWidth * textureHeight * textureChannelsCount * sizeof(unsigned char);
+    textureUploadTask.m_dataSize = textureWidth * textureHeight * requestedChannelsCount * sizeof(unsigned char);
     textureUploadTask.m_width = textureWidth;
     textureUploadTask.m_height = textureHeight;
     textureUploadTask.m_debugName = debugName;

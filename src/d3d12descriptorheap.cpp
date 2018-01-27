@@ -21,7 +21,7 @@ D3D12DescriptorHeap::D3D12DescriptorHeap(ID3D12DevicePtr d3d12Device, unsigned i
     heapDesc.NumDescriptors = heapSize;
     heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-    Utils::AssertIfFailed(m_d3d12Device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_descriptorHeap)));
+    D3D12Basics::AssertIfFailed(m_d3d12Device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_descriptorHeap)));
     m_descriptorSize = m_d3d12Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
     m_gpuDescHandleHeapStart = m_descriptorHeap->GetGPUDescriptorHandleForHeapStart();

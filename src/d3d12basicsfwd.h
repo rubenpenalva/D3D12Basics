@@ -16,6 +16,7 @@ namespace D3D12Render
     class ID3D12GpuJob;
     class D3D12SimpleMaterial;
     class D3D12DescriptorHeap;
+    struct D3D12ResourceExt;
     
     using IDXGIAdapters             = std::vector<IDXGIAdapterPtr>;
     using D3D12GpuPtr               = std::shared_ptr<D3D12Gpu>;

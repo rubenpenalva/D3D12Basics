@@ -5,3 +5,4 @@
 /packages
 packages.config
 *AutoRecover*.vcxproj
+*.user

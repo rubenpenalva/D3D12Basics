@@ -48,6 +48,9 @@
     <ClCompile Include="thirdparty\directxtk12\Src\SimpleMath.cpp">
       <Filter>ThirdParty\DirectxTK12</Filter>
     </ClCompile>
+    <ClCompile Include="src\scene.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\d3d12gpus.h">
@@ -88,6 +91,9 @@
     </ClInclude>
     <ClInclude Include="thirdparty\directxtk12\Inc\SimpleMath.h">
       <Filter>ThirdParty\DirectxTK12</Filter>
+    </ClInclude>
+    <ClInclude Include="src\scene.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

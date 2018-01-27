@@ -15,6 +15,7 @@
 // project includes
 #include "d3d12basicsfwd.h"
 #include "d3d12descriptorheap.h"
+#include "d3d12simplematerial.h"
 
 namespace D3D12Render
 {
@@ -58,15 +59,16 @@ namespace D3D12Render
 
     struct D3D12GpuRenderTask
     {
-        D3D12SimpleMaterialPtr      m_simpleMaterial;
-        D3D12_VIEWPORT              m_viewport;
-        RECT                        m_scissorRect;
-        size_t                      m_vertexBufferResourceID;
-        size_t                      m_indexBufferResourceID;
-        size_t                      m_vertexCount;
-        size_t                      m_vertexSize;
-        size_t                      m_indexCount;
-        float                       m_clearColor[4];
+        D3D12SimpleMaterialPtr          m_simpleMaterial;
+        D3D12SimpleMaterialResources    m_simpleMaterialResources;
+        D3D12_VIEWPORT                  m_viewport;
+        RECT                            m_scissorRect;
+        size_t                          m_vertexBufferResourceID;
+        size_t                          m_indexBufferResourceID;
+        size_t                          m_vertexCount;
+        size_t                          m_vertexSize;
+        size_t                          m_indexCount;
+        float                           m_clearColor[4];
     };
     
     struct D3D12ResourceExt

@@ -11,9 +11,9 @@
 // windows includes
 #include <windows.h>
 
-using namespace Utils;
+using namespace D3D12Basics;
 
-Utils::Resolution g_resolution { 1280, 720 , 1280.0f / 720.0f };
+D3D12Basics::Resolution g_resolution { 1280, 720 , 1280.0f / 720.0f };
 
 namespace
 {
@@ -91,12 +91,28 @@ namespace
     }
 }
 
-void Utils::AssertIfFailed(HRESULT hr)
+void D3D12Basics::AssertIfFailed(HRESULT hr)
 {
 #if NDEBUG
     hr;
 #endif
     assert(SUCCEEDED(hr));
+}
+
+// TODO move to utils
+Float3 D3D12Basics::SphericalToCartersian(float longitude, float latitude, float altitude)
+{
+    const float sinLat = sinf(latitude);
+    const float sinLon = sinf(longitude);
+
+    const float cosLat = cosf(latitude);
+    const float cosLon = cosf(longitude);
+
+    Float3 cartesianCoordinates;
+    cartesianCoordinates.x = sinLat * cosLon;
+    cartesianCoordinates.y = cosLat;
+    cartesianCoordinates.z = sinLat * sinLon;
+    return cartesianCoordinates * altitude;
 }
 
 Resolution CustomWindow::GetResolution()
@@ -113,3 +129,5 @@ CustomWindow::~CustomWindow()
 {
     UnregisterClass(g_className.c_str(), GetModuleHandle(0));
 }
+
+

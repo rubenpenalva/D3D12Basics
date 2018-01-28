@@ -99,7 +99,6 @@ void D3D12Basics::AssertIfFailed(HRESULT hr)
     assert(SUCCEEDED(hr));
 }
 
-// TODO move to utils
 Float3 D3D12Basics::SphericalToCartersian(float longitude, float latitude, float altitude)
 {
     const float sinLat = sinf(latitude);

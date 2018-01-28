@@ -26,6 +26,13 @@
 
 namespace D3D12Basics
 {
+    enum class Cube_TexCoord_MappingType
+    {
+        Cube_TexCoord_UV_SingleFace,
+        Cube_TexCoord_UV_OrigamiFaces,
+        Cube_TexCoord_UVW_CubeFaces
+    };
+
     struct Mesh
     {
         const static size_t VertexElemsCount = 5;
@@ -58,7 +65,7 @@ namespace D3D12Basics
     public:
         // NOTE Operating on a LH coordinate system
         // NOTE fov is in radians
-        Camera(const Float3& position, const Float3& target = Float3::Zero, float fov = M_PI_2,
+        Camera(const Float3& position, const Float3& target = Float3::Zero, float fov = M_PI_2 - M_PI_8,
                 float aspectRatio = CustomWindow::GetResolution().m_aspectRatio,
                 float nearPlane = 0.1f, float farPlane = 1000.0f, const Float3& up = Float3::UnitY);
 
@@ -79,4 +86,6 @@ namespace D3D12Basics
     // Review of ways of creating a mesh sphere by @caosdoar
     // TODO fix uv issues
     Mesh CreateSphere(unsigned int parallelsCount = 2, unsigned int meridiansCount = 4);
+
+    Mesh CreateCube(Cube_TexCoord_MappingType texcoordType = Cube_TexCoord_MappingType::Cube_TexCoord_UV_SingleFace);
 }

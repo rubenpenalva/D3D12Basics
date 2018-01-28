@@ -69,10 +69,10 @@ namespace
         D3D12MeshBuffer meshBuffer;
 
         meshBuffer.m_vbID = D3D12Render::CreateD3D12Buffer(mesh.m_vertices.data(), mesh.VertexBufferSizeInBytes(),
-                                                                                    (L"vb - " + mesh.m_name).c_str(), gpu);
+                                                           (L"vb - " + mesh.m_name).c_str(), gpu);
 
         meshBuffer.m_ibID = D3D12Render::CreateD3D12Buffer(mesh.m_indices.data(), mesh.IndexBufferSizeInBytes(),
-                                                                                    (L"ib - " + mesh.m_name).c_str(), gpu);
+                                                           (L"ib - " + mesh.m_name).c_str(), gpu);
         return meshBuffer;
     }
 
@@ -81,8 +81,6 @@ namespace
                                                      D3D12Render::D3D12SimpleMaterialPtr simpleMaterial, 
                                                      D3D12Render::D3D12SimpleMaterialResources& resources)
     {
-
-
         D3D12Render::D3D12GpuRenderTask renderTask;
 
         renderTask.m_simpleMaterial = simpleMaterial;
@@ -97,7 +95,6 @@ namespace
         
         return renderTask;
     }
-
 }
 
 int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /*szCmdLine*/, int /*iCmdShow*/)
@@ -110,7 +107,6 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     const D3D12Render::D3D12Gpus::GpuID mainGpuID = 0;
     D3D12Render::D3D12GpuPtr gpu = gpus.CreateGpu(mainGpuID, customWindow.GetHWND());
     
-    // TODO Create two spheres, two boxes and a plane
     // Create scene cpu resources 
     D3D12Basics::Camera camera(D3D12Basics::Float3(0.0f, 0.0f, -5.0f));
 
@@ -120,13 +116,25 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     D3D12Basics::Mesh sphere = D3D12Basics::CreateSphere(20, 20);
     D3D12MeshBuffer sphereBuffer = AddMeshBufferLoadTasks(sphere, gpu);
 
+    D3D12Basics::Mesh cube = D3D12Basics::CreateCube();
+    D3D12MeshBuffer cubeBuffer = AddMeshBufferLoadTasks(cube, gpu);
+
     const D3D12Render::D3D12ResourceID texture256ID = D3D12Render::CreateD3D12Texture(g_texture256FileName, L"texture2d - Texture 256", gpu);
     const D3D12Render::D3D12ResourceID texture1024ID = D3D12Render::CreateD3D12Texture(g_texture1024FileName, L"texture2d - Texture 1024", gpu);
 
     gpu->ExecuteCopyCommands();
 
     const D3D12Render::D3D12ResourceID planeCBID = gpu->CreateDynamicConstantBuffer(sizeof(DirectX::XMFLOAT4X4));
-    const D3D12Render::D3D12ResourceID sphereCBID = gpu->CreateDynamicConstantBuffer(sizeof(DirectX::XMFLOAT4X4));
+    const D3D12Render::D3D12ResourceID spheresCBs[2]
+    {
+        gpu->CreateDynamicConstantBuffer(sizeof(DirectX::XMFLOAT4X4)),
+        gpu->CreateDynamicConstantBuffer(sizeof(DirectX::XMFLOAT4X4))
+    };
+    const D3D12Render::D3D12ResourceID cubesCBs[2]
+    {
+        gpu->CreateDynamicConstantBuffer(sizeof(DirectX::XMFLOAT4X4)),
+        gpu->CreateDynamicConstantBuffer(sizeof(DirectX::XMFLOAT4X4))
+    };
 
     // Create tasks for the gpu
     D3D12Render::D3D12GpuRenderTask clearRTRenderTask;
@@ -135,16 +143,32 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     memcpy(clearRTRenderTask.m_clearColor, clearColor, sizeof(float)*4);
 
     D3D12Render::D3D12SimpleMaterialPtr simpleMaterial = std::make_shared<D3D12Render::D3D12SimpleMaterial>(gpu->GetDevice());
-    D3D12Render::D3D12SimpleMaterialResources sphereResources;
-    sphereResources.m_cbID = sphereCBID;
-    sphereResources.m_textureID = texture256ID;
+    D3D12Render::D3D12SimpleMaterialResources sphereResources[2]
+    {
+        { spheresCBs[0], texture256ID },
+        { spheresCBs[1], texture1024ID },
+    };
     D3D12Render::D3D12SimpleMaterialResources planeResources;
     planeResources.m_cbID = planeCBID;
     planeResources.m_textureID = texture1024ID;
+    D3D12Render::D3D12SimpleMaterialResources cubeResources[2]
+    {
+        { cubesCBs[0], texture256ID },
+        { cubesCBs[1], texture1024ID },
+    };
 
-    D3D12Render::D3D12GpuRenderTask sphereRenderTask = CreateRenderTask(gpu, sphere, sphereBuffer, simpleMaterial, sphereResources);
+    D3D12Render::D3D12GpuRenderTask sphereRenderTasks[2]
+    {
+        CreateRenderTask(gpu, sphere, sphereBuffer, simpleMaterial, sphereResources[0]),
+        CreateRenderTask(gpu, sphere, sphereBuffer, simpleMaterial, sphereResources[1])
+    };
     D3D12Render::D3D12GpuRenderTask planeRenderTask = CreateRenderTask(gpu, plane, planeBuffer, simpleMaterial, planeResources);
-  
+    D3D12Render::D3D12GpuRenderTask cubeRenderTasks[2]
+    {
+        CreateRenderTask(gpu, cube, cubeBuffer, simpleMaterial, cubeResources[0]),
+        CreateRenderTask(gpu, cube, cubeBuffer, simpleMaterial, cubeResources[1])
+    };
+
     float lastDelta = 0.0f;
     float accumulatedTime = 0.0f;
 
@@ -170,27 +194,53 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
             // Update scene
             {
-                const D3D12Basics::Float3 origin(0.0f, 3.0f, -2.0f);
-                const D3D12Basics::Float3 destination(0.0f, -3.0f, -2.0f);
-                const float interpolator = sinf(accumulatedTime) * 0.5f + 0.5f;
-                const D3D12Basics::Float3 lerpedPosition = D3D12Basics::Float3::Lerp(origin, destination, interpolator);
+                const float longitude = (1.0f / D3D12Basics::M_2PI) * accumulatedTime;
+                const float latitude = D3D12Basics::M_PI_4 + D3D12Basics::M_PI_8;
+                const float altitude = 5.0f;
+                D3D12Basics::Float3 cameraPos = D3D12Basics::SphericalToCartersian(longitude, latitude, altitude);
 
-                camera.TranslateLookingAt(lerpedPosition, D3D12Basics::Float3::Zero);
+                camera.TranslateLookingAt(cameraPos, D3D12Basics::Float3::Zero);
             }
 
             // Update gpu resources
             {
-                const D3D12Basics::Matrix44& localToWorld = D3D12Basics::Matrix44::Identity;
-                const D3D12Basics::Matrix44 localToClip = (localToWorld * camera.WorldToCamera() * camera.CameraToClip()).Transpose();
-
-                gpu->UpdateDynamicConstantBuffer(sphereCBID, &localToClip);
-                gpu->UpdateDynamicConstantBuffer(planeCBID, &localToClip);
+                const D3D12Basics::Matrix44 worldToClip = camera.WorldToCamera() * camera.CameraToClip();
+                {
+                    D3D12Basics::Matrix44 localToWorld = D3D12Basics::Matrix44::CreateTranslation(D3D12Basics::Float3(2.0f, 0.5f, 0.0f));
+                    const D3D12Basics::Matrix44 localToClip = (localToWorld * worldToClip).Transpose();
+                    gpu->UpdateDynamicConstantBuffer(spheresCBs[0], &localToClip);
+                }
+                {
+                    D3D12Basics::Matrix44 localToWorld = D3D12Basics::Matrix44::CreateTranslation(D3D12Basics::Float3(-2.0f, 0.5f, 0.0f));
+                    const D3D12Basics::Matrix44 localToClip = (localToWorld * worldToClip).Transpose();
+                    gpu->UpdateDynamicConstantBuffer(spheresCBs[1], &localToClip);
+                }
+                {
+                    D3D12Basics::Matrix44 localToWorld = D3D12Basics::Matrix44::CreateScale(10.0f) * D3D12Basics::Matrix44::CreateRotationX(D3D12Basics::M_PI_2);
+                    const D3D12Basics::Matrix44 localToClip = (localToWorld * worldToClip).Transpose();
+                    gpu->UpdateDynamicConstantBuffer(planeCBID, &localToClip);
+                }
+                {
+                    D3D12Basics::Matrix44 localToWorld = D3D12Basics::Matrix44::CreateTranslation(D3D12Basics::Float3(0.0f, 0.5f, 2.0f));
+                    const D3D12Basics::Matrix44 localToClip = (localToWorld * worldToClip).Transpose();
+                    gpu->UpdateDynamicConstantBuffer(cubesCBs[0], &localToClip);
+                }
+                {
+                    D3D12Basics::Matrix44 localToWorld = D3D12Basics::Matrix44::CreateTranslation(D3D12Basics::Float3(0.0f, 0.5f, -2.0f));
+                    const D3D12Basics::Matrix44 localToClip = (localToWorld * worldToClip).Transpose();
+                    gpu->UpdateDynamicConstantBuffer(cubesCBs[1], &localToClip);
+                }
             }
 
             // Record the command list
             {
                 gpu->AddRenderTask(clearRTRenderTask);
-                gpu->AddRenderTask(sphereRenderTask);
+                for (auto& renderTask : sphereRenderTasks)
+                    gpu->AddRenderTask(renderTask);
+                
+                for (auto& renderTask : cubeRenderTasks)
+                    gpu->AddRenderTask(renderTask);
+
                 gpu->AddRenderTask(planeRenderTask);
             }
 

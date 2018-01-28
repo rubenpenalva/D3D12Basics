@@ -111,7 +111,6 @@ public:
             m_transitions[TransitionType::RenderTarget_To_Present][i] = m_transitions[TransitionType::Present_To_RenderTarget][i];
             m_transitions[TransitionType::RenderTarget_To_Present][i].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
             m_transitions[TransitionType::RenderTarget_To_Present][i].Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
-
         }
     }
 
@@ -181,7 +180,7 @@ void D3D12Gpus::DiscoverAdapters()
     }
 }
 
-D3D12Gpu::D3D12Gpu(IDXGIFactory4Ptr factory, IDXGIAdapterPtr adapter, HWND hwnd)    :   m_backbufferIndex(0), m_srvDescHeap()
+D3D12Gpu::D3D12Gpu(IDXGIFactory4Ptr factory, IDXGIAdapterPtr adapter, HWND hwnd)    :   m_backbufferIndex(0)
 {
     assert(factory);
     assert(hwnd);
@@ -238,8 +237,52 @@ D3D12Gpu::D3D12Gpu(IDXGIFactory4Ptr factory, IDXGIAdapterPtr adapter, HWND hwnd)
 
     CreateCommandList();
 
-    // Create descriptor heap
-    m_srvDescHeap = std::make_shared<D3D12DescriptorHeap>(m_device);
+    // Create descriptor heaps
+    m_srvDescHeap = std::make_shared<D3D12CBVSRVUAVDescHeap>(m_device);
+    m_dsvDescHeap = std::make_shared<D3D12DSVDescriptorHeap>(m_device);
+
+    // Create depth buffer
+    {
+        D3D12_HEAP_PROPERTIES defaultHeapProps
+        {
+            /*D3D12_HEAP_TYPE Type*/ D3D12_HEAP_TYPE_DEFAULT,
+            /*D3D12_CPU_PAGE_PROPERTY CPUPageProperty*/ D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+            /*D3D12_MEMORY_POOL MemoryPoolPreference*/ D3D12_MEMORY_POOL_UNKNOWN,
+            /*UINT CreationNodeMask*/ 1,
+            /*UINT VisibleNodeMask*/ 1
+        };
+
+        D3D12_RESOURCE_DESC heapResourceDesc
+        {
+            /*D3D12_RESOURCE_DIMENSION Dimension*/ D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+            /*UINT64 Alignment*/ 0,
+            /*UINT64 Width*/ CustomWindow::GetResolution().m_width,
+            /*UINT Height*/ CustomWindow::GetResolution().m_height,
+            /*UINT16 DepthOrArraySize*/ 1,
+            /*UINT16 MipLevels*/ 1,
+            /*DXGI_FORMAT Format*/ DXGI_FORMAT_D24_UNORM_S8_UINT,
+            /*DXGI_SAMPLE_DESC SampleDesc*/{ 1, 0 },
+            /*D3D12_TEXTURE_LAYOUT Layout*/ D3D12_TEXTURE_LAYOUT_UNKNOWN,
+            /*D3D12_RESOURCE_FLAGS Flags*/ D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
+        };
+
+        D3D12_CLEAR_VALUE optimizedClearValue
+        {
+            /*DXGI_FORMAT Format;*/ DXGI_FORMAT_D24_UNORM_S8_UINT,
+
+            /*D3D12_DEPTH_STENCIL_VALUE DepthStencil;*/ {1.0f, 0x0}
+        };
+        AssertIfFailed(m_device->CreateCommittedResource(&defaultHeapProps, D3D12_HEAP_FLAG_NONE, &heapResourceDesc, D3D12_RESOURCE_STATE_DEPTH_WRITE,
+                                                         &optimizedClearValue, IID_PPV_ARGS(&m_depthBufferResource)));
+        m_depthBufferResource->SetName(L"Depth Buffer");
+        
+        D3D12_DEPTH_STENCIL_VIEW_DESC desc;
+        desc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+        desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+        desc.Flags = D3D12_DSV_FLAG_NONE;
+        desc.Texture2D.MipSlice = 0;
+        m_depthBufferDescID = m_dsvDescHeap->CreateDSV(m_depthBufferResource, desc);
+    }
 
     // Create dynamic constant buffers heap
     {
@@ -349,7 +392,8 @@ void D3D12Gpu::ExecuteGraphicsCommands()
     m_commandList->ResourceBarrier(1, &m_backbuffers->Transition(m_backbufferIndex, D3D12Gpu::D3D12BackBuffers<BackBuffersCount>::TransitionType::Present_To_RenderTarget));
 
     auto backbufferRT = m_backbuffers->GetRenderTarget(m_backbufferIndex);
-    m_commandList->OMSetRenderTargets(1, &backbufferRT, FALSE, nullptr);
+    D3D12_CPU_DESCRIPTOR_HANDLE& depthStencilDescriptor = m_dsvDescHeap->GetDescriptorHandles(m_depthBufferDescID).m_cpuHandle;
+    m_commandList->OMSetRenderTargets(1, &backbufferRT, FALSE, &depthStencilDescriptor);
 
     // TODO rework this
     if (!m_renderTasks[0].m_simpleMaterial)
@@ -672,16 +716,20 @@ void D3D12Gpu::RecordRenderTask(const D3D12GpuRenderTask& renderTask, D3D12_CPU_
     if (!renderTask.m_simpleMaterial)
     {
         m_commandList->ClearRenderTargetView(backbufferRT, m_renderTasks[0].m_clearColor, 0, nullptr);
+        
+        auto& dsvDescriptorHandle = m_dsvDescHeap->GetDescriptorHandles(m_depthBufferDescID).m_cpuHandle;
+        m_commandList->ClearDepthStencilView(dsvDescriptorHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0x0, 0, nullptr);
+
         return;
     }
 
     // Bind the resources to the pipeline
     {
         const auto& cbDescID = m_dynamicConstantBuffers[renderTask.m_simpleMaterialResources.m_cbID].m_cbvID;
-        const auto& cbGpuHandle = m_srvDescHeap->GetGPUDescHandle(cbDescID);
+        const auto& cbGpuHandle = m_srvDescHeap->GetDescriptorHandles(cbDescID).m_gpuHandle;
         const auto& srvDescID = m_resources[renderTask.m_simpleMaterialResources.m_textureID].m_resourceViewID;
-        const auto& srvGpuHandle = m_srvDescHeap->GetGPUDescHandle(srvDescID);
-        
+        const auto& srvGpuHandle = m_srvDescHeap->GetDescriptorHandles(srvDescID).m_gpuHandle;
+
         renderTask.m_simpleMaterial->Apply(m_commandList, cbGpuHandle, srvGpuHandle);
     }
 

@@ -15,12 +15,15 @@ namespace D3D12Render
     class D3D12Gpu;
     class ID3D12GpuJob;
     class D3D12SimpleMaterial;
-    class D3D12DescriptorHeap;
+    class D3D12CBVSRVUAVDescHeap;
+    class D3D12DSVDescriptorHeap;
     struct D3D12ResourceExt;
     
-    using IDXGIAdapters             = std::vector<IDXGIAdapterPtr>;
-    using D3D12GpuPtr               = std::shared_ptr<D3D12Gpu>;
-    using ID3D12GpuJobPtr           = std::shared_ptr<ID3D12GpuJob>;
-    using D3D12SimpleMaterialPtr    = std::shared_ptr<D3D12SimpleMaterial>;
-    using D3D12DescriptorHeapPtr    = std::shared_ptr<D3D12DescriptorHeap>;
+    using IDXGIAdapters                     = std::vector<IDXGIAdapterPtr>;
+    using D3D12GpuPtr                       = std::shared_ptr<D3D12Gpu>;
+    using ID3D12GpuJobPtr                   = std::shared_ptr<ID3D12GpuJob>;
+    using D3D12SimpleMaterialPtr            = std::shared_ptr<D3D12SimpleMaterial>;
+    using D3D12CBVSRVUAVDescHeapPtr         = std::shared_ptr<D3D12CBVSRVUAVDescHeap>;
+    using D3D12DSVDescriptorHeapPtr         = std::shared_ptr<D3D12DSVDescriptorHeap>;
+    
 }

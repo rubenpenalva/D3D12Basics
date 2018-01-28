@@ -149,7 +149,11 @@ namespace D3D12Render
 
         unsigned int m_backbufferIndex;
 
-        D3D12DescriptorHeapPtr m_srvDescHeap;
+        D3D12CBVSRVUAVDescHeapPtr m_srvDescHeap;
+
+        D3D12DSVDescriptorHeapPtr m_dsvDescHeap;
+        ID3D12ResourcePtr m_depthBufferResource;
+        D3D12DescriptorID m_depthBufferDescID;
 
         std::vector<D3D12GpuUploadTexture2DTaskExt>    m_uploadTexture2DTasks;
         std::vector<D3D12GpuUploadBufferTaskExt>       m_uploadBufferTasks;

@@ -43,10 +43,10 @@ Mesh D3D12Basics::CreatePlane()
     planeMesh.m_vertices =
     {
         // Positions                UVs
-        { { -0.5f, -0.5f, 0.0f },{ 0.0f, 1.0f } },
-        { { -0.5f, 0.5f, 0.0f },{ 0.0f, 0.0f } },
-        { { 0.5f, 0.5f, 0.0f },{ 1.0f, 0.0f } },
-        { { 0.5f, -0.5f, 0.0f },{ 1.0f, 1.0f } }
+        { { -0.5f, -0.5f, 0.0f },   { 0.0f, 1.0f } },
+        { { -0.5f, 0.5f, 0.0f },    { 0.0f, 0.0f } },
+        { { 0.5f, 0.5f, 0.0f },     { 1.0f, 0.0f } },
+        { { 0.5f, -0.5f, 0.0f },    { 1.0f, 1.0f } }
     };
 
     planeMesh.m_indices = { 0, 1, 2, 0, 2, 3 };
@@ -87,7 +87,7 @@ Mesh D3D12Basics::CreateSphere(unsigned int parallelsCount, unsigned int meridia
             const float longitude = i * longitudeDiff;
             const Mesh::Vertex vertex
             {
-                SphericalToCartersian(longitude, latitude),
+                SphericalToCartersian(longitude, latitude) * Float3(0.5f, 0.5f, 0.5f),
                 Float2(latitude, longitude) // NOTE: this mapping has horrendous distortions on the poles
             };
             auto& currentVertex = mesh.m_vertices[currentVertexIndex];
@@ -111,8 +111,8 @@ Mesh D3D12Basics::CreateSphere(unsigned int parallelsCount, unsigned int meridia
     }
 
     // Build poles
-    mesh.m_vertices[verticesCount - 2] = { Float3(0.0f, 1.0f, 0.0f), Float2(0.0f, 0.0f) };
-    mesh.m_vertices[verticesCount - 1] = { Float3(0.0f, -1.0f, 0.0f), Float2(0.0f, 1.0f) };
+    mesh.m_vertices[verticesCount - 2] = { Float3(0.0f, 0.5f, 0.0f), Float2(0.0f, 0.0f) };
+    mesh.m_vertices[verticesCount - 1] = { Float3(0.0f, -0.5f, 0.0f), Float2(0.0f, 1.0f) };
     for (uint16_t i = 0; i < meridiansCount; ++i)
     {
         mesh.m_indices[currentPrimitive++] = static_cast<uint16_t>(verticesCount - 2);
@@ -129,4 +129,66 @@ Mesh D3D12Basics::CreateSphere(unsigned int parallelsCount, unsigned int meridia
     }
 
     return mesh;
+}
+
+// TODO move these mesh functions to a file
+Mesh D3D12Basics::CreateCube(Cube_TexCoord_MappingType /*texcoordType*/)
+{
+    //Cube_TexCoord_UV_SingleFace,
+    //    Cube_TexCoord_UV_OrigamiFaces,
+    //    Cube_TexCoord_UVW_CubeFaces
+
+    Mesh cubeMesh;
+
+    cubeMesh.m_vertices =
+    {
+        // Positions                UVs
+        // Back
+        { { -0.5f, -0.5f, -0.5f },  { 0.0f, 1.0f } },
+        { { -0.5f, 0.5f, -0.5f },   { 0.0f, 0.0f } },
+        { { 0.5f, 0.5f, -0.5f },    { 1.0f, 0.0f } },
+        { { 0.5f, -0.5f, -0.5f },   { 1.0f, 1.0f } },
+
+        // Front
+        { { 0.5f, -0.5f, 0.5f },    { 0.0f, 1.0f } },
+        { { 0.5f, 0.5f, 0.5f },     { 0.0f, 0.0f } },
+        { { -0.5f, 0.5f, 0.5f },    { 1.0f, 0.0f } },
+        { { -0.5f, -0.5f, 0.5f },   { 1.0f, 1.0f } },
+
+        // Left
+        { { -0.5f, -0.5f, 0.5f },   { 0.0f, 1.0f } },
+        { { -0.5f, 0.5f, 0.5f },    { 0.0f, 0.0f } },
+        { { -0.5f, 0.5f, -0.5f },   { 1.0f, 0.0f } },
+        { { -0.5f, -0.5f, -0.5f },  { 1.0f, 1.0f } },
+
+        // Right
+        { { 0.5f, -0.5f, -0.5f },   { 0.0f, 1.0f } },
+        { { 0.5f, 0.5f, -0.5f },    { 0.0f, 0.0f } },
+        { { 0.5f, 0.5f, 0.5f },     { 1.0f, 0.0f } },
+        { { 0.5f, -0.5f, 0.5f },    { 1.0f, 1.0f } },
+
+        // Bottom
+        { { 0.5f, -0.5f, -0.5f },   { 0.0f, 1.0f } },
+        { { 0.5f, -0.5f, 0.5f },    { 0.0f, 0.0f } },
+        { { -0.5f, -0.5f, 0.5f },   { 1.0f, 0.0f } },
+        { { -0.5f, -0.5f, -0.5f },  { 1.0f, 1.0f } },
+
+        // Top
+        { { -0.5f, 0.5f, -0.5f },   { 0.0f, 1.0f } },
+        { { -0.5f, 0.5f, 0.5f },    { 0.0f, 0.0f } },
+        { { 0.5f, 0.5f, 0.5f },     { 1.0f, 0.0f } },
+        { { 0.5f, 0.5f, -0.5f },    { 1.0f, 1.0f } },
+    };
+
+    cubeMesh.m_indices = 
+    { 
+        0, 1, 2, 0, 2, 3, 
+        4, 5, 6, 4, 6, 7,
+        8, 9, 10, 8, 10, 11,
+        12, 13, 14, 12, 14, 15,
+        16, 17, 18, 16, 18, 19,
+        20, 21, 22, 20, 22, 23,
+    };
+
+    return cubeMesh;
 }

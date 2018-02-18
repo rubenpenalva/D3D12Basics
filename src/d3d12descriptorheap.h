@@ -8,8 +8,6 @@
 
 namespace D3D12Render
 {
-    using D3D12DescriptorID = size_t;
-
     struct D3D12DescriptorHandles
     {
         D3D12_CPU_DESCRIPTOR_HANDLE m_cpuHandle;
@@ -56,8 +54,16 @@ namespace D3D12Render
     class D3D12DSVDescriptorHeap : public D3D12DescriptorHeap
     {
     public:
-        D3D12DSVDescriptorHeap(ID3D12DevicePtr d3d12Device, unsigned int heapSize = 1);
+        D3D12DSVDescriptorHeap(ID3D12DevicePtr d3d12Device, unsigned int heapSize = 1024);
 
         D3D12DescriptorID CreateDSV(ID3D12ResourcePtr resource, const D3D12_DEPTH_STENCIL_VIEW_DESC& desc);
+    };
+
+    class D3D12RTVDescriptorHeap : public D3D12DescriptorHeap
+    {
+    public:
+        D3D12RTVDescriptorHeap(ID3D12DevicePtr d3d12Device, unsigned int heapSize = 1024);
+
+        D3D12DescriptorID CreateRTV(ID3D12ResourcePtr resource, const D3D12_RENDER_TARGET_VIEW_DESC* desc = nullptr);
     };
 }

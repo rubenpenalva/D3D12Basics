@@ -27,9 +27,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\d3d12gpus.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="src\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -37,9 +34,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\d3d12simplematerial.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\d3d12resources.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\d3d12descriptorheap.cpp">
@@ -51,26 +45,20 @@
     <ClCompile Include="src\scene.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\d3d12swapchain.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\d3d12gpu.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\d3d12committedbuffer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\d3d12backendrender.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\d3d12gpus.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\utils.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\d3d12simplematerial.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\d3d12fwd.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\d3d12basicsfwd.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\d3d12resources.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="thirdparty\stb\stb_image.h">
       <Filter>ThirdParty\stb</Filter>
     </ClInclude>
@@ -86,13 +74,37 @@
     <ClInclude Include="thirdparty\directxmath\Inc\DirectXPackedVector.h">
       <Filter>ThirdParty\DirectxMath</Filter>
     </ClInclude>
-    <ClInclude Include="src\d3d12descriptorheap.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="thirdparty\directxtk12\Inc\SimpleMath.h">
       <Filter>ThirdParty\DirectxTK12</Filter>
     </ClInclude>
+    <ClInclude Include="src\d3d12basicsfwd.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\d3d12descriptorheap.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\d3d12fwd.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\d3d12gpu.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\d3d12simplematerial.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\d3d12swapchain.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="src\scene.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\utils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\d3d12committedbuffer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\d3d12backendrender.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

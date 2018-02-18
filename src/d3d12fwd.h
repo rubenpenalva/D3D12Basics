@@ -6,6 +6,7 @@
 struct IDXGIFactory4;
 struct IDXGISwapChain3;
 struct IDXGIAdapter1;
+struct IDXGIOutput1;
 struct ID3D12Device;
 struct ID3D12Debug;
 struct ID3D12CommandQueue;
@@ -29,6 +30,7 @@ namespace D3D12Render
     using IDXGIFactory4Ptr              = Microsoft::WRL::ComPtr<IDXGIFactory4>;
     using IDXGISwapChain3Ptr            = Microsoft::WRL::ComPtr<IDXGISwapChain3>;
     using IDXGIAdapterPtr               = Microsoft::WRL::ComPtr<IDXGIAdapter1>;
+    using IDXGIOutput1Ptr               = Microsoft::WRL::ComPtr<IDXGIOutput1>;
 
     using ID3D12DevicePtr               = Microsoft::WRL::ComPtr<ID3D12Device>;
     using ID3D12DebugPtr                = Microsoft::WRL::ComPtr<ID3D12Debug>;

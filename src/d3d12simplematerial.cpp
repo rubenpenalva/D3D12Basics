@@ -13,7 +13,7 @@
 // project includes
 #include "utils.h"
 #include "d3d12descriptorheap.h"
-#include "d3d12gpus.h"
+#include "d3d12gpu.h"
 
 using namespace D3D12Render;
 using namespace D3D12Basics;

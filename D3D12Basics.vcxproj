@@ -55,13 +55,13 @@
       </PrecompiledHeader>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_WINDOWS;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <TreatWarningAsError>true</TreatWarningAsError>
       <AdditionalIncludeDirectories>./thirdparty;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>dxgi.lib;d3d12.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dxgi.lib;d3d12.lib;d3dcompiler.lib	;Rpcrt4.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -72,7 +72,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_WINDOWS;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <TreatWarningAsError>true</TreatWarningAsError>
       <AdditionalIncludeDirectories>./thirdparty;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
@@ -80,14 +80,16 @@
       <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>dxgi.lib;d3d12.lib;d3dcompiler.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dxgi.lib;d3d12.lib;d3dcompiler.lib	;Rpcrt4.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\d3d12committedbuffer.cpp" />
     <ClCompile Include="src\d3d12descriptorheap.cpp" />
-    <ClCompile Include="src\d3d12gpus.cpp" />
+    <ClCompile Include="src\d3d12gpu.cpp" />
+    <ClCompile Include="src\d3d12backendrender.cpp" />
     <ClCompile Include="src\d3d12simplematerial.cpp" />
-    <ClCompile Include="src\d3d12resources.cpp" />
+    <ClCompile Include="src\d3d12swapchain.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\scene.cpp" />
     <ClCompile Include="src\utils.cpp" />
@@ -95,11 +97,13 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\d3d12basicsfwd.h" />
+    <ClInclude Include="src\d3d12committedbuffer.h" />
     <ClInclude Include="src\d3d12descriptorheap.h" />
     <ClInclude Include="src\d3d12fwd.h" />
-    <ClInclude Include="src\d3d12gpus.h" />
+    <ClInclude Include="src\d3d12gpu.h" />
+    <ClInclude Include="src\d3d12backendrender.h" />
     <ClInclude Include="src\d3d12simplematerial.h" />
-    <ClInclude Include="src\d3d12resources.h" />
+    <ClInclude Include="src\d3d12swapchain.h" />
     <ClInclude Include="src\scene.h" />
     <ClInclude Include="src\utils.h" />
     <ClInclude Include="thirdparty\directxmath\Inc\DirectXCollision.h" />

@@ -13,36 +13,62 @@
 
 using namespace D3D12Basics;
 
-D3D12Basics::Resolution g_resolution { 1280, 720 , 1280.0f / 720.0f };
-
 namespace
 {
     const std::wstring  g_className{ L"MainWindowClass" };
-
-    Resolution ClientToWindowResolution(DWORD style, const Resolution& clientResolution)
-    {
-        RECT rect = { 0, 0, static_cast<LONG>(clientResolution.m_width), static_cast<LONG>(clientResolution.m_height) };
-        BOOL result = AdjustWindowRect(&rect, style, FALSE);
-#if NDEBUG
-        result;
-#endif
-        assert(result);
-        const unsigned int  windowWidth = rect.right - rect.left;
-        const unsigned int windowHeight = rect.bottom - rect.top;
-
-        return Resolution{ windowWidth, windowHeight };
-    }
+    const DWORD g_windowedStyle = WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX | WS_MINIMIZEBOX);
+    const DWORD g_fullscreenStyle = WS_OVERLAPPEDWINDOW & ~(WS_CAPTION | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_SYSMENU | WS_THICKFRAME);
 
     // The default window proc doesnt handle the destroy message....
     LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam)
     {
+        CustomWindow* customWindow = reinterpret_cast<CustomWindow*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+
         switch (message)
         {
+        case WM_CREATE:
+        {
+            // Save the CustomWindow* passed in to CreateWindow.
+            LPCREATESTRUCT pCreateStruct = reinterpret_cast<LPCREATESTRUCT>(lparam);
+            SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pCreateStruct->lpCreateParams));
+        }
+        return 0;
+
         // https://msdn.microsoft.com/en-us/library/windows/desktop/ff381396(v=vs.85).aspx
         case WM_DESTROY:
             PostQuitMessage(0);
             return 0;
+
+        case WM_KEYDOWN:
+        {
+            const uint8_t key = static_cast<UINT8>(wparam);
+            if (key == VK_ESCAPE)
+            {
+                PostQuitMessage(0);
+                return 0;
+            }
+            else if (key == VK_SPACE)
+            {
+                customWindow->ChangeFullscreenMode();
+                return 0;
+            }
+
+        }
             break;
+        
+        // Handle beep sound
+        case WM_MENUCHAR:
+            if (wparam & VK_RETURN)
+                return MAKELRESULT(0, MNC_CLOSE);
+
+        case WM_SIZE:
+        {
+            RECT windowRect = {};
+            GetClientRect(hwnd, &windowRect);
+            customWindow->ChangeResolution(windowRect);
+        }
+
+        return 0;
 
         default:
             break;
@@ -51,44 +77,6 @@ namespace
         return DefWindowProc(hwnd, message, wparam, lparam);
     }
 
-    HWND CreateCustomWindow()
-    {
-        const std::wstring name = L"MainWindow";
-        const DWORD windowedStyle = WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME ^ WS_MAXIMIZEBOX ^ WS_MINIMIZEBOX | WS_VISIBLE;
-        const DWORD borderlessStyle = WS_POPUP | WS_VISIBLE;
-
-        Resolution windowResolution = ClientToWindowResolution(windowedStyle, g_resolution);
-
-        /// Initialize window class
-        WNDCLASSEX wc;
-        wc.cbSize = sizeof(WNDCLASSEX);
-        wc.style = 0;
-        wc.lpfnWndProc = WndProc;
-        wc.cbClsExtra = 0;
-        wc.cbWndExtra = 0;
-        wc.hInstance = GetModuleHandle(0);
-        wc.hIcon = LoadIcon(0, IDI_APPLICATION);
-        wc.hCursor = LoadCursor(0, IDC_ARROW);
-        wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-        wc.lpszMenuName = 0;
-        wc.lpszClassName = g_className.c_str();
-        wc.hIconSm = LoadIcon(0, IDI_APPLICATION);
-
-        /// Register window class
-        {
-            HRESULT result = RegisterClassEx(&wc);
-#if NDEBUG
-            result;
-#endif
-            assert(SUCCEEDED(result));
-        }
-
-        /// Create Window
-        HWND hwnd = CreateWindowEx(0, g_className.c_str(), name.c_str(), windowedStyle, 0, 0, windowResolution.m_width, windowResolution.m_height, nullptr, 0, wc.hInstance, nullptr);
-        assert(hwnd);
-
-        return hwnd;
-    }
 }
 
 void D3D12Basics::AssertIfFailed(HRESULT hr)
@@ -114,13 +102,12 @@ Float3 D3D12Basics::SphericalToCartersian(float longitude, float latitude, float
     return cartesianCoordinates * altitude;
 }
 
-Resolution CustomWindow::GetResolution()
+CustomWindow::CustomWindow(const Resolution& resolution)    :   m_resolutionChanged(false), 
+                                                                m_currentResolution(resolution), 
+                                                                m_fullscreenChanged(false)
 {
-    return g_resolution;
-}
+    CreateCustomWindow();
 
-CustomWindow::CustomWindow() : m_hwnd(CreateCustomWindow())
-{
     ::SwitchToThisWindow(m_hwnd, TRUE);
 }
 
@@ -129,4 +116,60 @@ CustomWindow::~CustomWindow()
     UnregisterClass(g_className.c_str(), GetModuleHandle(0));
 }
 
+void CustomWindow::ChangeResolution(const RECT& windowRect)
+{ 
+    Resolution resolution
+    {
+        static_cast<unsigned int>(windowRect.right - windowRect.left), 
+        static_cast<unsigned int>(windowRect.bottom - windowRect.top) 
+    };
 
+    if ((m_currentResolution.m_width == resolution.m_width) &&
+        (m_currentResolution.m_height == resolution.m_height))
+    {
+        return;
+    }
+    
+    m_resolutionChanged = true;
+    m_currentResolution = resolution;
+}
+
+void CustomWindow::ResetWndProcEventsState()
+{
+    m_resolutionChanged = false;
+    m_fullscreenChanged = false;
+}
+
+void CustomWindow::CreateCustomWindow()
+{
+    const std::wstring name = L"MainWindow";
+
+    WNDCLASSEX wc;
+    ZeroMemory(&wc, sizeof(wc));
+    wc.cbSize = sizeof(WNDCLASSEX);
+    wc.lpfnWndProc = WndProc;
+    wc.hInstance = GetModuleHandle(0);
+    wc.hIcon = LoadIcon(0, IDI_APPLICATION);
+    wc.hCursor = LoadCursor(0, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.lpszClassName = g_className.c_str();
+    wc.hIconSm = LoadIcon(0, IDI_APPLICATION);
+
+    // Register window class
+    AssertIfFailed(RegisterClassEx(&wc));
+
+    // Create Window
+    DEVMODE devMode = {};
+    devMode.dmSize = sizeof(DEVMODE);
+    EnumDisplaySettings(nullptr, ENUM_CURRENT_SETTINGS, &devMode);
+    unsigned int positionX = (devMode.dmPelsWidth / 2) - (m_currentResolution.m_width / 2);
+    unsigned int positionY = (devMode.dmPelsHeight / 2) - (m_currentResolution.m_height / 2);
+
+    m_hwnd = CreateWindow(g_className.c_str(), name.c_str(), g_windowedStyle,
+                          positionX, positionY,
+                          m_currentResolution.m_width, m_currentResolution.m_height,
+                          nullptr, nullptr, wc.hInstance, this);
+    assert(m_hwnd);
+
+    ShowWindow(m_hwnd, SW_SHOW);
+}

@@ -20,10 +20,47 @@
 
 #include "scene.h"
 
+// Third party libraries
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb/stb_image.h"
+
+// c++ libraries
+#include <fstream>
+//#include <sstream>
+
 using namespace D3D12Basics;
 
+SimpleMaterialData::SimpleMaterialData(const std::wstring& textureFileName)
+{
+    std::fstream file(textureFileName.c_str(), std::ios::in | std::ios::binary);
+    assert(file.is_open());
+    const auto fileStart = file.tellg();
+    file.ignore(std::numeric_limits<std::streamsize>::max());
+    const auto fileSize = file.gcount();
+    file.seekg(fileStart);
+    std::vector<char> buffer(fileSize);
+    file.read(&buffer[0], fileSize);
+
+
+    const stbi_uc* bufferPtr = reinterpret_cast<const stbi_uc*>(&buffer[0]);
+    const int bufferLength = static_cast<int>(fileSize);
+    int textureChannelsCount;
+    const int requestedChannelsCount = 4;
+    m_textureData = stbi_load_from_memory(bufferPtr, bufferLength, &m_textureWidth,
+                                          &m_textureHeight, &textureChannelsCount, 
+                                          requestedChannelsCount);
+    assert(m_textureData);
+
+    m_textureSizeBytes = m_textureWidth * m_textureHeight * requestedChannelsCount;
+}
+
+SimpleMaterialData::~SimpleMaterialData()
+{
+    stbi_image_free(m_textureData);
+}
+
 Camera::Camera(const Float3& position, const Float3& target, float fov, float aspectRatio,
-    float nearPlane, float farPlane, const Float3& up)
+               float nearPlane, float farPlane, const Float3& up)
 {
     m_cameraToClip = Matrix44::CreatePerspectiveFieldOfViewLH(fov, aspectRatio, nearPlane, farPlane);
 
@@ -57,6 +94,7 @@ Mesh D3D12Basics::CreatePlane()
 // NOTE: Check https://github.com/caosdoar/spheres
 // Review of ways of creating a mesh sphere by @caosdoar
 // TODO fix uv issues
+// TODO optimization proposed by @caosdoar: cache the angles to avoid unnecessary calculations
 Mesh D3D12Basics::CreateSphere(unsigned int parallelsCount, unsigned int meridiansCount)
 {
     assert(parallelsCount > 1 && meridiansCount > 3);
@@ -88,7 +126,7 @@ Mesh D3D12Basics::CreateSphere(unsigned int parallelsCount, unsigned int meridia
             const Mesh::Vertex vertex
             {
                 SphericalToCartersian(longitude, latitude) * Float3(0.5f, 0.5f, 0.5f),
-                Float2(latitude, longitude) // NOTE: this mapping has horrendous distortions on the poles
+                Float2(longitude * M_RCP_2PI, latitude * M_RCP_PI) // NOTE: this mapping has horrendous distortions on the poles
             };
             auto& currentVertex = mesh.m_vertices[currentVertexIndex];
             currentVertex = vertex;

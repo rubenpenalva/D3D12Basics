@@ -15,7 +15,7 @@ using namespace D3D12Render;
 
 D3D12DescriptorHeap::D3D12DescriptorHeap(ID3D12DevicePtr d3d12Device, 
                                          D3D12_DESCRIPTOR_HEAP_TYPE type, 
-                                         unsigned int heapSize) : m_d3d12Device(d3d12Device)
+                                         unsigned int heapSize) : m_d3d12Device(d3d12Device), m_heapSize(heapSize)
 {
     assert(m_d3d12Device);
     assert(heapSize > 0);
@@ -41,6 +41,8 @@ D3D12DescriptorHandles& D3D12DescriptorHeap::GetDescriptorHandles(D3D12Descripto
 
 D3D12DescriptorID D3D12DescriptorHeap::AddDescriptor()
 {
+    assert(m_descriptorHandles.size() < m_heapSize);
+
     D3D12DescriptorID resourceViewID = m_descriptorHandles.size();
     m_descriptorHandles.push_back({ m_cpuStackHandle, m_gpuStackHandle });
     

@@ -3,9 +3,6 @@
 // C includes
 #include <cassert>
 
-// C++ includes
-#include <sstream>
-
 // directx includes
 #include <d3d12.h>
 #include <d3dcompiler.h>

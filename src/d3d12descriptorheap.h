@@ -26,6 +26,7 @@ namespace D3D12Render
 
     protected:
         ID3D12DevicePtr                 m_d3d12Device;
+        const unsigned int              m_heapSize;
         D3D12_CPU_DESCRIPTOR_HANDLE     m_cpuStackHandle;
 
         D3D12DescriptorID AddDescriptor();

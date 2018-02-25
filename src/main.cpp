@@ -1,5 +1,4 @@
 // c++ includes
-#include <chrono>
 #include <sstream>
 
 // windows includes
@@ -126,15 +125,12 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     backendRender.LoadSceneResources();
 
-    float lastDelta = 0.0f;
-    float accumulatedTime = 0.0f;
+    Timer timer;
 
     // Game loop
     bool quit = false;
     while (!quit)
     {
-        const auto frameBeginTick = std::chrono::high_resolution_clock::now();
-
         quit = HandleWindowMessages();
 
         // Process the wndproc events state
@@ -149,7 +145,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         }
 
         // Kick the work: update scene - update backend resources - render frame - present frame
-        UpdateScene(scene, accumulatedTime);
+        UpdateScene(scene, timer.TotalTime());
 
         backendRender.UpdateSceneResources();
 
@@ -158,9 +154,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         backendRender.FinishFrame();
 
         // Measure elapsed time
-        const auto frameEndTick = std::chrono::high_resolution_clock::now();
-        lastDelta = std::chrono::duration<float>(frameEndTick - frameBeginTick).count();
-        accumulatedTime += lastDelta;
+        timer.Mark();
     }
 
     return 0;

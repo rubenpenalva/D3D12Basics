@@ -121,7 +121,7 @@ D3D12CommittedBufferLoader::D3D12CommittedBufferLoader(ID3D12DevicePtr device, I
                                                                                                     m_cmdAllocator(cmdAllocator),
                                                                                                     m_cmdQueue(cmdQueue),
                                                                                                     m_cmdList(cmdList),
-                                                                                                    m_gpuLockWait(device, cmdQueue)
+                                                                                                    m_gpuSync(device, cmdQueue, 1)
 {
     assert(m_device);
     assert(m_cmdList);
@@ -197,7 +197,7 @@ ID3D12ResourcePtr D3D12CommittedBufferLoader::UploadInternal(const void* data, s
     m_cmdQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
     // Wait for the command list to finish executing on the gpu
-    m_gpuLockWait.Wait();
+    m_gpuSync.Wait();
 
     // Release upload heap
 

@@ -23,7 +23,7 @@ namespace D3D12Render
     class D3D12RTVDescriptorHeap;
     class D3D12SwapChain;
     class D3D12CommittedBufferLoader;
-    class D3D12GpuLockWait;
+    class D3D12GpuSynchronizer;
 
     using IDXGIAdapters                     = std::vector<IDXGIAdapterPtr>;
     using D3D12GpuPtr                       = std::shared_ptr<D3D12Gpu>;
@@ -34,5 +34,5 @@ namespace D3D12Render
     using D3D12SwapChainPtr                 = std::shared_ptr<D3D12SwapChain>;
     using D3D12CommittedBufferLoaderPtr     = std::shared_ptr<D3D12CommittedBufferLoader>;
     using D3D12GpuRenderTaskPtr             = std::shared_ptr<D3D12GpuRenderTask>;
-    using D3D12GpuLockWaitPtr               = std::shared_ptr<D3D12GpuLockWait>;
+    using D3D12GpuSynchronizerUPtr          = std::unique_ptr<D3D12GpuSynchronizer>;
 }

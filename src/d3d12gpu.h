@@ -17,20 +17,30 @@ namespace D3D12Render
 {
     using DisplayModes = std::vector<DXGI_MODE_DESC1>;
 
-    class D3D12GpuLockWait
+    class D3D12GpuSynchronizer
     {
     public:
-        D3D12GpuLockWait(ID3D12DevicePtr device, ID3D12CommandQueuePtr cmdQueue);
-        ~D3D12GpuLockWait();
+        D3D12GpuSynchronizer(ID3D12DevicePtr device, ID3D12CommandQueuePtr cmdQueue, unsigned int maxFramesInFlight);
+        ~D3D12GpuSynchronizer();
 
         void Wait();
+
+        void WaitAll();
 
     private:
         ID3D12CommandQueuePtr m_cmdQueue;
 
+        const unsigned int  m_maxFramesInFlight;
+        unsigned int        m_framesInFlight;
+
         HANDLE          m_event;
         ID3D12FencePtr  m_fence;
+        UINT64          m_currentFenceValue;
         UINT64          m_nextFenceValue;
+        
+        D3D12Basics::Timer m_waitTimer;
+
+        void SignalWork();
     };
 
     struct D3D12GpuRenderTask
@@ -48,12 +58,19 @@ namespace D3D12Render
 
     // Creates a d3d12 device bound to the main adapter and the main output
     // with debug capabilities enabled, feature level 11.0 set, 
-    // a 3d command queue, a command list, a swap chain, etc...
+    // a 3d command queue, a command list, a swap chain, double buffering, etc...
     // Right now is a bag where you have a mix of high level and low level
     // data, ie depth buffer or simplematerial
     class D3D12Gpu
     {
     public:
+
+        // TODO check c++ core guidelines about static class data members naming
+        // for better ideas on it
+        static const unsigned int   m_framesInFlight        = 2;
+        static const unsigned int   m_backBuffersCount      = 2;
+        static const bool           m_vsync                 = false;
+
         D3D12Gpu();
         
         ~D3D12Gpu();
@@ -106,11 +123,13 @@ namespace D3D12Render
 
         // d3d12 data
         ID3D12DevicePtr m_device;
-        
-        ID3D12CommandQueuePtr           m_graphicsCmdQueue;
-        ID3D12GraphicsCommandListPtr    m_cmdList;
-        ID3D12CommandAllocatorPtr       m_cmdAllocator;
-        D3D12GpuLockWaitPtr             m_gpuLockWait;
+
+        ID3D12CommandQueuePtr                       m_graphicsCmdQueue;
+        ID3D12GraphicsCommandListPtr                m_cmdLists[m_framesInFlight];
+        ID3D12CommandAllocatorPtr                   m_cmdAllocators[m_framesInFlight];
+        D3D12GpuSynchronizerUPtr                    m_gpuSync;
+        unsigned int                                m_currentBackbufferIndex;
+        unsigned int                                m_currentFrameIndex;
 
         D3D12SwapChainPtr           m_swapChain;
         D3D12RTVDescriptorHeapPtr   m_rtvDescriptorHeap;
@@ -119,16 +138,18 @@ namespace D3D12Render
         ID3D12ResourcePtr           m_depthBufferResource;
         D3D12DescriptorID           m_depthBufferDescID;
 
-        D3D12SimpleMaterialPtr m_simpleMaterial;
+        D3D12SimpleMaterialPtr          m_simpleMaterial;
 
         // Resources
         D3D12CommittedBufferLoaderPtr   m_committedBufferLoader;
         std::vector<D3D12ResourceExt>   m_resources;
         D3D12CBVSRVUAVDescHeapPtr       m_srvDescHeap;
 
-        // TODO move this to a ring buffer class
+        // TODO move all these to a ring buffer class
         // Dynamic constant buffer
         ID3D12ResourcePtr                   m_dynamicConstantBuffersHeap;
+        const unsigned int                  m_dynamicConstantBuffersMaxSize;
+        unsigned int                        m_dynamicConstantBuffersCurrentSize;
         D3D12_GPU_VIRTUAL_ADDRESS           m_dynamicConstantBufferHeapCurrentPtr;
         void*                               m_dynamicConstantBuffersMemPtr;
         std::vector<DynamicConstantBuffer>  m_dynamicConstantBuffers;
@@ -149,6 +170,6 @@ namespace D3D12Render
 
         void CreateDynamicConstantBuffersInfrastructure();
 
-        void BindSimpleMaterialResources(const D3D12SimpleMaterialResources& simpleMaterialResources);
+        void BindSimpleMaterialResources(const D3D12SimpleMaterialResources& simpleMaterialResources, ID3D12GraphicsCommandListPtr cmdList);
     };
 }

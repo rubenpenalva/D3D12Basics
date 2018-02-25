@@ -40,7 +40,7 @@ namespace D3D12Render
         ID3D12CommandAllocatorPtr       m_cmdAllocator;
         ID3D12CommandQueuePtr           m_cmdQueue;
 
-        D3D12GpuLockWait m_gpuLockWait;
+        D3D12GpuSynchronizer            m_gpuSync;
 
         ID3D12ResourcePtr UploadInternal(const void* data, size_t dataSizeBytes, 
                                          const D3D12_RESOURCE_DESC& resourceDesc, 

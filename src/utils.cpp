@@ -6,7 +6,6 @@
 // C++ includes
 #include <string>
 #include <iostream>
-#include <sstream>
 
 // windows includes
 #include <windows.h>
@@ -172,4 +171,18 @@ void CustomWindow::CreateCustomWindow()
     assert(m_hwnd);
 
     ShowWindow(m_hwnd, SW_SHOW);
+}
+
+Timer::Timer() : m_elapsedTime(0.0f), m_totalTime(0.0f)
+{
+    m_mark = std::chrono::high_resolution_clock::now();
+}
+
+void Timer::Mark()
+{
+    const auto lastMark = m_mark;
+    m_mark = std::chrono::high_resolution_clock::now();
+
+    m_elapsedTime = std::chrono::duration<float>(m_mark - lastMark).count();
+    m_totalTime += m_elapsedTime;
 }

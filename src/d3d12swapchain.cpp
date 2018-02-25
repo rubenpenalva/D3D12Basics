@@ -10,7 +10,6 @@
 
 // c++ includes
 #include <sstream>
-
 using namespace D3D12Render;
 using namespace D3D12Basics;
 
@@ -37,7 +36,7 @@ D3D12SwapChain::D3D12SwapChain(HWND hwnd, DXGI_FORMAT format,
     swapChainDesc.SampleDesc.Count      = 1;
     swapChainDesc.SampleDesc.Quality    = 0;
     swapChainDesc.BufferUsage           = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    swapChainDesc.BufferCount           = BackBuffersCount;
+    swapChainDesc.BufferCount           = D3D12Gpu::m_backBuffersCount;
     swapChainDesc.Scaling               = DXGI_SCALING_STRETCH;
     swapChainDesc.SwapEffect            = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     swapChainDesc.AlphaMode             = DXGI_ALPHA_MODE_UNSPECIFIED;
@@ -58,9 +57,12 @@ D3D12SwapChain::~D3D12SwapChain()
 }
 
 // TODO switch to Present1
-HRESULT D3D12SwapChain::Present() 
+HRESULT D3D12SwapChain::Present(bool vsync)
 { 
-    return m_swapChain->Present(0, 0);
+    HRESULT result = m_swapChain->Present(vsync? 1 : 0, 0);
+    m_timer.Mark();
+
+    return result;
 }
 
 void D3D12SwapChain::ToggleFullScreen()
@@ -101,12 +103,12 @@ void D3D12SwapChain::Resize(const DXGI_MODE_DESC1& mode)
         mode.Height == m_resolution.m_height)
         return;
 
-    for (unsigned int i = 0; i < BackBuffersCount; ++i)
+    for (unsigned int i = 0; i < D3D12Gpu::m_backBuffersCount; ++i)
         m_bacbufferResources[i] = nullptr;
     
     AssertIfFailed(m_swapChain->ResizeTarget(reinterpret_cast<const DXGI_MODE_DESC*>(&mode)));
 
-    AssertIfFailed(m_swapChain->ResizeBuffers(BackBuffersCount, mode.Width, mode.Height, mode.Format, 0));
+    AssertIfFailed(m_swapChain->ResizeBuffers(D3D12Gpu::m_backBuffersCount, mode.Width, mode.Height, mode.Format, 0));
 
     UpdateBackBuffers();
 
@@ -115,7 +117,7 @@ void D3D12SwapChain::Resize(const DXGI_MODE_DESC1& mode)
 
 void D3D12SwapChain::CreateBackBuffers()
 {
-    for (unsigned int i = 0; i < BackBuffersCount; ++i)
+    for (unsigned int i = 0; i < D3D12Gpu::m_backBuffersCount; ++i)
     {
         AssertIfFailed(m_swapChain->GetBuffer(i, IID_PPV_ARGS(&m_bacbufferResources[i])));
         std::wstringstream converter;
@@ -140,7 +142,7 @@ void D3D12SwapChain::CreateBackBuffers()
 
 void D3D12SwapChain::UpdateBackBuffers()
 {
-    for (unsigned int i = 0; i < BackBuffersCount; ++i)
+    for (unsigned int i = 0; i < D3D12Gpu::m_backBuffersCount; ++i)
     {
         AssertIfFailed(m_swapChain->GetBuffer(i, IID_PPV_ARGS(&m_bacbufferResources[i])));
         std::wstringstream converter;

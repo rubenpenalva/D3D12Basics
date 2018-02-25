@@ -1,5 +1,8 @@
 #pragma once
 
+// c++ includes
+#include <chrono>
+
 // windows includes
 #include <windows.h>
 
@@ -69,5 +72,25 @@ namespace D3D12Basics
         bool m_resolutionChanged;
 
         void CreateCustomWindow();
+    };
+
+    class Timer
+    {
+    public:
+        Timer();
+
+        void Mark();
+
+        // Elapsed time between two marks
+        float ElapsedTime() const { return m_elapsedTime; }
+
+        // Total time from the timer construction to the last mark
+        float TotalTime() const { return m_totalTime; }
+
+    private:
+        std::chrono::high_resolution_clock::time_point m_mark;
+
+        float m_elapsedTime;
+        float m_totalTime;
     };
 }

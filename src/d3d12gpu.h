@@ -37,10 +37,12 @@ namespace D3D12Render
         ID3D12FencePtr  m_fence;
         UINT64          m_currentFenceValue;
         UINT64          m_nextFenceValue;
-        
-        D3D12Basics::Timer m_waitTimer;
+
+        float m_waitTime;
 
         void SignalWork();
+
+        void WaitForFence(UINT64 fenceValue);
     };
 
     struct D3D12GpuRenderTask
@@ -69,7 +71,7 @@ namespace D3D12Render
         // for better ideas on it
         static const unsigned int   m_framesInFlight        = 2;
         static const unsigned int   m_backBuffersCount      = 2;
-        static const bool           m_vsync                 = false;
+        static const bool           m_vsync                 = true;
 
         D3D12Gpu();
         
@@ -130,6 +132,8 @@ namespace D3D12Render
         D3D12GpuSynchronizerUPtr                    m_gpuSync;
         unsigned int                                m_currentBackbufferIndex;
         unsigned int                                m_currentFrameIndex;
+        D3D12Basics::Timer                          m_frameTime;
+        D3D12Basics::Timer                          m_frameWaitTime;
 
         D3D12SwapChainPtr           m_swapChain;
         D3D12RTVDescriptorHeapPtr   m_rtvDescriptorHeap;

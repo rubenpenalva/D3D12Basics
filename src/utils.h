@@ -5,6 +5,7 @@
 
 // windows includes
 #include <windows.h>
+#include <Evntprov.h>
 
 // thirdparty includes
 #include "DirectXTK12/Inc/SimpleMath.h"
@@ -92,5 +93,19 @@ namespace D3D12Basics
 
         float m_elapsedTime;
         float m_totalTime;
+    };
+
+    class GpuViewMarker
+    {
+    public:
+        GpuViewMarker(const std::wstring& name, const wchar_t* uuid);
+        ~GpuViewMarker();
+
+        void Mark();
+
+    private:
+        REGHANDLE m_eventHandle;
+        GUID guid;
+        std::wstring m_name;
     };
 }

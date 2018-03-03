@@ -59,6 +59,7 @@ D3D12SwapChain::~D3D12SwapChain()
 // TODO switch to Present1
 HRESULT D3D12SwapChain::Present(bool vsync)
 { 
+    m_timer.Mark();
     HRESULT result = m_swapChain->Present(vsync? 1 : 0, 0);
     m_timer.Mark();
 

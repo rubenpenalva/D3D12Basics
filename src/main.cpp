@@ -16,16 +16,17 @@ namespace
     const wchar_t* g_texture256FileName    = L"./data/texture_256.png";
     const wchar_t* g_texture1024FileName   = L"./data/texture_1024.jpg";
 
-    const size_t g_planesCount  = 1;
-    const size_t g_planeModelID = 0;
+    const size_t g_planesCount          = 1;
+    const size_t g_planeModelID         = 0;
 
-    const size_t g_spheresCount = 100;
-    const size_t g_spheresModelStartID = g_planeModelID + g_planesCount;
+    const size_t g_spheresCount         = 100;
+    const size_t g_spheresModelStartID  = g_planeModelID + g_planesCount;
+    const float g_spheresAngleDiff      = (D3D12Basics::M_2PI / g_spheresCount);
 
-    const size_t g_cubesCount = 25;
-    const size_t g_cubesModelStartID = g_spheresModelStartID + g_spheresCount;
+    const size_t g_cubesCount           = 25;
+    const size_t g_cubesModelStartID    = g_spheresModelStartID + g_spheresCount;
 
-    const size_t g_modelsCount = g_planesCount + g_spheresCount + g_cubesCount;
+    const size_t g_modelsCount          = g_planesCount + g_spheresCount + g_cubesCount;
 
     bool HandleWindowMessages()
     {
@@ -46,6 +47,17 @@ namespace
         return false;
     }
 
+    D3D12Basics::Matrix44 CalculateSphereLocalToWorld(size_t sphereID, float totalTime)
+    {
+        const float longitude = g_spheresAngleDiff * sphereID;
+        const float latitude = D3D12Basics::M_PI_2;
+        const float altitude = 3.3f;
+        const auto sphereOffsetPos = D3D12Basics::Float3(0.0f, 0.3f + (sinf(sphereID - totalTime * 5.0f) * 0.5f + 0.5f)*0.5f, 0.0f);
+        D3D12Basics::Float3 spherePos = D3D12Basics::SphericalToCartersian(longitude, latitude, altitude) + sphereOffsetPos;
+
+        return D3D12Basics::Matrix44::CreateScale(0.2f) * D3D12Basics::Matrix44::CreateTranslation(spherePos);
+    }
+
     Scene CreateScene()
     {
         const auto cameraPosition = D3D12Basics::Float3(0.0f, 0.0f, -5.0f);
@@ -63,15 +75,9 @@ namespace
         }
 
         // Spheres
-        const float spheresAngleDiff = (D3D12Basics::M_2PI / g_spheresCount);
         for (size_t i = 0; i < g_spheresCount; ++i)
         {
-            const float longitude = spheresAngleDiff * i;
-            const float latitude = D3D12Basics::M_PI_2;
-            const float altitude = 3.3f;
-            D3D12Basics::Float3 spherePos = D3D12Basics::SphericalToCartersian(longitude, latitude, altitude) + D3D12Basics::Float3(0.0f, 0.3f, 0.0f);
-
-            D3D12Basics::Matrix44 localToWorld = D3D12Basics::Matrix44::CreateScale(0.2f) * D3D12Basics::Matrix44::CreateTranslation(spherePos);
+            D3D12Basics::Matrix44 localToWorld = CalculateSphereLocalToWorld(i, 0.0f);
             D3D12Basics::Mesh mesh = CreateSphere(20, 20);
             std::wstringstream converter;
             converter << L"Sphere " << i;
@@ -102,14 +108,21 @@ namespace
         return scene;
     }
 
-    void UpdateScene(Scene& scene, float accumulatedTime)
+    void UpdateScene(Scene& scene, float totalTime, float /*deltaTime*/)
     {
-        const float longitude = (1.0f / D3D12Basics::M_2PI) * accumulatedTime;
+        const float longitude = 2.f * (1.0f / D3D12Basics::M_2PI) * totalTime;
         const float latitude = D3D12Basics::M_PI_4 + D3D12Basics::M_PI_8;
         const float altitude = 5.0f;
         D3D12Basics::Float3 cameraPos = D3D12Basics::SphericalToCartersian(longitude, latitude, altitude);
 
         scene.m_camera.TranslateLookingAt(cameraPos, D3D12Basics::Float3::Zero);
+
+        for (size_t i = 0; i < g_spheresCount; ++i)
+        {
+            auto& sphereModel = scene.m_models[g_spheresModelStartID + i];
+            
+            sphereModel.m_transform = CalculateSphereLocalToWorld(i, totalTime);
+        }
     }
 }
 
@@ -145,7 +158,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         }
 
         // Kick the work: update scene - update backend resources - render frame - present frame
-        UpdateScene(scene, timer.TotalTime());
+        UpdateScene(scene, timer.TotalTime(), timer.ElapsedTime());
 
         backendRender.UpdateSceneResources();
 

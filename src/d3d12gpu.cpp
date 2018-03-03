@@ -57,10 +57,7 @@ void D3D12GpuSynchronizer::Wait()
         assert(previousFenceValue > m_framesInFlight);
 
         const auto firstPreviousQueuedFrame = m_currentFenceValue - m_framesInFlight + 1;
-        AssertIfFailed(m_fence->SetEventOnCompletion(firstPreviousQueuedFrame, m_event));
-        WaitForSingleObject(m_event, INFINITE);
-
-        m_waitTimer.Mark();
+        WaitForFence(firstPreviousQueuedFrame);
 
         m_framesInFlight--;
     }
@@ -70,8 +67,7 @@ void D3D12GpuSynchronizer::WaitAll()
 {
     SignalWork();
 
-    AssertIfFailed(m_fence->SetEventOnCompletion(m_currentFenceValue, m_event));
-    WaitForSingleObject(m_event, INFINITE);
+    WaitForFence(m_currentFenceValue);
 
     m_framesInFlight = 0;
 }
@@ -84,6 +80,15 @@ void D3D12GpuSynchronizer::SignalWork()
 
     m_framesInFlight++;
     assert(m_framesInFlight <= m_maxFramesInFlight);
+}
+
+void D3D12GpuSynchronizer::WaitForFence(UINT64 fenceValue)
+{
+    Timer timer;
+    AssertIfFailed(m_fence->SetEventOnCompletion(fenceValue, m_event));
+    WaitForSingleObject(m_event, INFINITE);
+    timer.Mark();
+    m_waitTime = timer.ElapsedTime();
 }
 
 D3D12Gpu::D3D12Gpu()    :   m_dynamicConstantBuffersMaxSize(2 * g_page_size_64kb_in_bytes), m_dynamicConstantBuffersCurrentSize(0), 
@@ -101,7 +106,7 @@ D3D12Gpu::D3D12Gpu()    :   m_dynamicConstantBuffersMaxSize(2 * g_page_size_64kb
     m_committedBufferLoader = std::make_shared<D3D12CommittedBufferLoader>(m_device, m_cmdAllocators[0], m_graphicsCmdQueue, m_cmdLists[0]);
     assert(m_committedBufferLoader);
 
-    // TODO move this outside ot d3d12gpu
+    // TODO move this outside
     m_simpleMaterial = std::make_shared<D3D12SimpleMaterial>(m_device);
     assert(m_simpleMaterial);
 
@@ -281,7 +286,7 @@ void D3D12Gpu::ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderT
             static_cast<UINT>(renderTask.m_indexCount * sizeof(uint16_t)), DXGI_FORMAT_R16_UINT
         };
         cmdList->IASetIndexBuffer(&indexBufferView);
-            
+
         cmdList->DrawIndexedInstanced(static_cast<UINT>(renderTask.m_indexCount), 1, 0, 0, 0);
     }
 
@@ -296,12 +301,15 @@ void D3D12Gpu::ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderT
 void D3D12Gpu::FinishFrame()
 {
     m_swapChain->Present(m_vsync);
+
     // TODO frame statistics
     //const float presentTime = m_swapChain->GetPresentTime();
-    m_currentBackbufferIndex = m_swapChain->GetCurrentBackBufferIndex();
 
     m_gpuSync->Wait();
+    m_frameTime.Mark();
 
+    // Note: we can have x frames in flight and y backbuffers
+    m_currentBackbufferIndex = m_swapChain->GetCurrentBackBufferIndex();
     m_currentFrameIndex = (m_currentFrameIndex + 1) % m_framesInFlight;
 }
 

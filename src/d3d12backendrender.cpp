@@ -7,6 +7,14 @@ using namespace D3D12Basics;
 
 namespace
 {
+    const wchar_t* g_loadresourcesUUID  = L"a9744ea3-aaaa-4f2f-be6a-42aad08a9c6f";
+    const wchar_t* g_finishFrameUUID    = L"a9744ea3-bbbb-4f2f-be6a-42aad08a9c6f";
+
+    const wchar_t* g_loadResourcesName  = L"LoadResources_DONE";
+    const wchar_t* g_finishFrameName    = L"FINISH_FRAME";
+
+    D3D12Basics::GpuViewMarker g_gpuviewMarker(g_finishFrameName, g_finishFrameUUID);
+
     static const float g_defaultClearColor[4] = { 0.0f, 0.2f, 0.4f, 1.0f };
 }
 
@@ -92,6 +100,9 @@ void D3D12BackendRender::LoadSceneResources()
 
         m_renderTasks.push_back(renderTask);
     }
+
+    D3D12Basics::GpuViewMarker gpuviewMarker(g_loadResourcesName, g_loadresourcesUUID);
+    gpuviewMarker.Mark();
 }
 
 void D3D12BackendRender::UpdateSceneResources()
@@ -116,6 +127,8 @@ void D3D12BackendRender::FinishFrame()
 {
     // Present the frame
     m_gpu.FinishFrame();
+
+    g_gpuviewMarker.Mark();
 }
 
 void D3D12BackendRender::UpdateDefaultNotPSOState()

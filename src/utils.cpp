@@ -186,3 +186,20 @@ void Timer::Mark()
     m_elapsedTime = std::chrono::duration<float>(m_mark - lastMark).count();
     m_totalTime += m_elapsedTime;
 }
+
+// https://knarkowicz.wordpress.com/2013/05/25/simple-gpuview-custom-event-markers/
+GpuViewMarker::GpuViewMarker(const std::wstring& name, const wchar_t* uuid) : m_name(name)
+{
+    UuidFromString((RPC_WSTR)uuid, &guid);
+    EventRegister(&guid, nullptr, nullptr, &m_eventHandle);
+}
+
+GpuViewMarker::~GpuViewMarker()
+{
+    EventUnregister(m_eventHandle);
+}
+
+void GpuViewMarker::Mark()
+{
+    EventWriteString(m_eventHandle, 0, 0, m_name.c_str());
+}

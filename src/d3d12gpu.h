@@ -113,8 +113,8 @@ namespace D3D12Render
         {
             uint64_t            m_sizeInBytes;
             uint64_t            m_requiredSizeInBytes;
-            void*               m_memPtr;
-            D3D12DescriptorID   m_cbvID;
+            void*               m_memPtr[m_framesInFlight];
+            D3D12DescriptorID   m_cbvID[m_framesInFlight];
         };
 
         // dxgi data
@@ -155,7 +155,8 @@ namespace D3D12Render
         const unsigned int                  m_dynamicConstantBuffersMaxSize;
         unsigned int                        m_dynamicConstantBuffersCurrentSize;
         D3D12_GPU_VIRTUAL_ADDRESS           m_dynamicConstantBufferHeapCurrentPtr;
-        void*                               m_dynamicConstantBuffersMemPtr;
+        void*                               m_dynamicConstantBuffersMemPtr;         // TODO is caching the memorys start ptr useful?
+        void*                               m_dynamicConstantBuffersCurrentMemPtr;
         std::vector<DynamicConstantBuffer>  m_dynamicConstantBuffers;
 
         DisplayModes EnumerateDisplayModes(DXGI_FORMAT format);

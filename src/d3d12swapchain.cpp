@@ -86,7 +86,7 @@ unsigned int D3D12SwapChain::GetCurrentBackBufferIndex() const
 
 D3D12_RESOURCE_BARRIER& D3D12SwapChain::Transition(unsigned int backBufferIndex, TransitionType transitionType)
 {
-    assert(backBufferIndex < BackBuffersCount);
+    assert(backBufferIndex < D3D12Gpu::m_backBuffersCount);
 
     return m_transitions[transitionType][backBufferIndex];
 }

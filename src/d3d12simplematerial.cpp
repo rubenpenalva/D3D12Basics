@@ -2,6 +2,7 @@
 
 // C includes
 #include <cassert>
+#include <sstream>
 
 // directx includes
 #include <d3d12.h>

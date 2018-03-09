@@ -1,5 +1,6 @@
 // c++ includes
 #include <sstream>
+#include <iostream>
 
 // windows includes
 #include <windows.h>
@@ -13,8 +14,8 @@ using namespace D3D12Render;
 namespace
 {
     // NOTE:  Assuming working directory contains the data folder
-    const wchar_t* g_texture256FileName    = L"./data/texture_256.png";
-    const wchar_t* g_texture1024FileName   = L"./data/texture_1024.jpg";
+     const wchar_t* g_texture256FileName     = L"./data/texture_256.png";
+    const wchar_t* g_texture1024FileName    = L"./data/texture_1024.jpg";
 
     const size_t g_planesCount          = 1;
     const size_t g_planeModelID         = 0;
@@ -27,6 +28,14 @@ namespace
     const size_t g_cubesModelStartID    = g_spheresModelStartID + g_spheresCount;
 
     const size_t g_modelsCount          = g_planesCount + g_spheresCount + g_cubesCount;
+
+    const wchar_t* g_enableWaitForPresentCmdName        = L"waitForPresent";
+    const size_t g_enableWaitForPresentCmdNameLength    = wcslen(g_enableWaitForPresentCmdName);
+
+    struct CommandLine
+    {
+        bool m_isWaitableForPresentEnabled;
+    };
 
     bool HandleWindowMessages()
     {
@@ -124,13 +133,34 @@ namespace
             sphereModel.m_transform = CalculateSphereLocalToWorld(i, totalTime);
         }
     }
+
+    CommandLine ProcessCmndLine(LPWSTR szCmdLine)
+    {
+        CommandLine cmdLine{};
+
+        if (szCmdLine[0] == '-')
+        {
+            size_t w = 0;
+            for (size_t j = 1;
+                szCmdLine[j] != '\0' && szCmdLine[j] != '-' &&
+                j < g_enableWaitForPresentCmdNameLength &&
+                szCmdLine[j] == g_enableWaitForPresentCmdName[w];
+                ++j, ++w);
+
+            cmdLine.m_isWaitableForPresentEnabled = w == g_enableWaitForPresentCmdNameLength - 1;
+        }
+
+        return cmdLine;
+    }
 }
 
-int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /*szCmdLine*/, int /*iCmdShow*/)
+int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR szCmdLine, int /*iCmdShow*/)
 {
+    auto cmdLine = ProcessCmndLine(szCmdLine);
+
     Scene scene = CreateScene();
 
-    D3D12BackendRender backendRender(scene);
+    D3D12BackendRender backendRender(scene, cmdLine.m_isWaitableForPresentEnabled);
 
     D3D12Basics::CustomWindow customWindow(backendRender.GetSafestResolutionSupported());
 

@@ -45,7 +45,7 @@ namespace D3D12Render
     class D3D12CBVSRVUAVDescHeap : public D3D12DescriptorHeap
     {
     public:
-        D3D12CBVSRVUAVDescHeap(ID3D12DevicePtr d3d12Device, unsigned int heapSize = 1024);
+        D3D12CBVSRVUAVDescHeap(ID3D12DevicePtr d3d12Device, unsigned int heapSize = 65536);
 
         D3D12DescriptorID CreateCBV(D3D12_GPU_VIRTUAL_ADDRESS bufferPtr, int bufferSize);
 

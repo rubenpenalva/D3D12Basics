@@ -9,7 +9,7 @@ namespace D3D12Render
     class D3D12BackendRender
     {
     public:
-        D3D12BackendRender(D3D12Basics::Scene& scene);
+        D3D12BackendRender(D3D12Basics::Scene& scene, bool isWaitableForPresentEnabled);
 
         ~D3D12BackendRender();
 

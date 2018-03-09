@@ -14,9 +14,26 @@ using namespace D3D12Render;
 
 namespace
 {
-    const uint64_t g_page_size_64kb_in_bytes = 1024 * 64; // 64 << 10
-    const uint64_t g_page_size_128kb_in_bytes = 1024 * 128; // 64 << 10
-    const uint64_t g_page_size_256kb_in_bytes = 1024 * 256; // 64 << 10
+    const wchar_t* g_prePresentUUID = L"a9744ea3-cccc-4f2f-be6a-42aad08a9c6f";
+    const wchar_t* g_postPresentUUID = L"a9744ea3-dddd-4f2f-be6a-42aad08a9c6f";
+    const wchar_t* g_preWaitUUID = L"a9744ea3-eeee-4f2f-be6a-42aad08a9c6f";
+    const wchar_t* g_postWaitUUID = L"a9744ea3-ffff-4f2f-be6a-42aad08a9c6f";
+
+    const wchar_t* g_prePresentName = L"PRE PRESENT";
+    const wchar_t* g_postPresentName = L"POST PRESENT";
+    const wchar_t* g_preWaitName = L"PRE WAIT";
+    const wchar_t* g_postWaitName = L"POST WAIT";
+
+    D3D12Basics::GpuViewMarker g_gpuViewMarkerPrePresentFrame(g_prePresentName, g_prePresentUUID);
+    D3D12Basics::GpuViewMarker g_gpuViewMarkerPostPresentFrame(g_postPresentName, g_postPresentUUID);
+    D3D12Basics::GpuViewMarker g_gpuViewMarkerPreWaitFrame(g_preWaitName, g_preWaitUUID);
+    D3D12Basics::GpuViewMarker g_gpuViewMarkerPostWaitFrame(g_postWaitName, g_postWaitUUID);
+
+    const uint64_t g_page_size_64kb_in_bytes    = 1024 * 64; // 64 << 10
+    const uint64_t g_page_size_128kb_in_bytes   = 1024 * 128;
+    const uint64_t g_page_size_256kb_in_bytes   = 1024 * 256;
+    const uint64_t g_page_size_512kb_in_bytes   = 1024 * 512;
+    const uint64_t g_page_size_1mb_in_bytes     = 1024 * 1024;
 
     const auto g_swapChainFormat = DXGI_FORMAT::DXGI_FORMAT_R8G8B8A8_UNORM;
 
@@ -56,12 +73,18 @@ void D3D12GpuSynchronizer::Wait()
 
     if (m_framesInFlight == m_maxFramesInFlight)
     {
-        assert(m_currentFenceValue + 1 > m_framesInFlight);
+        auto completedFenceValue = m_fence->GetCompletedValue();
 
-        const auto firstPreviousQueuedFrame = m_currentFenceValue - m_framesInFlight + 1;
-        WaitForFence(firstPreviousQueuedFrame);
+        assert(m_currentFenceValue <= m_currentFenceValue);
+        if (completedFenceValue < m_currentFenceValue)
+        {
+            WaitForFence(completedFenceValue + 1);
+            completedFenceValue++;
+        }
 
-        m_framesInFlight--;
+        auto completedFramesCount = static_cast<unsigned int>(completedFenceValue - m_currentFenceValue + m_framesInFlight);
+        assert(m_framesInFlight >= completedFramesCount);
+        m_framesInFlight -= completedFramesCount;
     }
 }
 
@@ -93,8 +116,10 @@ void D3D12GpuSynchronizer::WaitForFence(UINT64 fenceValue)
     m_waitTime = timer.ElapsedTime();
 }
 
-D3D12Gpu::D3D12Gpu()    :   m_dynamicConstantBuffersMaxSize(g_page_size_256kb_in_bytes), m_dynamicConstantBuffersCurrentSize(0), 
-                            m_currentBackbufferIndex(0), m_currentFrameIndex(0)
+D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_dynamicConstantBuffersMaxSize(4 * g_page_size_1mb_in_bytes),
+                                                            m_dynamicConstantBuffersCurrentSize(0),
+                                                            m_currentBackbufferIndex(0), m_currentFrameIndex(0), 
+                                                            m_isWaitableForPresentEnabled(isWaitableForPresentEnabled)
 {
     auto adapter = CreateDXGIInfrastructure();
     assert(adapter);
@@ -127,7 +152,7 @@ void D3D12Gpu::SetOutputWindow(HWND hwnd)
     // NOTE only one output supported
     m_swapChain = std::make_shared<D3D12SwapChain>(hwnd, g_swapChainFormat, m_safestResolution, 
                                                    m_factory, m_device, m_graphicsCmdQueue,
-                                                   m_rtvDescriptorHeap);
+                                                   m_rtvDescriptorHeap, m_isWaitableForPresentEnabled);
     assert(m_swapChain);
 
     CreateDepthBuffer();
@@ -295,14 +320,35 @@ void D3D12Gpu::ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderT
     m_graphicsCmdQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 }
 
+void D3D12Gpu::BeginFrame()
+{
+    // TODO gather frame stats
+}
+
 void D3D12Gpu::FinishFrame()
 {
+    // TODO gather frame stats
+
+    g_gpuViewMarkerPrePresentFrame.Mark();
     m_swapChain->Present(m_vsync);
+    g_gpuViewMarkerPostPresentFrame.Mark();
 
     // TODO frame statistics
     //const float presentTime = m_swapChain->GetPresentTime();
 
+    g_gpuViewMarkerPreWaitFrame.Mark();
+
     m_gpuSync->Wait();
+    // TODO Fences for gpu/cpu sync after present are already being used.
+    //      Why would be needed to use the waitable object to wait for
+    //      the present if its already being counted for in the fence?
+    //      Does the waitable object work signal in a different time than 
+    //      the fence?
+    if (m_isWaitableForPresentEnabled)
+    {
+        m_swapChain->WaitForPresent();
+    }
+    g_gpuViewMarkerPostWaitFrame.Mark();
     m_frameTime.Mark();
 
     // Note: we can have x frames in flight and y backbuffers
@@ -313,13 +359,16 @@ void D3D12Gpu::FinishFrame()
 // 
 void D3D12Gpu::OnToggleFullScreen()
 {
+    // NOTE the actual resizing of the buffer doesnt happen here
+    //      so its safe to keep the gpu working a little bit more
+    //      until the actual resize happens.
     m_swapChain->ToggleFullScreen();
-
-    m_currentBackbufferIndex = m_swapChain->GetCurrentBackBufferIndex();
 }
 
 void D3D12Gpu::OnResize(const Resolution& resolution)
 {
+    m_gpuSync->WaitAll();
+
     const auto& swapChainDisplayMode = FindClosestDisplayModeMatch(g_swapChainFormat, resolution);
     m_swapChain->Resize(swapChainDisplayMode);
 

@@ -7,24 +7,24 @@ using namespace D3D12Basics;
 
 namespace
 {
-    const wchar_t* g_loadresourcesUUID  = L"a9744ea3-aaaa-4f2f-be6a-42aad08a9c6f";
-    const wchar_t* g_finishFrameUUID    = L"a9744ea3-bbbb-4f2f-be6a-42aad08a9c6f";
+    const wchar_t* g_preFinishFrameUUID     = L"a9744ea3-aaaa-4f2f-be6a-42aad08a9c6f";
+    const wchar_t* g_postFinishFrameUUID    = L"a9744ea3-bbbb-4f2f-be6a-42aad08a9c6f";
 
-    const wchar_t* g_loadResourcesName  = L"LoadResources_DONE";
-    const wchar_t* g_finishFrameName    = L"FINISH_FRAME";
+    const wchar_t* g_preFinishFrameName    = L"PRE FINISH_FRAME";
+    const wchar_t* g_postFinishFrameName    = L"POST FINISH_FRAME";
 
-    D3D12Basics::GpuViewMarker g_gpuviewMarker(g_finishFrameName, g_finishFrameUUID);
+    D3D12Basics::GpuViewMarker g_gpuViewMarkerPreFinishFrame(g_preFinishFrameName, g_preFinishFrameUUID);
+    D3D12Basics::GpuViewMarker g_gpuViewMarkerPostFinishFrame(g_postFinishFrameName, g_postFinishFrameUUID);
 
     static const float g_defaultClearColor[4] = { 0.0f, 0.2f, 0.4f, 1.0f };
 }
 
-D3D12BackendRender::D3D12BackendRender(D3D12Basics::Scene& scene) : m_scene(scene)
+D3D12BackendRender::D3D12BackendRender(D3D12Basics::Scene& scene, bool isWaitableForPresentEnabled) : m_scene(scene), m_gpu(isWaitableForPresentEnabled)
 {
 }
 
 D3D12BackendRender::~D3D12BackendRender()
 {
-    m_gpu.FinishFrame();
 }
 
 const D3D12Basics::Resolution& D3D12BackendRender::GetSafestResolutionSupported() const
@@ -100,9 +100,6 @@ void D3D12BackendRender::LoadSceneResources()
 
         m_renderTasks.push_back(renderTask);
     }
-
-    D3D12Basics::GpuViewMarker gpuviewMarker(g_loadResourcesName, g_loadresourcesUUID);
-    gpuviewMarker.Mark();
 }
 
 void D3D12BackendRender::UpdateSceneResources()
@@ -120,15 +117,19 @@ void D3D12BackendRender::UpdateSceneResources()
 
 void D3D12BackendRender::RenderFrame()
 {
+    m_gpu.BeginFrame();
+
     m_gpu.ExecuteRenderTasks(m_renderTasks);
 }
 
 void D3D12BackendRender::FinishFrame()
 {
+    g_gpuViewMarkerPreFinishFrame.Mark();
+
     // Present the frame
     m_gpu.FinishFrame();
 
-    g_gpuviewMarker.Mark();
+    g_gpuViewMarkerPostFinishFrame.Mark();
 }
 
 void D3D12BackendRender::UpdateDefaultNotPSOState()

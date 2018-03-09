@@ -73,7 +73,7 @@ namespace D3D12Render
         static const unsigned int   m_backBuffersCount      = 2;
         static const bool           m_vsync                 = true;
 
-        D3D12Gpu();
+        D3D12Gpu(bool isWaitableForPresentEnabled);
         
         ~D3D12Gpu();
 
@@ -96,6 +96,7 @@ namespace D3D12Render
 
         // GPU Execution
         void ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderTasks);
+        void BeginFrame();
         void FinishFrame();
 
         // Callbacks
@@ -135,6 +136,7 @@ namespace D3D12Render
         D3D12Basics::Timer                          m_frameTime;
         D3D12Basics::Timer                          m_frameWaitTime;
 
+        bool                        m_isWaitableForPresentEnabled;
         D3D12SwapChainPtr           m_swapChain;
         D3D12RTVDescriptorHeapPtr   m_rtvDescriptorHeap;
 

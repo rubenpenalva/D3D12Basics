@@ -17,9 +17,11 @@ D3D12SwapChain::D3D12SwapChain(HWND hwnd, DXGI_FORMAT format,
                                const D3D12Basics::Resolution& resolution,
                                IDXGIFactory4Ptr factory, ID3D12DevicePtr device,
                                ID3D12CommandQueuePtr commandQueue, 
-                               D3D12RTVDescriptorHeapPtr descriptorHeap)    :   m_device(device), 
-                                                                                m_descriptorHeap(descriptorHeap),
-                                                                                m_resolution(resolution)
+                               D3D12RTVDescriptorHeapPtr descriptorHeap,
+                               bool waitForPresentEnabled)  :   m_device(device),
+                                                                m_descriptorHeap(descriptorHeap),
+                                                                m_resolution(resolution),
+                                                                m_waitForPresentEnabled(waitForPresentEnabled)
 {
     assert(factory);
     assert(device);
@@ -40,13 +42,21 @@ D3D12SwapChain::D3D12SwapChain(HWND hwnd, DXGI_FORMAT format,
     swapChainDesc.Scaling               = DXGI_SCALING_STRETCH;
     swapChainDesc.SwapEffect            = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     swapChainDesc.AlphaMode             = DXGI_ALPHA_MODE_UNSPECIFIED;
-    swapChainDesc.Flags                 = 0;
+    swapChainDesc.Flags                 = m_waitForPresentEnabled? DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT : 0;
         
     // Swap chain needs the queue so that it can force a flush on it.
     Microsoft::WRL::ComPtr<IDXGISwapChain1> swapChain1;
     AssertIfFailed(factory->CreateSwapChainForHwnd(commandQueue.Get(), hwnd, &swapChainDesc, nullptr, nullptr, &swapChain1));
     AssertIfFailed(swapChain1.As(&m_swapChain));
     assert(m_swapChain);
+
+    if (m_waitForPresentEnabled)
+    {
+        AssertIfFailed(m_swapChain->SetMaximumFrameLatency(D3D12Gpu::m_framesInFlight));
+
+        m_frameLatencyWaitableObject = m_swapChain->GetFrameLatencyWaitableObject();
+        assert(m_frameLatencyWaitableObject);
+    }
 
     CreateBackBuffers();
 }
@@ -59,11 +69,20 @@ D3D12SwapChain::~D3D12SwapChain()
 // TODO switch to Present1
 HRESULT D3D12SwapChain::Present(bool vsync)
 { 
-    m_timer.Mark();
+    m_presentTimer.Mark();
     HRESULT result = m_swapChain->Present(vsync? 1 : 0, 0);
-    m_timer.Mark();
+    m_presentTimer.Mark();
 
     return result;
+}
+
+void D3D12SwapChain::WaitForPresent()
+{
+    m_waitForPresentTimer.Mark();
+
+    AssertIfFailed(WaitForSingleObject(m_frameLatencyWaitableObject, INFINITE));
+
+    m_waitForPresentTimer.Mark();
 }
 
 void D3D12SwapChain::ToggleFullScreen()
@@ -109,7 +128,8 @@ void D3D12SwapChain::Resize(const DXGI_MODE_DESC1& mode)
     
     AssertIfFailed(m_swapChain->ResizeTarget(reinterpret_cast<const DXGI_MODE_DESC*>(&mode)));
 
-    AssertIfFailed(m_swapChain->ResizeBuffers(D3D12Gpu::m_backBuffersCount, mode.Width, mode.Height, mode.Format, 0));
+    AssertIfFailed(m_swapChain->ResizeBuffers(D3D12Gpu::m_backBuffersCount, mode.Width, mode.Height, mode.Format, 
+                                              m_waitForPresentEnabled? DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT : 0));
 
     UpdateBackBuffers();
 

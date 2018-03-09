@@ -28,12 +28,15 @@ namespace D3D12Render
 
         D3D12SwapChain(HWND hwnd, DXGI_FORMAT format, const D3D12Basics::Resolution& resolution, 
                        IDXGIFactory4Ptr factory, ID3D12DevicePtr device, 
-                       ID3D12CommandQueuePtr commandQueue, D3D12RTVDescriptorHeapPtr descriptorHeap);
+                       ID3D12CommandQueuePtr commandQueue, D3D12RTVDescriptorHeapPtr descriptorHeap,
+                       bool waitForPresentEnabled = false);
 
         ~D3D12SwapChain();
 
         // TODO use Present1?
         HRESULT Present(bool vsync);
+
+        void WaitForPresent();
 
         void ToggleFullScreen();
 
@@ -47,7 +50,9 @@ namespace D3D12Render
 
         const D3D12Basics::Resolution& GetCurrentResolution() const { return m_resolution; }
 
-        float GetPresentTime() const { return m_timer.ElapsedTime(); }
+        float GetPresentTime() const { return m_presentTimer.ElapsedTime(); }
+
+        float GetWaitForPresentTime() const { return m_waitForPresentTimer.ElapsedTime(); }
 
     private:
         ID3D12DevicePtr m_device;
@@ -64,7 +69,11 @@ namespace D3D12Render
 
         D3D12_RESOURCE_BARRIER m_transitions[TransitionType_COUNT][D3D12Gpu::m_backBuffersCount];
 
-        D3D12Basics::Timer m_timer;
+        D3D12Basics::Timer m_presentTimer;
+        D3D12Basics::Timer m_waitForPresentTimer;
+
+        bool    m_waitForPresentEnabled;
+        HANDLE  m_frameLatencyWaitableObject;
 
         void CreateBackBuffers();
 

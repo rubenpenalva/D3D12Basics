@@ -18,7 +18,7 @@ namespace D3D12Render
     {
     public:
         D3D12CommittedBufferLoader(ID3D12DevicePtr device, ID3D12CommandAllocatorPtr cmdAllocator,
-                                  ID3D12CommandQueuePtr cmdQueue, ID3D12GraphicsCommandListPtr cmdList);
+                                   ID3D12CommandQueuePtr cmdQueue, ID3D12GraphicsCommandListPtr cmdList);
 
         ~D3D12CommittedBufferLoader();
 

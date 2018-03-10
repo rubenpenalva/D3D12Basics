@@ -8,12 +8,21 @@
 // Project includes
 #include "d3d12backendrender.h"
 
+// External
+#include "assimp/Importer.hpp"
+#include "assimp/postprocess.h"
+#include <assimp/scene.h>
+
+//#include <assimp/cimport.h>
+
 using namespace D3D12Basics;
 using namespace D3D12Render;
 
 namespace
 {
     // NOTE:  Assuming working directory contains the data folder
+    const char* g_sponzaModel = "./data/sponza/sponza.dae";
+
      const wchar_t* g_texture256FileName     = L"./data/texture_256.png";
     const wchar_t* g_texture1024FileName    = L"./data/texture_1024.jpg";
 
@@ -157,6 +166,38 @@ namespace
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR szCmdLine, int /*iCmdShow*/)
 {
     auto cmdLine = ProcessCmndLine(szCmdLine);
+
+    // TODO this is a quick test that assimp is working. This will be removed once
+    // the work on loading the scene has started.
+    {
+        // Note Ill bite the bullet and use ass as a prefix for things related to
+        // assimp.
+        Assimp::Importer assImporter;
+        int flags = aiProcess_PreTransformVertices | aiProcess_Triangulate | aiProcess_GenNormals;
+        const auto assScene = assImporter.ReadFile(g_sponzaModel, flags);
+        assert(assScene);
+
+        std::wstringstream converter;
+        for (uint32_t i = 0; i < assScene->mNumMeshes; i++)
+        {
+            aiMesh *aMesh = assScene->mMeshes[i];
+
+            aiString materialName;
+            assScene->mMaterials[aMesh->mMaterialIndex]->Get(AI_MATKEY_NAME, materialName);
+
+            aiString texturefile;
+            if (assScene->mMaterials[i]->GetTextureCount(aiTextureType_DIFFUSE) > 0)
+                assScene->mMaterials[aMesh->mMaterialIndex]->GetTexture(aiTextureType_DIFFUSE, 0, &texturefile);
+
+
+            converter << "Mesh " << aMesh->mName.C_Str() << "\n"
+                << "    Material: \"" << materialName.C_Str() << "\"\n"
+                << "    Faces: " << aMesh->mNumFaces << "\n"
+                << "    Diffuse texture: " << texturefile.C_Str() << "\n";
+        }
+
+        OutputDebugString(converter.str().c_str());
+    }
 
     Scene scene = CreateScene();
 

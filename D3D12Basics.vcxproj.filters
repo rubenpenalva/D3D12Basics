@@ -13,18 +13,6 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
-    <Filter Include="ThirdParty">
-      <UniqueIdentifier>{e98b8273-4453-45ae-b3e5-2f2b646f4f12}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="ThirdParty\stb">
-      <UniqueIdentifier>{071d8a88-5d15-4e2d-a36a-f4ca85f2ac55}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="ThirdParty\DirectxMath">
-      <UniqueIdentifier>{219f5618-368b-41e4-8ebe-e07f1790afa0}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="ThirdParty\DirectxTK12">
-      <UniqueIdentifier>{5b0ac1a1-1aa4-408c-ada9-c07c924d7371}</UniqueIdentifier>
-    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp">
@@ -33,14 +21,8 @@
     <ClCompile Include="src\utils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\d3d12simplematerial.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="src\d3d12descriptorheap.cpp">
       <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="thirdparty\directxtk12\Src\SimpleMath.cpp">
-      <Filter>ThirdParty\DirectxTK12</Filter>
     </ClCompile>
     <ClCompile Include="src\scene.cpp">
       <Filter>Source Files</Filter>
@@ -57,26 +39,14 @@
     <ClCompile Include="src\d3d12backendrender.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\meshgenerator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\d3d12material.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="thirdparty\stb\stb_image.h">
-      <Filter>ThirdParty\stb</Filter>
-    </ClInclude>
-    <ClInclude Include="thirdparty\directxmath\Inc\DirectXCollision.h">
-      <Filter>ThirdParty\DirectxMath</Filter>
-    </ClInclude>
-    <ClInclude Include="thirdparty\directxmath\Inc\DirectXColors.h">
-      <Filter>ThirdParty\DirectxMath</Filter>
-    </ClInclude>
-    <ClInclude Include="thirdparty\directxmath\Inc\DirectXMath.h">
-      <Filter>ThirdParty\DirectxMath</Filter>
-    </ClInclude>
-    <ClInclude Include="thirdparty\directxmath\Inc\DirectXPackedVector.h">
-      <Filter>ThirdParty\DirectxMath</Filter>
-    </ClInclude>
-    <ClInclude Include="thirdparty\directxtk12\Inc\SimpleMath.h">
-      <Filter>ThirdParty\DirectxTK12</Filter>
-    </ClInclude>
     <ClInclude Include="src\d3d12basicsfwd.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -87,9 +57,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\d3d12gpu.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\d3d12simplematerial.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\d3d12swapchain.h">
@@ -107,32 +74,14 @@
     <ClInclude Include="src\d3d12backendrender.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\meshgenerator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\d3d12material.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="thirdparty\directxmath\Inc\DirectXCollision.inl">
-      <Filter>ThirdParty\DirectxMath</Filter>
-    </None>
-    <None Include="thirdparty\directxmath\Inc\DirectXMathConvert.inl">
-      <Filter>ThirdParty\DirectxMath</Filter>
-    </None>
-    <None Include="thirdparty\directxmath\Inc\DirectXMathMatrix.inl">
-      <Filter>ThirdParty\DirectxMath</Filter>
-    </None>
-    <None Include="thirdparty\directxmath\Inc\DirectXMathMisc.inl">
-      <Filter>ThirdParty\DirectxMath</Filter>
-    </None>
-    <None Include="thirdparty\directxmath\Inc\DirectXMathVector.inl">
-      <Filter>ThirdParty\DirectxMath</Filter>
-    </None>
-    <None Include="thirdparty\directxmath\Inc\DirectXPackedVector.inl">
-      <Filter>ThirdParty\DirectxMath</Filter>
-    </None>
     <None Include="packages.config" />
-    <None Include="thirdparty\directxtk12\Inc\SimpleMath.inl">
-      <Filter>ThirdParty\DirectxTK12</Filter>
-    </None>
-    <None Include="thirdparty\directxtk12\Src\TeapotData.inc">
-      <Filter>ThirdParty\DirectxTK12</Filter>
-    </None>
   </ItemGroup>
 </Project>

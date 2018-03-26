@@ -5,10 +5,11 @@
 
 // windows includes
 #include <windows.h>
-#include <Evntprov.h>
+#include <evntprov.h>
 
 // thirdparty includes
-#include "DirectXTK12/Inc/SimpleMath.h"
+#include <d3d12.h>
+#include "directxtk12/simplemath.h"
 
 namespace D3D12Basics
 {
@@ -25,11 +26,68 @@ namespace D3D12Basics
     constexpr float M_RCP_PI    = 1.0f / M_PI;
     constexpr float M_RCP_2PI   = 1.0f / M_2PI;
 
-    void AssertIfFailed(HRESULT hr);
+    struct VertexDesc
+    {
+        bool m_uv0;
+        bool m_normal;
+        bool m_tangent;
+    };
 
-    // parallels = latitude = altitude = phi 
-    // meridians = longitude = azimuth = theta
-    Float3 SphericalToCartersian(float longitude, float latitude, float altitude = 1.0f);
+    struct VertexStream
+    {
+        size_t m_elementsCount;
+        size_t m_elementOffset;
+
+        std::vector<float> m_data;
+    };
+
+    class VertexStreams
+    {
+    public:
+        VertexStreams();
+
+        void AddStream(size_t elementsCount, std::vector<float>&& data);
+
+        const std::vector<VertexStream>& GetStreams() const { return m_streams; }
+
+        size_t VertexElementsCount() const { return m_vertexElementsCount; }
+
+    private:
+        size_t m_vertexElementsCount;
+
+        std::vector<VertexStream> m_streams;
+    };
+
+    class Mesh
+    {
+    public:
+        static const uint32_t m_maxVertexCount = 0x0000ffff;
+
+        Mesh() {}
+
+        Mesh(const std::vector<VertexStream>& streams, std::vector<uint16_t>&& indices, 
+             size_t verticesCount, size_t vertexSizeBytes, size_t vertexElementsCount);
+
+        size_t VerticesCount() const { return m_verticesCount; }
+        size_t VertexSizeBytes() const { return m_vertexSizeBytes; }
+
+        size_t IndicesCount() const { return m_indices.size(); }
+
+        const std::vector<float>& Vertices() const { return m_vertices; }
+        const std::vector<uint16_t>& Indices() const { return m_indices; }
+
+        size_t VertexBufferSizeBytes() const { return m_vertexBufferSizeBytes; }
+        size_t IndexBufferSizeBytes() const { return m_indexBufferSizeBytes; }
+
+    private:
+        size_t m_verticesCount;
+        size_t m_vertexSizeBytes;
+        size_t m_vertexBufferSizeBytes;
+        size_t m_indexBufferSizeBytes;
+
+        std::vector<float>      m_vertices;
+        std::vector<uint16_t>   m_indices;
+    };
 
     struct Vector2i
     {
@@ -108,4 +166,14 @@ namespace D3D12Basics
         GUID guid;
         std::wstring m_name;
     };
+
+    void AssertIfFailed(HRESULT hr);
+
+    // parallels = latitude = altitude = phi 
+    // meridians = longitude = azimuth = theta
+    Float3 SphericalToCartersian(float longitude, float latitude, float altitude = 1.0f);
+
+    std::string ConvertFromUTF16ToUTF8(const std::wstring& str);
+
+    std::wstring ConvertFromUTF8ToUTF16(const std::string& str);
 }

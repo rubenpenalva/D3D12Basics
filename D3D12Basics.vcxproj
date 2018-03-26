@@ -57,12 +57,13 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_DEBUG;_WINDOWS;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>./thirdparty;./thirdparty/assimp/include/;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>./thirdparty/stb/include;./thirdparty/assimp/include/;./thirdparty/directxtk12/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>dxgi.lib;d3d12.lib;d3dcompiler.lib;Rpcrt4.lib;assimp.lib;zlib.lib;IrrXML.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)/thirdparty/assimp/lib/;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>dxgi.lib;d3d12.lib;d3dcompiler.lib;Rpcrt4.lib;assimp.lib;zlib.lib;IrrXML.lib;DirectXTK12_Custom.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)/thirdparty/assimp/lib/;$(SolutionDir)/thirdparty/directxtk12/lib/$(Configuration)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
       <Command>xcopy /s /Y .\thirdparty\assimp\bin\* $(OutputPath)</Command>
@@ -78,14 +79,15 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>./thirdparty;./thirdparty/assimp/include/;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>./thirdparty/stb/include;./thirdparty/assimp/include/;./thirdparty/directxtk12/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>dxgi.lib;d3d12.lib;d3dcompiler.lib;Rpcrt4.lib;assimp.lib;zlib.lib;IrrXML.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)/thirdparty/assimp/lib/;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>dxgi.lib;d3d12.lib;d3dcompiler.lib;Rpcrt4.lib;assimp.lib;zlib.lib;IrrXML.lib;DirectXTK12_Custom.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)/thirdparty/assimp/lib/;$(SolutionDir)/thirdparty/directxtk12/lib/$(Configuration)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
       <Command>xcopy /s /Y .\thirdparty\assimp\bin\* $(OutputPath)</Command>
@@ -96,12 +98,12 @@
     <ClCompile Include="src\d3d12descriptorheap.cpp" />
     <ClCompile Include="src\d3d12gpu.cpp" />
     <ClCompile Include="src\d3d12backendrender.cpp" />
-    <ClCompile Include="src\d3d12simplematerial.cpp" />
+    <ClCompile Include="src\d3d12material.cpp" />
     <ClCompile Include="src\d3d12swapchain.cpp" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\meshgenerator.cpp" />
     <ClCompile Include="src\scene.cpp" />
     <ClCompile Include="src\utils.cpp" />
-    <ClCompile Include="thirdparty\directxtk12\Src\SimpleMath.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\d3d12basicsfwd.h" />
@@ -110,27 +112,14 @@
     <ClInclude Include="src\d3d12fwd.h" />
     <ClInclude Include="src\d3d12gpu.h" />
     <ClInclude Include="src\d3d12backendrender.h" />
-    <ClInclude Include="src\d3d12simplematerial.h" />
+    <ClInclude Include="src\d3d12material.h" />
     <ClInclude Include="src\d3d12swapchain.h" />
+    <ClInclude Include="src\meshgenerator.h" />
     <ClInclude Include="src\scene.h" />
     <ClInclude Include="src\utils.h" />
-    <ClInclude Include="thirdparty\directxmath\Inc\DirectXCollision.h" />
-    <ClInclude Include="thirdparty\directxmath\Inc\DirectXColors.h" />
-    <ClInclude Include="thirdparty\directxmath\Inc\DirectXMath.h" />
-    <ClInclude Include="thirdparty\directxmath\Inc\DirectXPackedVector.h" />
-    <ClInclude Include="thirdparty\directxtk12\Inc\SimpleMath.h" />
-    <ClInclude Include="thirdparty\stb\stb_image.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
-    <None Include="thirdparty\directxmath\Inc\DirectXCollision.inl" />
-    <None Include="thirdparty\directxmath\Inc\DirectXMathConvert.inl" />
-    <None Include="thirdparty\directxmath\Inc\DirectXMathMatrix.inl" />
-    <None Include="thirdparty\directxmath\Inc\DirectXMathMisc.inl" />
-    <None Include="thirdparty\directxmath\Inc\DirectXMathVector.inl" />
-    <None Include="thirdparty\directxmath\Inc\DirectXPackedVector.inl" />
-    <None Include="thirdparty\directxtk12\Inc\SimpleMath.inl" />
-    <None Include="thirdparty\directxtk12\Src\TeapotData.inc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

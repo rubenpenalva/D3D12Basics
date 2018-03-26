@@ -78,27 +78,53 @@ namespace
 
 }
 
-void D3D12Basics::AssertIfFailed(HRESULT hr)
+VertexStreams::VertexStreams() : m_vertexElementsCount(0)
 {
-#if NDEBUG
-    hr;
-#endif
-    assert(SUCCEEDED(hr));
 }
 
-Float3 D3D12Basics::SphericalToCartersian(float longitude, float latitude, float altitude)
+void VertexStreams::AddStream(size_t elementsCount, std::vector<float>&& data)
 {
-    const float sinLat = sinf(latitude);
-    const float sinLon = sinf(longitude);
+    assert(elementsCount);
+    assert(data.size());
 
-    const float cosLat = cosf(latitude);
-    const float cosLon = cosf(longitude);
+    VertexStream stream;
+    stream.m_elementsCount = elementsCount;
+    stream.m_elementOffset = m_vertexElementsCount;
+    stream.m_data = std::move(data);
 
-    Float3 cartesianCoordinates;
-    cartesianCoordinates.x = sinLat * cosLon;
-    cartesianCoordinates.y = cosLat;
-    cartesianCoordinates.z = sinLat * sinLon;
-    return cartesianCoordinates * altitude;
+    m_vertexElementsCount += stream.m_elementsCount;
+
+    m_streams.push_back(std::move(stream));
+}
+
+Mesh::Mesh(const std::vector<VertexStream>& streams, 
+           std::vector<uint16_t>&& indices, size_t verticesCount,
+           size_t vertexSizeBytes, size_t vertexElementsCount)  :   m_verticesCount(verticesCount), m_vertexSizeBytes(vertexSizeBytes),
+                                                                    m_vertexBufferSizeBytes(0), m_indexBufferSizeBytes(0),
+                                                                    m_indices(std::move(indices))
+{
+    assert(streams.size());
+    assert(m_vertexSizeBytes);
+    assert(m_indices.size());
+    assert(m_verticesCount);
+    assert(vertexElementsCount);
+
+    m_vertexBufferSizeBytes = m_verticesCount * m_vertexSizeBytes;
+    m_indexBufferSizeBytes = m_indices.size() * sizeof(uint16_t);
+    m_vertices.resize(m_verticesCount * vertexElementsCount);
+
+    // Interleave
+    for (auto& stream : streams)
+    {
+        assert(stream.m_data.size() == (stream.m_elementsCount * m_verticesCount));
+
+        for (size_t i = 0; i < verticesCount; ++i)
+        {
+            memcpy(&m_vertices[i * vertexElementsCount + stream.m_elementOffset],
+                   &stream.m_data[i * stream.m_elementsCount],
+                   stream.m_elementsCount * sizeof(float));
+        }
+    }
 }
 
 CustomWindow::CustomWindow(const Resolution& resolution)    :   m_resolutionChanged(false), 
@@ -202,4 +228,51 @@ GpuViewMarker::~GpuViewMarker()
 void GpuViewMarker::Mark()
 {
     EventWriteString(m_eventHandle, 0, 0, m_name.c_str());
+}
+
+void D3D12Basics::AssertIfFailed(HRESULT hr)
+{
+#if NDEBUG
+    hr;
+#endif
+    assert(SUCCEEDED(hr));
+}
+
+Float3 D3D12Basics::SphericalToCartersian(float longitude, float latitude, float altitude)
+{
+    const float sinLat = sinf(latitude);
+    const float sinLon = sinf(longitude);
+
+    const float cosLat = cosf(latitude);
+    const float cosLon = cosf(longitude);
+
+    Float3 cartesianCoordinates;
+    cartesianCoordinates.x = sinLat * cosLon;
+    cartesianCoordinates.y = cosLat;
+    cartesianCoordinates.z = sinLat * sinLon;
+    return cartesianCoordinates * altitude;
+}
+
+std::string D3D12Basics::ConvertFromUTF16ToUTF8(const std::wstring& str)
+{
+    auto outStrLength = WideCharToMultiByte(CP_UTF8, 0, str.c_str(), -1, 0, 0, 0, 0);
+    assert(outStrLength);
+    std::string outStr(outStrLength, 0);
+    auto result = WideCharToMultiByte(CP_UTF8, 0, str.c_str(), -1, &outStr[0], static_cast<int>(outStr.size()), 0, 0);
+    result;
+    assert(result == outStr.size());
+
+    return outStr;
+}
+
+std::wstring D3D12Basics::ConvertFromUTF8ToUTF16(const std::string& str)
+{
+    auto outStrLength = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, 0, 0);
+    assert(outStrLength);
+    std::wstring outStr(outStrLength, 0);
+    auto result = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, &outStr[0], static_cast<int>(outStr.size())); 
+    result;
+    assert(result == outStr.size());
+
+    return outStr;
 }

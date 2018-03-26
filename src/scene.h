@@ -4,73 +4,19 @@
 // c++ includes
 #include <vector>
 #include <memory>
+#include <optional>
+
+// third party includes
+#include "assimp/Importer.hpp"
 
 namespace D3D12Basics
 {
-    enum class Cube_TexCoord_MappingType
-    {
-        Cube_TexCoord_UV_SingleFace,
-        Cube_TexCoord_UV_OrigamiFaces,
-        Cube_TexCoord_UVW_CubeFaces
-    };
-
-    struct Mesh
-    {
-        const static size_t VertexElemsCount = 5;
-        const static size_t VertexSize = VertexElemsCount * sizeof(float);
-
-        struct Vertex
-        {
-            Float3 m_position;
-            Float2 m_uv;
-        };
-
-        std::vector<Vertex>     m_vertices;
-        std::vector<uint16_t>   m_indices;
-        std::wstring            m_name;
-
-        Mesh()
-        {}
-
-        Mesh(size_t verticesCount, size_t indicesCount) :   m_vertices(verticesCount * VertexElemsCount),
-                                                            m_indices(indicesCount)
-        {
-        }
-
-        size_t VertexBufferSizeInBytes() const { return m_vertices.size() * VertexSize; }
-        size_t IndexBufferSizeInBytes() const { return m_indices.size() * sizeof(uint16_t); }
-    };
-
-    struct SimpleMaterialData
-    {
-    public:
-        SimpleMaterialData(const std::wstring& textureFileName);
-        
-        ~SimpleMaterialData();
-
-        unsigned char*  m_textureData;
-        unsigned int    m_textureSizeBytes;
-        int             m_textureWidth;
-        int             m_textureHeight;
-    };
-    using SimpleMaterialDataPtr = std::shared_ptr<SimpleMaterialData>;
-
-    struct Model
-    {
-        std::wstring    m_name;
-        Matrix44        m_transform;
-        Mesh            m_mesh;
-        std::wstring    m_simpleMaterialTextureFileName;
-    };
-
     class Camera
     {
     public:
         // NOTE Operating on a LH coordinate system
         // NOTE fov is in radians
-        Camera(const Float3& position, const Float3& target = Float3::Zero, float fov = M_PI_2 - M_PI_8,
-                float aspectRatio = 1.6f, float nearPlane = 0.1f, float farPlane = 1000.0f, 
-                const Float3& up = Float3::UnitY);
+        Camera();
 
         void TranslateLookingAt(const Float3& position, const Float3& target, const Float3& up = Float3::UnitY);
 
@@ -83,18 +29,73 @@ namespace D3D12Basics
         Matrix44 m_cameraToClip;
     };
 
-    struct Scene
+    struct Material
     {
-        Camera              m_camera;
-        std::vector<Model>  m_models;
+        static const Float3 m_diffuseColor;
+
+        std::optional<std::wstring> m_diffuseTexture;
+        std::optional<std::wstring> m_specularTexture;
+        std::optional<std::wstring> m_normalsTexture;
     };
 
-    Mesh CreatePlane();
+    class TextureData
+    {
+    public:
+        TextureData(const D3D12_RESOURCE_DESC& resourceDesc,
+                    std::unique_ptr<uint8_t[]> rawData,
+                    std::vector<D3D12_SUBRESOURCE_DATA>&& subresources) :   m_resourceDesc(resourceDesc), m_rawData(std::move(rawData)),
+                                                                            m_subresources(subresources)
+        {}
 
-    // NOTE: Check https://github.com/caosdoar/spheres
-    // Review of ways of creating a mesh sphere by @caosdoar
-    // TODO fix uv issues
-    Mesh CreateSphere(unsigned int parallelsCount = 2, unsigned int meridiansCount = 4);
+        const D3D12_RESOURCE_DESC& GetDesc() const { return m_resourceDesc; };
 
-    Mesh CreateCube(Cube_TexCoord_MappingType texcoordType = Cube_TexCoord_MappingType::Cube_TexCoord_UV_SingleFace);
+        const std::vector<D3D12_SUBRESOURCE_DATA>& GetSubResources() const { return m_subresources; }
+
+    private:
+        D3D12_RESOURCE_DESC m_resourceDesc;
+
+        std::unique_ptr<uint8_t[]>          m_rawData;
+        std::vector<D3D12_SUBRESOURCE_DATA> m_subresources;
+    };
+
+    struct Model
+    {
+        enum class Type
+        {
+            MeshFile,
+            Plane,
+            Sphere,
+            Cube
+        };
+
+        std::wstring    m_name;
+        Type            m_type;
+        size_t          m_id;
+
+        Matrix44 m_transform;
+        Material m_material;
+    };
+
+    struct Scene
+    {
+        std::wstring m_sceneFile;
+
+        Camera                m_camera;
+        std::vector<Model>    m_models;
+    };
+
+    class SceneLoader
+    {
+    public:
+        SceneLoader(const std::wstring& sceneFile, Scene& scene, const std::wstring& dataWorkingPath);
+
+        TextureData LoadTextureData(const std::wstring& textureFile);
+
+        Mesh LoadMesh(size_t modelId);
+
+    private:
+        Assimp::Importer m_assImporter;
+
+        Scene& m_outScene;
+    };
 }

@@ -8,22 +8,16 @@
 // Project includes
 #include "d3d12backendrender.h"
 
-// External
-#include "assimp/Importer.hpp"
-#include "assimp/postprocess.h"
-#include <assimp/scene.h>
-
-//#include <assimp/cimport.h>
-
 using namespace D3D12Basics;
 using namespace D3D12Render;
 
 namespace
 {
     // NOTE:  Assuming working directory contains the data folder
-    const char* g_sponzaModel = "./data/sponza/sponza.dae";
-
-     const wchar_t* g_texture256FileName     = L"./data/texture_256.png";
+    const wchar_t* g_sponzaDataWorkingPath = L"./data/sponza/";
+    const wchar_t* g_sponzaModel = L"./data/sponza/sponza.dae";
+    
+    const wchar_t* g_texture256FileName     = L"./data/texture_256.png";
     const wchar_t* g_texture1024FileName    = L"./data/texture_1024.jpg";
 
     const size_t g_planesCount          = 1;
@@ -35,6 +29,7 @@ namespace
 
     const size_t g_cubesCount           = 25;
     const size_t g_cubesModelStartID    = g_spheresModelStartID + g_spheresCount;
+    const float g_cubesAngleDiff        = (D3D12Basics::M_2PI / g_cubesCount);
 
     const size_t g_modelsCount          = g_planesCount + g_spheresCount + g_cubesCount;
 
@@ -78,51 +73,47 @@ namespace
 
     Scene CreateScene()
     {
-        const auto cameraPosition = D3D12Basics::Float3(0.0f, 0.0f, -5.0f);
-        Scene scene { cameraPosition };
-        
-        scene.m_models.resize(g_modelsCount);
+        std::vector<Model> models(g_modelsCount);
 
         // Plane
         {
             D3D12Basics::Matrix44 localToWorld = D3D12Basics::Matrix44::CreateScale(10.0f) * D3D12Basics::Matrix44::CreateRotationX(D3D12Basics::M_PI_2);
-            D3D12Basics::Mesh mesh = CreatePlane();
-            Model plane {L"Ground plane", localToWorld, mesh, g_texture256FileName };
-
-            scene.m_models[g_planeModelID] = plane;
+            Material material { g_texture256FileName };
+            // TODO use a proper constructor
+            models[g_planeModelID] = Model{ L"Ground plane", Model::Type::Plane, 0, localToWorld, material };
         }
 
         // Spheres
+        Material sphereMaterial { g_texture1024FileName };
         for (size_t i = 0; i < g_spheresCount; ++i)
         {
             D3D12Basics::Matrix44 localToWorld = CalculateSphereLocalToWorld(i, 0.0f);
-            D3D12Basics::Mesh mesh = CreateSphere(20, 20);
             std::wstringstream converter;
-            converter << L"Sphere " << i;
-            Model sphere { converter.str().c_str(), localToWorld, mesh, g_texture1024FileName };
+            converter << "Sphere " << i;
 
-            scene.m_models[g_spheresModelStartID + i] = sphere;
+            models[g_spheresModelStartID + i] = Model{ converter.str().c_str(), Model::Type::Sphere, 0, localToWorld, sphereMaterial };
         }
-        
+
         // Cubes
-        const float cubesAngleDiff = (D3D12Basics::M_2PI / g_cubesCount);
+        const Material cubeMaterial { g_texture1024FileName };
         for (size_t i = 0; i < g_cubesCount; ++i)
         {
-            const float longitude = cubesAngleDiff * i;
+            const float longitude = g_cubesAngleDiff * i;
             const float latitude = D3D12Basics::M_PI_2;
             const float altitude = 2.0f;
             const auto cubeOffsetPos = D3D12Basics::Float3(0.0f, (sinf(static_cast<float>(i)) * 0.5f + 0.5f) * 0.5f + 0.35f, 0.0f);
             D3D12Basics::Float3 cubePos = D3D12Basics::SphericalToCartersian(longitude, latitude, altitude) + cubeOffsetPos;
 
             D3D12Basics::Matrix44 localToWorld = D3D12Basics::Matrix44::CreateScale(0.35f) * D3D12Basics::Matrix44::CreateTranslation(cubePos);
-            D3D12Basics::Mesh mesh = CreateCube();
             std::wstringstream converter;
-            converter << L"Cube " << i;
-            Model cube{ converter.str().c_str(), localToWorld, mesh, g_texture1024FileName };
+            converter << "Cube " << i;
 
-            scene.m_models[g_cubesModelStartID + i] = cube;
+            models[g_cubesModelStartID + i] = Model{ converter.str().c_str(), Model::Type::Cube, 0, localToWorld, cubeMaterial};
         }
 
+        Scene scene;
+        scene.m_sceneFile = g_sponzaModel;
+        scene.m_models = std::move(models);
         return scene;
     }
 
@@ -167,38 +158,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 {
     auto cmdLine = ProcessCmndLine(szCmdLine);
 
-    // TODO this is a quick test that assimp is working. This will be removed once
-    // the work on loading the scene has started.
-    {
-        // Note Ill bite the bullet and use ass as a prefix for things related to
-        // assimp.
-        Assimp::Importer assImporter;
-        int flags = aiProcess_PreTransformVertices | aiProcess_Triangulate | aiProcess_GenNormals;
-        const auto assScene = assImporter.ReadFile(g_sponzaModel, flags);
-        assert(assScene);
-
-        std::wstringstream converter;
-        for (uint32_t i = 0; i < assScene->mNumMeshes; i++)
-        {
-            aiMesh *aMesh = assScene->mMeshes[i];
-
-            aiString materialName;
-            assScene->mMaterials[aMesh->mMaterialIndex]->Get(AI_MATKEY_NAME, materialName);
-
-            aiString texturefile;
-            if (assScene->mMaterials[i]->GetTextureCount(aiTextureType_DIFFUSE) > 0)
-                assScene->mMaterials[aMesh->mMaterialIndex]->GetTexture(aiTextureType_DIFFUSE, 0, &texturefile);
-
-
-            converter << "Mesh " << aMesh->mName.C_Str() << "\n"
-                << "    Material: \"" << materialName.C_Str() << "\"\n"
-                << "    Faces: " << aMesh->mNumFaces << "\n"
-                << "    Diffuse texture: " << texturefile.C_Str() << "\n";
-        }
-
-        OutputDebugString(converter.str().c_str());
-    }
-
     Scene scene = CreateScene();
 
     D3D12BackendRender backendRender(scene, cmdLine.m_isWaitableForPresentEnabled);
@@ -207,7 +166,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
     backendRender.SetOutputWindow(customWindow.GetHWND());
 
-    backendRender.LoadSceneResources();
+    // Load scene gpu resources and dispose the cpu memory
+    {
+        SceneLoader sceneLoader(scene.m_sceneFile, scene, g_sponzaDataWorkingPath);
+        backendRender.LoadSceneResources(sceneLoader);
+    }
 
     Timer timer;
 

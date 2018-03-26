@@ -47,7 +47,7 @@ namespace D3D12Render
     public:
         D3D12CBVSRVUAVDescHeap(ID3D12DevicePtr d3d12Device, unsigned int heapSize = 65536);
 
-        D3D12DescriptorID CreateCBV(D3D12_GPU_VIRTUAL_ADDRESS bufferPtr, int bufferSize);
+        D3D12DescriptorID CreateCBV(D3D12_GPU_VIRTUAL_ADDRESS bufferPtr, size_t bufferSize);
 
         D3D12DescriptorID CreateSRV(ID3D12ResourcePtr resource, const D3D12_SHADER_RESOURCE_VIEW_DESC& desc);
     };

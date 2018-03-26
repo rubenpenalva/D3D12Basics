@@ -37,9 +37,9 @@ namespace
 
     const auto g_swapChainFormat = DXGI_FORMAT::DXGI_FORMAT_R8G8B8A8_UNORM;
 
-    unsigned int CalculateConstantBufferRequiredSize(unsigned int requestedSizeInBytes)
+    size_t CalculateConstantBufferRequiredSize(size_t requestedSizeInBytes)
     {
-        const unsigned int requiredAlignmentForCB = 256;
+        const size_t requiredAlignmentForCB = 256;
         return (requestedSizeInBytes + (requiredAlignmentForCB - 1)) & ~(requiredAlignmentForCB - 1);
     }
 }
@@ -134,7 +134,7 @@ D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_dynamicConstantBuf
     assert(m_committedBufferLoader);
 
     // TODO move this outside
-    m_simpleMaterial = std::make_shared<D3D12SimpleMaterial>(m_device);
+    m_simpleMaterial = std::make_shared<D3D12Material>(m_device);
     assert(m_simpleMaterial);
 
     CreateDynamicConstantBuffersInfrastructure();
@@ -145,6 +145,12 @@ D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_dynamicConstantBuf
 D3D12Gpu::~D3D12Gpu()
 {
     m_gpuSync->WaitAll();
+}
+
+unsigned int D3D12Gpu::GetFormatPlaneCount(DXGI_FORMAT format)
+{
+    D3D12_FEATURE_DATA_FORMAT_INFO formatInfo = { format };
+    return FAILED(m_device->CheckFeatureSupport(D3D12_FEATURE_FORMAT_INFO, &formatInfo, sizeof(formatInfo))) ? 0 : formatInfo.PlaneCount;
 }
 
 void D3D12Gpu::SetOutputWindow(HWND hwnd)
@@ -165,7 +171,7 @@ const Resolution& D3D12Gpu::GetCurrentResolution() const
 
 D3D12ResourceID D3D12Gpu::CreateCommittedBuffer(const void* data, size_t  dataSizeBytes, const std::wstring& debugName)
 {
-    ID3D12ResourcePtr resource = m_committedBufferLoader->Upload(data, dataSizeBytes, debugName);
+    ID3D12ResourcePtr resource = m_committedBufferLoader->Upload(data, dataSizeBytes, dataSizeBytes, debugName);
     assert(resource);
 
     m_resources.push_back({ 0, resource });
@@ -173,20 +179,33 @@ D3D12ResourceID D3D12Gpu::CreateCommittedBuffer(const void* data, size_t  dataSi
     return m_resources.size() - 1;
 }
 
-D3D12ResourceID D3D12Gpu::CreateTexture(const void* data, size_t dataSizeBytes, unsigned int width, unsigned int height,
-                                        DXGI_FORMAT format, const std::wstring& debugName)
+D3D12ResourceID D3D12Gpu::CreateStaticConstantBuffer(const void* data, size_t dataSizeBytes, const std::wstring& resourceName)
 {
-    ID3D12ResourcePtr resource = m_committedBufferLoader->Upload(data, dataSizeBytes, width, height, format,debugName);
+    size_t requiredDataSizeBytes = CalculateConstantBufferRequiredSize(dataSizeBytes);
+    ID3D12ResourcePtr resource = m_committedBufferLoader->Upload(data, dataSizeBytes, requiredDataSizeBytes, resourceName);
+    assert(resource);
+
+    const D3D12DescriptorID cbvID = m_srvDescHeap->CreateCBV(m_dynamicConstantBufferHeapCurrentPtr, requiredDataSizeBytes);
+
+    m_resources.push_back({ cbvID, resource });
+
+    return m_resources.size() - 1;
+}
+
+D3D12ResourceID D3D12Gpu::CreateTexture(const std::vector<D3D12_SUBRESOURCE_DATA>& subresources, const D3D12_RESOURCE_DESC& desc,
+                                        const std::wstring& debugName)
+{
+    ID3D12ResourcePtr resource = m_committedBufferLoader->Upload(subresources, desc, debugName);
     assert(resource);
 
     D3D12_SHADER_RESOURCE_VIEW_DESC viewDesc;
-    viewDesc.Format                     = format;
-    viewDesc.ViewDimension              = D3D12_SRV_DIMENSION_TEXTURE2D;
-    viewDesc.Shader4ComponentMapping    = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    viewDesc.Texture2D.MostDetailedMip  = 0;
-    viewDesc.Texture2D.MipLevels        = 1;
-    viewDesc.Texture2D.PlaneSlice       = 0;
-    viewDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+    viewDesc.Format                         = desc.Format;
+    viewDesc.ViewDimension                  = D3D12_SRV_DIMENSION_TEXTURE2D;
+    viewDesc.Shader4ComponentMapping        = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    viewDesc.Texture2D.MostDetailedMip      = 0;
+    viewDesc.Texture2D.MipLevels            = static_cast<UINT>(subresources.size());
+    viewDesc.Texture2D.PlaneSlice           = 0;
+    viewDesc.Texture2D.ResourceMinLODClamp  = 0.0f;
 
     const D3D12DescriptorID srvID = m_srvDescHeap->CreateSRV(resource.Get(), viewDesc);
 
@@ -197,7 +216,7 @@ D3D12ResourceID D3D12Gpu::CreateTexture(const void* data, size_t dataSizeBytes, 
 
 D3D12DynamicResourceID D3D12Gpu::CreateDynamicConstantBuffer(unsigned int sizeInBytes)
 {
-    const unsigned int actualSize = CalculateConstantBufferRequiredSize(sizeInBytes);
+    const size_t actualSize = CalculateConstantBufferRequiredSize(sizeInBytes);
     assert(m_dynamicConstantBuffersCurrentSize + m_framesInFlight * actualSize <= m_dynamicConstantBuffersMaxSize);
 
     const size_t cbID = m_dynamicConstantBuffers.size();
@@ -265,17 +284,17 @@ void D3D12Gpu::ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderT
 
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    D3D12SimpleMaterialResources boundSimpleMaterialResources{ 0xffffffff, 0xffffffff };
+    D3D12MaterialResources boundSimpleMaterialResources{ 0xffffffff, 0xffffffff };
     D3D12_VIEWPORT  boundViewport {};
     RECT            boundScissorRect {};
 
     for (const auto& renderTask : renderTasks)
     {
-        if (boundSimpleMaterialResources.m_cbID != renderTask.m_simpleMaterialResources.m_cbID ||
-            boundSimpleMaterialResources.m_textureID != renderTask.m_simpleMaterialResources.m_textureID)
+        if (boundSimpleMaterialResources[0] != renderTask.m_materialResources[0] ||
+            boundSimpleMaterialResources[1] != renderTask.m_materialResources[1])
         {
-            boundSimpleMaterialResources = renderTask.m_simpleMaterialResources;
-            BindSimpleMaterialResources(renderTask.m_simpleMaterialResources, cmdList);
+            boundSimpleMaterialResources = renderTask.m_materialResources;
+            BindSimpleMaterialResources(renderTask.m_materialResources, cmdList);
         }
         
         if (boundViewport.Height != renderTask.m_viewport.Height || boundViewport.MaxDepth != renderTask.m_viewport.MaxDepth ||
@@ -297,8 +316,8 @@ void D3D12Gpu::ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderT
         D3D12_VERTEX_BUFFER_VIEW vertexBufferView
         {
             m_resources[renderTask.m_vertexBufferResourceID].m_resource->GetGPUVirtualAddress(),
-            static_cast<UINT>(renderTask.m_vertexSize * renderTask.m_vertexCount),
-            static_cast<UINT>(renderTask.m_vertexSize)
+            static_cast<UINT>(renderTask.m_vertexSizeBytes * renderTask.m_vertexCount),
+            static_cast<UINT>(renderTask.m_vertexSizeBytes)
         };
         cmdList->IASetVertexBuffers(0, 1, &vertexBufferView);
             
@@ -510,11 +529,11 @@ void D3D12Gpu::CreateDynamicConstantBuffersInfrastructure()
     m_dynamicConstantBuffersCurrentMemPtr = m_dynamicConstantBuffersMemPtr;
 }
 
-void D3D12Gpu::BindSimpleMaterialResources(const D3D12SimpleMaterialResources& simpleMaterialResources, ID3D12GraphicsCommandListPtr cmdList)
+void D3D12Gpu::BindSimpleMaterialResources(const D3D12MaterialResources& materialResources, ID3D12GraphicsCommandListPtr cmdList)
 {
-    const auto& cbDescID = m_dynamicConstantBuffers[simpleMaterialResources.m_cbID].m_cbvID[m_currentFrameIndex];
+    const auto& cbDescID = m_dynamicConstantBuffers[materialResources[0]].m_cbvID[m_currentFrameIndex];
     const auto& cbGpuHandle = m_srvDescHeap->GetDescriptorHandles(cbDescID).m_gpuHandle;
-    const auto& srvDescID = m_resources[simpleMaterialResources.m_textureID].m_resourceViewID;
+    const auto& srvDescID = m_resources[materialResources[1]].m_resourceViewID;
     const auto& srvGpuHandle = m_srvDescHeap->GetDescriptorHandles(srvDescID).m_gpuHandle;
 
     m_simpleMaterial->Apply(cmdList, cbGpuHandle, srvGpuHandle);

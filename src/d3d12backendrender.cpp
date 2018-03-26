@@ -1,6 +1,7 @@
 #include "d3d12backendrender.h"
 
 #include <unordered_map>
+#include "meshgenerator.h"
 
 using namespace D3D12Render;
 using namespace D3D12Basics;
@@ -17,9 +18,32 @@ namespace
     D3D12Basics::GpuViewMarker g_gpuViewMarkerPostFinishFrame(g_postFinishFrameName, g_postFinishFrameUUID);
 
     static const float g_defaultClearColor[4] = { 0.0f, 0.2f, 0.4f, 1.0f };
+
+    D3D12ResourceID CreateDefaultTexture2D(D3D12Gpu& gpu)
+    {
+        std::vector<D3D12_SUBRESOURCE_DATA> subresources(1);
+        uint8_t data[] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+        subresources[0].pData = data;
+        subresources[0].RowPitch = sizeof(uint8_t) * 4;
+        subresources[0].SlicePitch = subresources[0].RowPitch * 2;
+        // TODO the resource desc for a texture data is being copy and pasted in several places
+        // think of a better way to share code.
+        D3D12_RESOURCE_DESC resourceDesc;
+        resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        resourceDesc.Alignment = 0;
+        resourceDesc.Width = 1;
+        resourceDesc.Height = 1;
+        resourceDesc.DepthOrArraySize = 1;
+        resourceDesc.MipLevels = 1;
+        resourceDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        resourceDesc.SampleDesc = { 1, 0 };
+        resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+        resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+        return gpu.CreateTexture(subresources, resourceDesc, L"Default Texture 2D");
+    }
 }
 
-D3D12BackendRender::D3D12BackendRender(D3D12Basics::Scene& scene, bool isWaitableForPresentEnabled) : m_scene(scene), m_gpu(isWaitableForPresentEnabled)
+D3D12BackendRender::D3D12BackendRender(const D3D12Basics::Scene& scene, bool isWaitableForPresentEnabled) : m_scene(scene), m_gpu(isWaitableForPresentEnabled)
 {
 }
 
@@ -58,44 +82,82 @@ void D3D12BackendRender::OnResize(const D3D12Basics::Resolution& resolution)
     }
 }
 
-void D3D12BackendRender::LoadSceneResources()
+void D3D12BackendRender::LoadSceneResources(D3D12Basics::SceneLoader& sceneLoader)
 {
-    std::unordered_map<std::wstring, SimpleMaterialDataPtr> simpleMaterialDatas;
+    D3D12ResourceID defaultTexture2D = CreateDefaultTexture2D(m_gpu);
+    // TODO add fallback material
+    //auto defaultDiffuseColorCBID = m_gpu.CreateStaticConstantBuffer(&Material::m_diffuseColor, sizeof(Float3), L"Default Diffuse Color Static CB");
 
     // Load resources into vram
     // Create a render task per model
-    for (auto& model : m_scene.m_models)
+    for (const auto& model : m_scene.m_models)
     {
-        if (simpleMaterialDatas.count(model.m_simpleMaterialTextureFileName) == 0)
-            simpleMaterialDatas[model.m_simpleMaterialTextureFileName] = std::make_shared<SimpleMaterialData>(model.m_simpleMaterialTextureFileName);
-        
-        const auto& simpleMaterialData = simpleMaterialDatas[model.m_simpleMaterialTextureFileName];
-
-        // TODO Cache the gpu texture resource
-        D3D12ResourceID textureID = m_gpu.CreateTexture(simpleMaterialData->m_textureData, simpleMaterialData->m_textureSizeBytes,
-                                                        simpleMaterialData->m_textureWidth, simpleMaterialData->m_textureHeight,
-                                                        DXGI_FORMAT_R8G8B8A8_UNORM, model.m_simpleMaterialTextureFileName);
-
-        
-        D3D12ResourceID vbID = m_gpu.CreateCommittedBuffer(&model.m_mesh.m_vertices[0], model.m_mesh.VertexBufferSizeInBytes(),
-                                                            L"vb - " + model.m_name);
-
-        D3D12ResourceID ibID = m_gpu.CreateCommittedBuffer(&model.m_mesh.m_indices[0], model.m_mesh.IndexBufferSizeInBytes(),
-                                                            L"ib - " + model.m_name);
+        D3D12MaterialResources materialResources;
 
         D3D12DynamicResourceID dynamicCBID = m_gpu.CreateDynamicConstantBuffer(sizeof(Matrix44));
+        materialResources.push_back(dynamicCBID);
 
-        D3D12SimpleMaterialResources materialResources{ dynamicCBID, textureID };
+        if (model.m_material.m_diffuseTexture)
+        {
+            D3D12ResourceID diffuseTextureID = CreateTexture(*model.m_material.m_diffuseTexture, sceneLoader);
+            materialResources.push_back(diffuseTextureID);
+
+            // TODO add light
+            //if (model.m_material.m_specularTexture)
+            //{
+            //    D3D12ResourceID specularTextureID = CreateTexture(*model.m_material.m_specularTexture, m_gpu, sceneLoader);
+            //    materialResources.push_back(specularTextureID);
+
+            //    assert(model.m_material.m_normalsTexture);
+            //    D3D12ResourceID normalsTextureID = CreateTexture(*model.m_material.m_normalsTexture, m_gpu, sceneLoader);
+            //    materialResources.push_back(normalsTextureID);
+            //}
+        }
+        else
+        {
+            assert(!model.m_material.m_specularTexture && !model.m_material.m_normalsTexture);
+
+            materialResources.push_back(defaultTexture2D);
+            // TODO add fallback material
+            //materialResources.push_back(defaultDiffuseColorCBID);
+        }
+
+        Mesh mesh;
+        switch (model.m_type)
+        {
+        case Model::Type::Cube:
+            mesh = D3D12Basics::CreateCube(VertexDesc{ true, false, false });
+            break;
+        case Model::Type::Plane:
+            mesh = D3D12Basics::CreatePlane(VertexDesc{ true, false, false });
+            break;
+        case Model::Type::Sphere:
+            mesh = D3D12Basics::CreateSphere({ true, false, false }, 20, 20);
+            break;
+        case Model::Type::MeshFile:
+        {
+            mesh = sceneLoader.LoadMesh(model.m_id);
+            break;
+        }
+        default:
+            assert(false);
+        }
+
+        D3D12ResourceID vbID = m_gpu.CreateCommittedBuffer(&mesh.Vertices()[0], mesh.VertexBufferSizeBytes(),
+                                                            L"vb - " + model.m_name);
+
+        D3D12ResourceID ibID = m_gpu.CreateCommittedBuffer(&mesh.Indices()[0], mesh.IndexBufferSizeBytes(),
+                                                            L"ib - " + model.m_name);
 
         D3D12GpuRenderTask renderTask;
-        renderTask.m_simpleMaterialResources    = materialResources;
-        renderTask.m_viewport                   = m_defaultViewport;
-        renderTask.m_scissorRect                = m_defaultScissorRect;
-        renderTask.m_vertexBufferResourceID     = vbID;
-        renderTask.m_indexBufferResourceID      = ibID;
-        renderTask.m_vertexCount                = model.m_mesh.m_vertices.size();
-        renderTask.m_vertexSize                 = model.m_mesh.VertexSize;
-        renderTask.m_indexCount                 = model.m_mesh.m_indices.size();
+        renderTask.m_materialResources = materialResources;
+        renderTask.m_viewport = m_defaultViewport;
+        renderTask.m_scissorRect = m_defaultScissorRect;
+        renderTask.m_vertexBufferResourceID = vbID;
+        renderTask.m_indexBufferResourceID = ibID;
+        renderTask.m_vertexCount = mesh.VerticesCount();
+        renderTask.m_vertexSizeBytes = mesh.VertexSizeBytes();
+        renderTask.m_indexCount = mesh.IndicesCount();
         memcpy(renderTask.m_clearColor, g_defaultClearColor, sizeof(float) * 4);
 
         m_renderTasks.push_back(renderTask);
@@ -106,12 +168,13 @@ void D3D12BackendRender::UpdateSceneResources()
 {
     const D3D12Basics::Matrix44 worldToClip = m_scene.m_camera.WorldToCamera() * m_scene.m_camera.CameraToClip();
 
-    const auto& modelsCount = m_scene.m_models.size();
-    for (size_t i = 0; i < modelsCount; ++i)
+    assert(m_scene.m_models.size() == m_renderTasks.size());
+    for (size_t i = 0; i < m_scene.m_models.size(); ++i)
     {
         const auto& model = m_scene.m_models[i];
         const D3D12Basics::Matrix44 localToClip = (model.m_transform * worldToClip).Transpose();
-        m_gpu.UpdateDynamicConstantBuffer(m_renderTasks[i].m_simpleMaterialResources.m_cbID, &localToClip);
+        // TODO generalize this
+        m_gpu.UpdateDynamicConstantBuffer(m_renderTasks[i].m_materialResources[0], &localToClip);
     }
 }
 
@@ -150,4 +213,13 @@ void D3D12BackendRender::UpdateDefaultNotPSOState()
         static_cast<long>(currentResolution.m_width),
         static_cast<long>(currentResolution.m_height)
     };
+}
+
+D3D12ResourceID D3D12BackendRender::CreateTexture(const std::wstring& textureFile, D3D12Basics::SceneLoader& sceneLoader)
+{
+    if (m_textureCache.count(textureFile))
+        return m_textureCache[textureFile];
+
+    auto textureData = sceneLoader.LoadTextureData(textureFile);
+    return m_gpu.CreateTexture(textureData.GetSubResources(), textureData.GetDesc(), textureFile);
 }

@@ -58,12 +58,12 @@ D3D12CBVSRVUAVDescHeap::D3D12CBVSRVUAVDescHeap(ID3D12DevicePtr d3d12Device,
                                                                                                heapSize)
 {}
 
-D3D12DescriptorID D3D12CBVSRVUAVDescHeap::CreateCBV(D3D12_GPU_VIRTUAL_ADDRESS bufferPtr, int bufferSize)
+D3D12DescriptorID D3D12CBVSRVUAVDescHeap::CreateCBV(D3D12_GPU_VIRTUAL_ADDRESS bufferPtr, size_t bufferSize)
 {
     // TODO assert bufferSize complies with constant buffer memory alignment requirements
     D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
     cbvDesc.BufferLocation  = bufferPtr;
-    cbvDesc.SizeInBytes     = bufferSize;
+    cbvDesc.SizeInBytes     = static_cast<UINT>(bufferSize);
 
     m_d3d12Device->CreateConstantBufferView(&cbvDesc, m_cpuStackHandle);
 

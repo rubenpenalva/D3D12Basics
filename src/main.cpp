@@ -8,6 +8,8 @@
 // Project includes
 #include "d3d12backendrender.h"
 
+#include "directxtk12/gamepad.h"
+
 using namespace D3D12Basics;
 using namespace D3D12Render;
 
@@ -39,6 +41,18 @@ namespace
     struct CommandLine
     {
         bool m_isWaitableForPresentEnabled;
+    };
+
+    struct UserCameraState
+    {
+        bool m_manualMovement = false;
+
+        Float3  m_direction         = Float3(0.0f, 0.0f, 1.0f);
+        Float3  m_target            = Float3{};
+        float   m_maxSpeed          = 10.0f;
+        float   m_maxLookSpeed      = 5.0f;
+        float   m_speedModifier     = 0.0f;
+        float   m_speedLookModifier = 0.0f;
     };
 
     bool HandleWindowMessages()
@@ -117,15 +131,43 @@ namespace
         return scene;
     }
 
-    void UpdateScene(Scene& scene, float totalTime, float /*deltaTime*/)
+    void UpdateScene(Scene& scene, float totalTime, float deltaTime, UserCameraState& cameraState)
     {
-        const float longitude = 2.f * (1.0f / D3D12Basics::M_2PI) * totalTime;
-        const float latitude = D3D12Basics::M_PI_4 + D3D12Basics::M_PI_8;
-        const float altitude = 5.0f;
-        D3D12Basics::Float3 cameraPos = D3D12Basics::SphericalToCartersian(longitude, latitude, altitude);
+        // Camera
+        {
+            if (cameraState.m_manualMovement)
+            {
+                Float3 cameraPos = scene.m_camera.Position();
 
-        scene.m_camera.TranslateLookingAt(cameraPos, D3D12Basics::Float3::Zero);
+                if (cameraState.m_speedModifier != 0.0f)
+                {
+                    cameraPos += Float3::TransformNormal(cameraState.m_direction, scene.m_camera.CameraToWorld()) * deltaTime * cameraState.m_speedModifier * cameraState.m_maxSpeed;
+                }
+                
+                Float3 cameraTarget = cameraPos + scene.m_camera.Forward();
 
+                if (cameraState.m_speedLookModifier != 0.0f)
+                {
+                    cameraTarget += Float3::TransformNormal(cameraState.m_target, scene.m_camera.CameraToWorld()) * deltaTime * cameraState.m_speedLookModifier * cameraState.m_maxLookSpeed;
+                }
+
+                scene.m_camera.TranslateLookingAt(cameraPos, cameraTarget);
+            }
+            else
+            {
+                Float3 cameraPos;
+                Float3 cameraTarget = D3D12Basics::Float3::Zero;
+
+                const float longitude = 2.f * (1.0f / D3D12Basics::M_2PI) * totalTime;
+                const float latitude = D3D12Basics::M_PI_4 + D3D12Basics::M_PI_8;
+                const float altitude = 5.0f;
+                cameraPos = D3D12Basics::SphericalToCartersian(longitude, latitude, altitude);
+
+                scene.m_camera.TranslateLookingAt(cameraPos, cameraTarget);
+            }
+        }
+
+        // Spheres
         for (size_t i = 0; i < g_spheresCount; ++i)
         {
             auto& sphereModel = scene.m_models[g_spheresModelStartID + i];
@@ -152,10 +194,67 @@ namespace
 
         return cmdLine;
     }
+
+    bool ProcessGamePadInput(DirectX::GamePad& gamepad, DirectX::GamePad::ButtonStateTracker& buttons, UserCameraState& cameraState)
+    {
+        auto state = gamepad.GetState(0);
+        if (state.IsConnected())
+        {
+            if (state.IsViewPressed())
+                return true;
+
+            buttons.Update(state);
+
+            if (buttons.start == DirectX::GamePad::ButtonStateTracker::PRESSED)
+                cameraState.m_manualMovement = !cameraState.m_manualMovement;
+
+            cameraState.m_speedModifier = 0.0f;
+            cameraState.m_speedLookModifier = 0.0f;
+            
+            if (buttons.leftShoulder == DirectX::GamePad::ButtonStateTracker::PRESSED)
+                cameraState.m_maxSpeed -= 0.5f;
+            else if (buttons.rightShoulder == DirectX::GamePad::ButtonStateTracker::PRESSED)
+                cameraState.m_maxSpeed += 0.5f;
+
+            if (cameraState.m_maxSpeed < 0.0f)
+                cameraState.m_maxSpeed = 0.0f;
+
+            if (state.thumbSticks.leftX != 0.0f || state.thumbSticks.leftY != 0.0f)
+            {
+                Float3 direction = Float3(state.thumbSticks.leftX, 0.0f, state.thumbSticks.leftY);
+                cameraState.m_speedModifier = direction.Length();
+                direction.Normalize();
+
+                cameraState.m_direction = direction;
+            }
+
+            if (state.thumbSticks.rightX != 0.0f || state.thumbSticks.rightY != 0.0f)
+            {
+                Float3 direction = Float3(state.thumbSticks.rightX, state.thumbSticks.rightY, 0.0f);
+                cameraState.m_speedLookModifier = direction.Length();
+                direction.Normalize();
+
+                cameraState.m_target = direction;
+            }
+        }
+
+        return false;
+    }
 }
 
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR szCmdLine, int /*iCmdShow*/)
 {
+    // https://stackoverflow.com/a/36468365
+    // "TL;DR: If you are making a Windows desktop app that requires Windows 10, 
+    //  then link with RuntimeObject.lib and add this to your app initialization 
+    //  (replacing CoInitialize or CoInitializeEx):"
+    Microsoft::WRL::Wrappers::RoInitializeWrapper initialize(RO_INIT_MULTITHREADED);
+    if (FAILED(initialize))
+        return 1;
+
+    DirectX::GamePad gamepad;
+    DirectX::GamePad::ButtonStateTracker buttons;
+
     auto cmdLine = ProcessCmndLine(szCmdLine);
 
     Scene scene = CreateScene();
@@ -174,6 +273,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
     Timer timer;
 
+    UserCameraState cameraState;
+
     // Game loop
     bool quit = false;
     while (!quit)
@@ -191,8 +292,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
             customWindow.ResetWndProcEventsState();
         }
 
+        // Process gamepad input
+        quit &= ProcessGamePadInput(gamepad, buttons, cameraState);
+
         // Kick the work: update scene - update backend resources - render frame - present frame
-        UpdateScene(scene, timer.TotalTime(), timer.ElapsedTime());
+        UpdateScene(scene, timer.TotalTime(), timer.ElapsedTime(), cameraState);
 
         backendRender.UpdateSceneResources();
 

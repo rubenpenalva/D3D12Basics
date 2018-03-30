@@ -112,12 +112,23 @@ Camera::Camera()
 
     m_cameraToClip = Matrix44::CreatePerspectiveFieldOfViewLH(fov, aspectRatio, nearPlane, farPlane);
 
-    m_worldToCamera = Matrix44::CreateLookAtLH(position, target, up);
+    TranslateLookingAt(position, target, up);
 }
 
 void Camera::TranslateLookingAt(const Float3& position, const Float3& target, const Float3& up)
 {
     m_worldToCamera = Matrix44::CreateLookAtLH(position, target, up);
+    
+    UpdateCameraToWorld(position);
+
+    m_position = position;
+    m_forward = -m_cameraToWorld.Forward();
+}
+
+void Camera::UpdateCameraToWorld(const Float3& position)
+{
+    m_cameraToWorld = m_worldToCamera.Transpose();
+    m_cameraToWorld.Translation(position);
 }
 
 SceneLoader::SceneLoader(const std::wstring& sceneFile, Scene& scene, const std::wstring& dataWorkingPath) : m_outScene(scene)

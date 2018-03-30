@@ -24,9 +24,21 @@ namespace D3D12Basics
 
         const Matrix44& WorldToCamera() const { return m_worldToCamera; }
 
+        const Matrix44& CameraToWorld() const { return m_cameraToWorld; }
+
+        const Float3& Position() const { return m_position; }
+        const Float3& Forward() const { return m_forward; }
+
     private:
         Matrix44 m_worldToCamera;
+        Matrix44 m_cameraToWorld;
+
         Matrix44 m_cameraToClip;
+
+        Float3 m_position;
+        Float3 m_forward;
+
+        void UpdateCameraToWorld(const Float3& position);
     };
 
     struct Material

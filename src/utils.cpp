@@ -7,9 +7,6 @@
 #include <string>
 #include <iostream>
 
-// windows includes
-#include <windows.h>
-
 using namespace D3D12Basics;
 
 namespace
@@ -38,21 +35,29 @@ namespace
             PostQuitMessage(0);
             return 0;
 
+        case WM_ACTIVATEAPP:
+            DirectX::Keyboard::ProcessMessage(message, wparam, lparam);
+            DirectX::Mouse::ProcessMessage(message, wparam, lparam);
+            break;
+        case WM_INPUT:
+        case WM_MOUSEMOVE:
+        case WM_LBUTTONDOWN:
+        case WM_LBUTTONUP:
+        case WM_RBUTTONDOWN:
+        case WM_RBUTTONUP:
+        case WM_MBUTTONDOWN:
+        case WM_MBUTTONUP:
+        case WM_MOUSEWHEEL:
+        case WM_XBUTTONDOWN:
+        case WM_XBUTTONUP:
+        case WM_MOUSEHOVER:
+            DirectX::Mouse::ProcessMessage(message, wparam, lparam);
+            break;
         case WM_KEYDOWN:
-        {
-            const uint8_t key = static_cast<UINT8>(wparam);
-            if (key == VK_ESCAPE)
-            {
-                PostQuitMessage(0);
-                return 0;
-            }
-            else if (key == VK_SPACE)
-            {
-                customWindow->ChangeFullscreenMode();
-                return 0;
-            }
-
-        }
+        case WM_SYSKEYDOWN:
+        case WM_KEYUP:
+        case WM_SYSKEYUP:
+            DirectX::Keyboard::ProcessMessage(message, wparam, lparam);
             break;
         
         // Handle beep sound
@@ -228,6 +233,39 @@ GpuViewMarker::~GpuViewMarker()
 void GpuViewMarker::Mark()
 {
     EventWriteString(m_eventHandle, 0, 0, m_name.c_str());
+}
+
+InputController::InputController(HWND hwnd) : m_roInit(RO_INIT_MULTITHREADED)
+{
+    // https://stackoverflow.com/a/36468365
+    // "TL;DR: If you are making a Windows desktop app that requires Windows 10, 
+    //  then link with RuntimeObject.lib and add this to your app initialization 
+    //  (replacing CoInitialize or CoInitializeEx):"
+    AssertIfFailed(m_roInit);
+
+    m_mouse.SetWindow(hwnd);
+}
+
+void InputController::Update()
+{
+    m_gamepadState = m_gamepad.GetState(0);
+    if (m_gamepadState.IsConnected())
+        m_gamepadTracker.Update(m_gamepadState);
+
+    m_keyboardState = std::move(m_keyboard.GetState());
+    if (m_keyboard.IsConnected())
+        m_keyboardTracker.Update(m_keyboardState);
+    
+    if (m_mouse.IsConnected())
+    {
+        m_mouseState = std::move(m_mouse.GetState());
+        m_mouseTracker.Update(m_mouseState);
+    }
+}
+
+void InputController::SetMouseRelativeMode(bool enable)
+{
+    m_mouse.SetMode(enable ? DirectX::Mouse::MODE_RELATIVE : DirectX::Mouse::MODE_ABSOLUTE);
 }
 
 void D3D12Basics::AssertIfFailed(HRESULT hr)

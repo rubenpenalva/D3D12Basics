@@ -6,10 +6,14 @@
 // windows includes
 #include <windows.h>
 #include <evntprov.h>
+#include <wrl/event.h>
 
 // thirdparty includes
 #include <d3d12.h>
 #include "directxtk12/simplemath.h"
+#include "directxtk12/gamepad.h"
+#include "directxtk12/keyboard.h"
+#include "directxtk12/mouse.h"
 
 namespace D3D12Basics
 {
@@ -165,6 +169,50 @@ namespace D3D12Basics
         REGHANDLE m_eventHandle;
         GUID guid;
         std::wstring m_name;
+    };
+
+    class InputController
+    {
+    public:
+        InputController(HWND hwnd);
+
+        void Update();
+
+        bool IsKeyboardConnected() const { return m_keyboard.IsConnected(); }
+        bool IsMouseConnected() const { return m_mouse.IsConnected(); }
+        bool IsMainGamePadConnected() const { return m_gamepadState.IsConnected(); }
+
+        const DirectX::GamePad::ButtonStateTracker& GetGamepadTracker() const { return m_gamepadTracker; }
+        const DirectX::Keyboard::KeyboardStateTracker& GetKeyboardTracker() const { return m_keyboardTracker; }
+        const DirectX::Mouse::ButtonStateTracker& GetMouseTracker() const { return m_mouseTracker; }
+        
+        const DirectX::GamePad::State& GetMainGamePadState() const { return m_gamepadState; }
+        const DirectX::Keyboard::State& GetKeyboardState() const { return m_keyboardState; }
+        const DirectX::Mouse::State& GetMouseState() const { return m_mouseState; }
+
+        void SetMouseRelativeMode(bool enable);
+
+    private:
+        // NOTE InputController is not the best place to have this initialization but
+        // since its only needed by the gamepad init and I dont see right now where
+        // Id need it elsewhere in the future
+        // https://stackoverflow.com/a/36468365
+        // "TL;DR: If you are making a Windows desktop app that requires Windows 10, 
+        //  then link with RuntimeObject.lib and add this to your app initialization 
+        //  (replacing CoInitialize or CoInitializeEx):"
+        Microsoft::WRL::Wrappers::RoInitializeWrapper m_roInit;
+
+        DirectX::GamePad    m_gamepad;
+        DirectX::Keyboard   m_keyboard;
+        DirectX::Mouse      m_mouse;
+
+        DirectX::GamePad::ButtonStateTracker        m_gamepadTracker;
+        DirectX::Keyboard::KeyboardStateTracker     m_keyboardTracker;
+        DirectX::Mouse::ButtonStateTracker          m_mouseTracker;
+
+        DirectX::GamePad::State                 m_gamepadState;
+        DirectX::Keyboard::State                m_keyboardState;
+        DirectX::Mouse::State                   m_mouseState;
     };
 
     void AssertIfFailed(HRESULT hr);

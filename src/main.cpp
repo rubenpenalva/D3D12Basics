@@ -13,6 +13,8 @@
 using namespace D3D12Basics;
 using namespace D3D12Render;
 
+#define PROCESS_EVENTS_IN_FRAME (0)
+
 namespace
 {
     // NOTE:  Assuming working directory contains the data folder
@@ -55,23 +57,27 @@ namespace
         float   m_speedLookModifier = 0.0f;
     };
 
-    bool HandleWindowMessages()
+    bool HandleWindowMessages(bool& quit)
     {
+        quit = false;
+
         MSG msg = {};
         if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
         {
             if (msg.message == WM_QUIT)
             {
-                return true;
+                quit = true;
             }
             else
             {
                 TranslateMessage(&msg);
                 DispatchMessage(&msg);
             }
-        }
 
-        return false;
+            return true;
+        }
+        else
+            return false;
     }
 
     D3D12Basics::Matrix44 CalculateSphereLocalToWorld(size_t sphereID, float totalTime)
@@ -195,48 +201,139 @@ namespace
         return cmdLine;
     }
 
-    bool ProcessGamePadInput(DirectX::GamePad& gamepad, DirectX::GamePad::ButtonStateTracker& buttons, UserCameraState& cameraState)
+    void ProcessMouseInput(const DirectX::Mouse::State& mouseState, UserCameraState& cameraState)
     {
-        auto state = gamepad.GetState(0);
-        if (state.IsConnected())
-        {
-            if (state.IsViewPressed())
-                return true;
+        if (mouseState.positionMode != DirectX::Mouse::MODE_RELATIVE)
+            return;
 
-            buttons.Update(state);
-
-            if (buttons.start == DirectX::GamePad::ButtonStateTracker::PRESSED)
-                cameraState.m_manualMovement = !cameraState.m_manualMovement;
-
-            cameraState.m_speedModifier = 0.0f;
-            cameraState.m_speedLookModifier = 0.0f;
+        Float3 direction = Float3(static_cast<float>(mouseState.x), static_cast<float>(-mouseState.y), 0.0f);
+        cameraState.m_speedLookModifier = 0.5f;
+        direction.Normalize();
             
-            if (buttons.leftShoulder == DirectX::GamePad::ButtonStateTracker::PRESSED)
-                cameraState.m_maxSpeed -= 0.5f;
-            else if (buttons.rightShoulder == DirectX::GamePad::ButtonStateTracker::PRESSED)
-                cameraState.m_maxSpeed += 0.5f;
+        cameraState.m_target = direction;
+    }
 
-            if (cameraState.m_maxSpeed < 0.0f)
-                cameraState.m_maxSpeed = 0.0f;
+    bool ProcessKeyboardInput(const DirectX::Keyboard::State& keyboardState, const DirectX::Keyboard::KeyboardStateTracker& keyboardTracker,
+                              D3D12Basics::CustomWindow& customWindow, UserCameraState& cameraState)
+    {
+        cameraState;
+        keyboardTracker;
 
-            if (state.thumbSticks.leftX != 0.0f || state.thumbSticks.leftY != 0.0f)
-            {
-                Float3 direction = Float3(state.thumbSticks.leftX, 0.0f, state.thumbSticks.leftY);
-                cameraState.m_speedModifier = direction.Length();
-                direction.Normalize();
+        if (keyboardState.Escape)
+            return true;
+        
+        if (keyboardTracker.IsKeyPressed(DirectX::Keyboard::Space))
+            customWindow.ChangeFullscreenMode();
 
-                cameraState.m_direction = direction;
-            }
+#if PROCESS_EVENTS_IN_FRAME
+        if (keyboardTracker.IsKeyPressed(DirectX::Keyboard::Enter))
+            cameraState.m_manualMovement = !cameraState.m_manualMovement;
+        
+        if (keyboardState.OemMinus)
+            cameraState.m_maxSpeed -= 0.5f;
+        if (keyboardState.OemPlus)
+            cameraState.m_maxSpeed += 0.5f;
 
-            if (state.thumbSticks.rightX != 0.0f || state.thumbSticks.rightY != 0.0f)
-            {
-                Float3 direction = Float3(state.thumbSticks.rightX, state.thumbSticks.rightY, 0.0f);
-                cameraState.m_speedLookModifier = direction.Length();
-                direction.Normalize();
-
-                cameraState.m_target = direction;
-            }
+        bool keyPressed = false;
+        if (keyboardState.W)
+        {
+            keyPressed = true;
+            cameraState.m_direction = Float3(0.0f, 0.0f, 1.0f);
         }
+        if (keyboardState.S)
+        {
+            keyPressed = true;
+            cameraState.m_direction = Float3(0.0f, 0.0f, -1.0f);
+        }
+        if (keyboardState.A)
+        {
+            keyPressed = true;
+            cameraState.m_direction = Float3(-1.0f, 0.0f, 0.0f);
+        }
+        if (keyboardState.D)
+        {
+            keyPressed = true;
+            cameraState.m_direction = Float3(1.0f, 0.0f, 0.0f);
+        }
+        if (keyPressed) cameraState.m_speedModifier = 1.0f;
+#endif
+        return false;
+    }
+
+    bool ProcessGamePadInput(const DirectX::GamePad::State& gamepadState, const DirectX::GamePad::ButtonStateTracker& gamepadTracker,
+                             UserCameraState& cameraState)
+    {
+        if (gamepadTracker.view)
+            return true;
+
+        if (gamepadTracker.start == DirectX::GamePad::ButtonStateTracker::PRESSED)
+            cameraState.m_manualMovement = !cameraState.m_manualMovement;
+
+        if (gamepadTracker.leftShoulder == DirectX::GamePad::ButtonStateTracker::PRESSED)
+            cameraState.m_maxSpeed -= 0.5f;
+        else if (gamepadTracker.rightShoulder == DirectX::GamePad::ButtonStateTracker::PRESSED)
+            cameraState.m_maxSpeed += 0.5f;
+
+        if (gamepadState.thumbSticks.leftX != 0.0f || gamepadState.thumbSticks.leftY != 0.0f)
+        {
+            Float3 direction = Float3(gamepadState.thumbSticks.leftX, 0.0f, gamepadState.thumbSticks.leftY);
+            cameraState.m_speedModifier = direction.Length();
+            direction.Normalize();
+
+            cameraState.m_direction = direction;
+        }
+
+        if (gamepadState.thumbSticks.rightX != 0.0f || gamepadState.thumbSticks.rightY != 0.0f)
+        {
+            Float3 direction = Float3(gamepadState.thumbSticks.rightX, gamepadState.thumbSticks.rightY, 0.0f);
+            cameraState.m_speedLookModifier = direction.Length();
+            direction.Normalize();
+
+            cameraState.m_target = direction;
+        }
+
+        return false;
+    }
+
+    bool ProcessInput(D3D12Basics::InputController& inputController, D3D12Basics::CustomWindow& customWindow, UserCameraState& cameraState)
+    {
+        cameraState.m_speedModifier = 0.0f;
+        cameraState.m_speedLookModifier = 0.0f;
+        if (cameraState.m_maxSpeed < 0.0f)
+            cameraState.m_maxSpeed = 0.0f;
+
+        if (inputController.IsMainGamePadConnected())
+        {
+            const auto& gamepadTracker = inputController.GetGamepadTracker();
+            const auto& gamepadState = inputController.GetMainGamePadState();
+
+            if (ProcessGamePadInput(gamepadState, gamepadTracker, cameraState))
+                return true;
+        }
+
+        if (inputController.IsKeyboardConnected())
+        {
+            const auto& keyboardState = inputController.GetKeyboardState();
+            const auto& keyboardTracker = inputController.GetKeyboardTracker();
+            if (ProcessKeyboardInput(keyboardState, keyboardTracker, customWindow, cameraState))
+                return true;
+        }
+
+#if PROCESS_EVENTS_IN_FRAME
+        if (inputController.IsMouseConnected())
+        {
+            const auto& mouseState = inputController.GetMouseState();
+            const auto& mouseTracker = inputController.GetMouseTracker();
+            if (mouseTracker.leftButton == DirectX::Mouse::ButtonStateTracker::ButtonState::PRESSED && 
+                (mouseState.x != 0 && mouseState.y != 0) && cameraState.m_manualMovement)
+                inputController.SetMouseRelativeMode(true);
+            else if (mouseTracker.leftButton == DirectX::Mouse::ButtonStateTracker::ButtonState::RELEASED && 
+                     mouseState.positionMode == DirectX::Mouse::MODE_RELATIVE)
+                inputController.SetMouseRelativeMode(false);
+
+            ProcessMouseInput(mouseState, cameraState);
+        }
+#endif
 
         return false;
     }
@@ -244,17 +341,6 @@ namespace
 
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR szCmdLine, int /*iCmdShow*/)
 {
-    // https://stackoverflow.com/a/36468365
-    // "TL;DR: If you are making a Windows desktop app that requires Windows 10, 
-    //  then link with RuntimeObject.lib and add this to your app initialization 
-    //  (replacing CoInitialize or CoInitializeEx):"
-    Microsoft::WRL::Wrappers::RoInitializeWrapper initialize(RO_INIT_MULTITHREADED);
-    if (FAILED(initialize))
-        return 1;
-
-    DirectX::GamePad gamepad;
-    DirectX::GamePad::ButtonStateTracker buttons;
-
     auto cmdLine = ProcessCmndLine(szCmdLine);
 
     Scene scene = CreateScene();
@@ -262,6 +348,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
     D3D12BackendRender backendRender(scene, cmdLine.m_isWaitableForPresentEnabled);
 
     D3D12Basics::CustomWindow customWindow(backendRender.GetSafestResolutionSupported());
+
+    InputController inputController(customWindow.GetHWND());
 
     backendRender.SetOutputWindow(customWindow.GetHWND());
 
@@ -279,33 +367,39 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
     bool quit = false;
     while (!quit)
     {
-        quit = HandleWindowMessages();
+        const bool messagesProcessed = HandleWindowMessages(quit);
 
-        // Process the wndproc events state
+#if PROCESS_EVENTS_IN_FRAME
+        if (!messagesProcessed)
+#endif
         {
-            if (customWindow.HasFullscreenChanged())
-                backendRender.OnToggleFullScreen();
+            // Process gamepad input
+            inputController.Update();
+            quit |= ProcessInput(inputController, customWindow, cameraState);
 
-            if (customWindow.HasResolutionChanged())
-                backendRender.OnResize(customWindow.GetResolution());
+            // Process the state changes from external sources: windows events and user input
+            {
+                if (customWindow.HasFullscreenChanged())
+                    backendRender.OnToggleFullScreen();
 
-            customWindow.ResetWndProcEventsState();
+                if (customWindow.HasResolutionChanged())
+                    backendRender.OnResize(customWindow.GetResolution());
+
+                customWindow.ResetWndProcEventsState();
+            }
+
+            // Kick the work: update scene - update backend resources - render frame - present frame
+            UpdateScene(scene, timer.TotalTime(), timer.ElapsedTime(), cameraState);
+
+            backendRender.UpdateSceneResources();
+
+            backendRender.RenderFrame();
+
+            backendRender.FinishFrame();
+
+            // Measure elapsed time
+            timer.Mark();
         }
-
-        // Process gamepad input
-        quit &= ProcessGamePadInput(gamepad, buttons, cameraState);
-
-        // Kick the work: update scene - update backend resources - render frame - present frame
-        UpdateScene(scene, timer.TotalTime(), timer.ElapsedTime(), cameraState);
-
-        backendRender.UpdateSceneResources();
-
-        backendRender.RenderFrame();
-
-        backendRender.FinishFrame();
-
-        // Measure elapsed time
-        timer.Mark();
     }
 
     return 0;

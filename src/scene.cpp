@@ -17,8 +17,7 @@ const Float3 Material::m_diffuseColor = { 1.0f, 0.0f, 1.0f };
 
 namespace
 {
-    std::optional<std::wstring> ExtractAssimpTextureFile(aiMaterial* material, 
-                                                         aiTextureType type, const std::wstring& dataWorkingPath)
+    std::wstring ExtractAssimpTextureFile(aiMaterial* material, aiTextureType type, const std::wstring& dataWorkingPath)
     {
         assert(material);
 

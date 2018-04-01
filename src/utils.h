@@ -2,6 +2,7 @@
 
 // c++ includes
 #include <chrono>
+#include <vector>
 
 // windows includes
 #include <windows.h>

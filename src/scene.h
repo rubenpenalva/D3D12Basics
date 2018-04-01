@@ -4,7 +4,6 @@
 // c++ includes
 #include <vector>
 #include <memory>
-#include <optional>
 
 // third party includes
 #include "assimp/Importer.hpp"
@@ -45,9 +44,9 @@ namespace D3D12Basics
     {
         static const Float3 m_diffuseColor;
 
-        std::optional<std::wstring> m_diffuseTexture;
-        std::optional<std::wstring> m_specularTexture;
-        std::optional<std::wstring> m_normalsTexture;
+       std::wstring m_diffuseTexture;
+       std::wstring m_specularTexture;
+       std::wstring m_normalsTexture;
     };
 
     class TextureData

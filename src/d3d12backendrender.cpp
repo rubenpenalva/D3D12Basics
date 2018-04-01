@@ -97,9 +97,9 @@ void D3D12BackendRender::LoadSceneResources(D3D12Basics::SceneLoader& sceneLoade
         D3D12DynamicResourceID dynamicCBID = m_gpu.CreateDynamicConstantBuffer(sizeof(Matrix44));
         materialResources.push_back(dynamicCBID);
 
-        if (model.m_material.m_diffuseTexture)
+        if (!model.m_material.m_diffuseTexture.empty())
         {
-            D3D12ResourceID diffuseTextureID = CreateTexture(*model.m_material.m_diffuseTexture, sceneLoader);
+            D3D12ResourceID diffuseTextureID = CreateTexture(model.m_material.m_diffuseTexture, sceneLoader);
             materialResources.push_back(diffuseTextureID);
 
             // TODO add light
@@ -115,7 +115,7 @@ void D3D12BackendRender::LoadSceneResources(D3D12Basics::SceneLoader& sceneLoade
         }
         else
         {
-            assert(!model.m_material.m_specularTexture && !model.m_material.m_normalsTexture);
+            assert(model.m_material.m_specularTexture.empty() && model.m_material.m_normalsTexture.empty());
 
             materialResources.push_back(defaultTexture2D);
             // TODO add fallback material

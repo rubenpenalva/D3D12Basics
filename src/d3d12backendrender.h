@@ -1,5 +1,8 @@
 #pragma once
 
+// c++ includes
+#include <unordered_map>
+
 // project includes
 #include "scene.h"
 #include "d3d12gpu.h"

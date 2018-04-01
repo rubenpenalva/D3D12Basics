@@ -67,10 +67,14 @@ Mesh D3D12Basics::CreateSphere(const VertexDesc& /*vertexDesc*/, unsigned int pa
 {
     assert(parallelsCount > 1 && meridiansCount > 3);
 
+    // Note this adds another meridian that will be used to fix the uv mapping of the
+    // meridians last vertices.
+    meridiansCount++;
+
     const unsigned int polesCount = 2; // north and south pole vertices
     const unsigned int verticesCount = parallelsCount * meridiansCount + polesCount;
     const unsigned int indicesPerTri = 3;
-    const unsigned int indicesCount = indicesPerTri * (2 * meridiansCount * (parallelsCount - 1) + polesCount * meridiansCount);
+    const unsigned int indicesCount = indicesPerTri * meridiansCount * (2 * (parallelsCount - 1) + polesCount);
 
     size_t positionElementsCount = 3;
     std::vector<float> positions((parallelsCount * meridiansCount + polesCount) * positionElementsCount);
@@ -81,7 +85,7 @@ Mesh D3D12Basics::CreateSphere(const VertexDesc& /*vertexDesc*/, unsigned int pa
     // parallels = latitude = altitude = phi 
     // meridians = longitude = azimuth = theta
     const float latitudeDiff = M_PI / (parallelsCount + 1);
-    const float longitudeDiff = 2.0f * M_PI / meridiansCount;
+    const float longitudeDiff = 2.0f * M_PI / (meridiansCount - 1);
 
     // Build sphere rings
     size_t currentVertexIndex = 0;
@@ -99,8 +103,10 @@ Mesh D3D12Basics::CreateSphere(const VertexDesc& /*vertexDesc*/, unsigned int pa
             auto position = SphericalToCartersian(longitude, latitude) * Float3(0.5f, 0.5f, 0.5f);
             memcpy(&positions[currentVertexIndex * positionElementsCount], 
                    &position, sizeof(Float3));
+            
             // NOTE: this mapping has horrendous distortions on the poles
-            auto uv = Float2(longitude * M_RCP_2PI, latitude * M_RCP_PI);
+            auto uv = i == meridiansCount - 1?  Float2(1.0f, latitude * M_RCP_PI) : 
+                                                Float2(longitude * M_RCP_2PI, latitude * M_RCP_PI);
             memcpy(&uvs[currentVertexIndex * uvElementsCount],
                    &uv, sizeof(Float2));
 

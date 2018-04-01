@@ -132,7 +132,7 @@ void D3D12BackendRender::LoadSceneResources(D3D12Basics::SceneLoader& sceneLoade
             mesh = D3D12Basics::CreatePlane(VertexDesc{ true, false, false });
             break;
         case Model::Type::Sphere:
-            mesh = D3D12Basics::CreateSphere({ true, false, false }, 20, 20);
+            mesh = D3D12Basics::CreateSphere({ true, false, false }, 40, 40);
             break;
         case Model::Type::MeshFile:
         {

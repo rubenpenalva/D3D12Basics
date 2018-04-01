@@ -111,6 +111,9 @@
       <AdditionalLibraryDirectories>$(SolutionDir)/thirdparty/assimp/lib/;$(SolutionDir)/thirdparty/directxtk12/lib/$(Configuration)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>dxgi.lib;d3d12.lib;d3dcompiler.lib;Rpcrt4.lib;assimp.lib;zlib.lib;IrrXML.lib;DirectXTK12_Custom.lib;runtimeobject.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /s /Y .\thirdparty\assimp\bin\* $(OutputPath)</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -150,6 +153,9 @@
       <AdditionalLibraryDirectories>$(SolutionDir)/thirdparty/assimp/lib/;$(SolutionDir)/thirdparty/directxtk12/lib/$(Configuration)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>dxgi.lib;d3d12.lib;d3dcompiler.lib;Rpcrt4.lib;assimp.lib;zlib.lib;IrrXML.lib;DirectXTK12_Custom.lib;runtimeobject.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /s /Y .\thirdparty\assimp\bin\* $(OutputPath)</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\d3d12backendrender.cpp" />

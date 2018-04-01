@@ -26,13 +26,12 @@ namespace D3D12Render
     class D3D12GpuSynchronizer;
 
     using IDXGIAdapters                     = std::vector<IDXGIAdapterPtr>;
-    using D3D12GpuPtr                       = std::shared_ptr<D3D12Gpu>;
-    using D3D12MaterialPtr            = std::shared_ptr<D3D12Material>;
-    using D3D12CBVSRVUAVDescHeapPtr         = std::shared_ptr<D3D12CBVSRVUAVDescHeap>;
-    using D3D12DSVDescriptorHeapPtr         = std::shared_ptr<D3D12DSVDescriptorHeap>;
-    using D3D12RTVDescriptorHeapPtr         = std::shared_ptr<D3D12RTVDescriptorHeap>;
-    using D3D12SwapChainPtr                 = std::shared_ptr<D3D12SwapChain>;
-    using D3D12CommittedBufferLoaderPtr     = std::shared_ptr<D3D12CommittedBufferLoader>;
-    using D3D12GpuRenderTaskPtr             = std::shared_ptr<D3D12GpuRenderTask>;
-    using D3D12GpuSynchronizerUPtr          = std::unique_ptr<D3D12GpuSynchronizer>;
+    using D3D12MaterialPtr                  = std::unique_ptr<D3D12Material>;
+    using D3D12CBVSRVUAVDescHeapPtr         = std::unique_ptr<D3D12CBVSRVUAVDescHeap>;
+    using D3D12DSVDescriptorHeapPtr         = std::unique_ptr<D3D12DSVDescriptorHeap>;
+    using D3D12RTVDescriptorHeapPtr         = std::unique_ptr<D3D12RTVDescriptorHeap>;
+    using D3D12SwapChainPtr                 = std::unique_ptr<D3D12SwapChain>;
+    using D3D12CommittedBufferLoaderPtr     = std::unique_ptr<D3D12CommittedBufferLoader>;
+    using D3D12GpuRenderTaskPtr             = std::unique_ptr<D3D12GpuRenderTask>;
+    using D3D12GpuSynchronizerPtr           = std::unique_ptr<D3D12GpuSynchronizer>;
 }

@@ -135,7 +135,7 @@ namespace D3D12Render
         ID3D12CommandQueuePtr                       m_graphicsCmdQueue;
         ID3D12GraphicsCommandListPtr                m_cmdLists[m_framesInFlight];
         ID3D12CommandAllocatorPtr                   m_cmdAllocators[m_framesInFlight];
-        D3D12GpuSynchronizerUPtr                    m_gpuSync;
+        D3D12GpuSynchronizerPtr                     m_gpuSync;
         unsigned int                                m_currentBackbufferIndex;
         unsigned int                                m_currentFrameIndex;
         D3D12Basics::Timer                          m_frameTime;

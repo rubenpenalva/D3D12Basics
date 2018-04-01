@@ -28,7 +28,7 @@ namespace D3D12Render
 
         D3D12SwapChain(HWND hwnd, DXGI_FORMAT format, const D3D12Basics::Resolution& resolution, 
                        IDXGIFactory4Ptr factory, ID3D12DevicePtr device, 
-                       ID3D12CommandQueuePtr commandQueue, D3D12RTVDescriptorHeapPtr descriptorHeap,
+                       ID3D12CommandQueuePtr commandQueue, D3D12RTVDescriptorHeap* descriptorHeap,
                        bool waitForPresentEnabled = false);
 
         ~D3D12SwapChain();
@@ -61,7 +61,7 @@ namespace D3D12Render
 
         IDXGISwapChain3Ptr m_swapChain;
 
-        D3D12RTVDescriptorHeapPtr m_descriptorHeap;
+        D3D12RTVDescriptorHeap* m_descriptorHeap;
         
         D3D12DescriptorID m_backbuffersDescIDs[D3D12Gpu::m_backBuffersCount];
 

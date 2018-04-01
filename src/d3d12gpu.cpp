@@ -130,11 +130,11 @@ D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_dynamicConstantBuf
 
     CreateDescriptorHeaps();
 
-    m_committedBufferLoader = std::make_shared<D3D12CommittedBufferLoader>(m_device, m_cmdAllocators[0], m_graphicsCmdQueue, m_cmdLists[0]);
+    m_committedBufferLoader = std::make_unique<D3D12CommittedBufferLoader>(m_device, m_cmdAllocators[0], m_graphicsCmdQueue, m_cmdLists[0]);
     assert(m_committedBufferLoader);
 
     // TODO move this outside
-    m_simpleMaterial = std::make_shared<D3D12Material>(m_device);
+    m_simpleMaterial = std::make_unique<D3D12Material>(m_device);
     assert(m_simpleMaterial);
 
     CreateDynamicConstantBuffersInfrastructure();
@@ -156,9 +156,9 @@ unsigned int D3D12Gpu::GetFormatPlaneCount(DXGI_FORMAT format)
 void D3D12Gpu::SetOutputWindow(HWND hwnd)
 {
     // NOTE only one output supported
-    m_swapChain = std::make_shared<D3D12SwapChain>(hwnd, g_swapChainFormat, m_safestResolution, 
+    m_swapChain = std::make_unique<D3D12SwapChain>(hwnd, g_swapChainFormat, m_safestResolution,
                                                    m_factory, m_device, m_graphicsCmdQueue,
-                                                   m_rtvDescriptorHeap, m_isWaitableForPresentEnabled);
+                                                   m_rtvDescriptorHeap.get(), m_isWaitableForPresentEnabled);
     assert(m_swapChain);
 
     CreateDepthBuffer();
@@ -487,13 +487,13 @@ IDXGIAdapterPtr D3D12Gpu::CreateDXGIInfrastructure()
 
 void D3D12Gpu::CreateDescriptorHeaps()
 {
-    m_rtvDescriptorHeap = std::make_shared<D3D12RTVDescriptorHeap>(m_device);
+    m_rtvDescriptorHeap = std::make_unique<D3D12RTVDescriptorHeap>(m_device);
     assert(m_rtvDescriptorHeap);
 
-    m_srvDescHeap = std::make_shared<D3D12CBVSRVUAVDescHeap>(m_device);
+    m_srvDescHeap = std::make_unique<D3D12CBVSRVUAVDescHeap>(m_device);
     assert(m_srvDescHeap);
 
-    m_dsvDescHeap = std::make_shared<D3D12DSVDescriptorHeap>(m_device);
+    m_dsvDescHeap = std::make_unique<D3D12DSVDescriptorHeap>(m_device);
     assert(m_dsvDescHeap);
 }
 

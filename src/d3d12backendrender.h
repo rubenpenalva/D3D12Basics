@@ -9,6 +9,7 @@
 
 namespace D3D12Render
 {
+    // TODO split this in two classes: Render and MeshRenderer
     class D3D12BackendRender
     {
     public:
@@ -36,6 +37,9 @@ namespace D3D12Render
 
     private:
         const D3D12Basics::Scene& m_scene;
+
+        // TODO material needs to be destroyed afer gpu. fix this.
+        D3D12MaterialPtr m_material;
 
         D3D12Gpu m_gpu;
 

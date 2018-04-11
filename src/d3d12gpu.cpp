@@ -125,6 +125,7 @@ D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_dynamicConstantBuf
     assert(adapter);
 
     CreateDevice(adapter);
+    CheckFeatureSupport();
 
     CreateCommandInfrastructure();
 
@@ -132,10 +133,6 @@ D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_dynamicConstantBuf
 
     m_committedBufferLoader = std::make_unique<D3D12CommittedBufferLoader>(m_device, m_cmdAllocators[0], m_graphicsCmdQueue, m_cmdLists[0]);
     assert(m_committedBufferLoader);
-
-    // TODO move this outside
-    m_simpleMaterial = std::make_unique<D3D12Material>(m_device);
-    assert(m_simpleMaterial);
 
     CreateDynamicConstantBuffersInfrastructure();
 
@@ -275,28 +272,53 @@ void D3D12Gpu::ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderT
     auto& dsvDescriptorHandle = m_dsvDescHeap->GetDescriptorHandles(m_depthBufferDescID).m_cpuHandle;
     cmdList->ClearDepthStencilView(dsvDescriptorHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0x0, 0, nullptr);
 
-    // All render tasks have the same pso and root signature
-    cmdList->SetPipelineState(m_simpleMaterial->GetPSO().Get());
-    cmdList->SetGraphicsRootSignature(m_simpleMaterial->GetRootSignature().Get());
-        
     ID3D12DescriptorHeap* ppHeaps[] = { m_srvDescHeap->GetDescriptorHeap().Get() };
     cmdList->SetDescriptorHeaps(1, ppHeaps);
 
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    D3D12MaterialResources boundSimpleMaterialResources{ 0xffffffff, 0xffffffff };
+    //D3D12MaterialResources boundSimpleMaterialResources{ 0xffffffff, 0xffffffff };
     D3D12_VIEWPORT  boundViewport {};
     RECT            boundScissorRect {};
 
+    ID3D12PipelineState* currentPipelineState = nullptr;
+    ID3D12RootSignature* currentRootSignature = nullptr;
     for (const auto& renderTask : renderTasks)
     {
-        if (boundSimpleMaterialResources[0] != renderTask.m_materialResources[0] ||
-            boundSimpleMaterialResources[1] != renderTask.m_materialResources[1])
+        auto pipelineState = renderTask.m_pipelineState.Get();
+        if (currentPipelineState != pipelineState)
         {
-            boundSimpleMaterialResources = renderTask.m_materialResources;
-            BindSimpleMaterialResources(renderTask.m_materialResources, cmdList);
+            cmdList->SetPipelineState(pipelineState);
+            currentPipelineState = pipelineState;
         }
-        
+
+        auto rootSignature = renderTask.m_rootSignature.Get();
+        if (currentRootSignature != rootSignature)
+        {
+            cmdList->SetGraphicsRootSignature(rootSignature);
+            currentRootSignature = rootSignature;
+        }
+
+        // Set bindings
+        for (size_t i = 0; i < renderTask.m_bindings.size(); ++i)
+        {
+            D3D12_GPU_DESCRIPTOR_HANDLE descriptorHandle;
+            const auto& binding = renderTask.m_bindings[i];
+            if (binding.m_resourceType == D3D12ResourceType::DynamicConstantBuffer)
+            {
+                const auto& cbDescID = m_dynamicConstantBuffers[binding.m_resourceID].m_cbvID[m_currentFrameIndex];
+                descriptorHandle = m_srvDescHeap->GetDescriptorHandles(cbDescID).m_gpuHandle;
+            }
+            else
+            {
+                assert(binding.m_resourceType == D3D12ResourceType::StaticResource);
+                const auto& srvDescID = m_resources[binding.m_resourceID].m_resourceViewID;
+                descriptorHandle = m_srvDescHeap->GetDescriptorHandles(srvDescID).m_gpuHandle;
+            }
+
+            cmdList->SetGraphicsRootDescriptorTable(static_cast<UINT>(i), descriptorHandle);
+        }
+
         if (boundViewport.Height != renderTask.m_viewport.Height || boundViewport.MaxDepth != renderTask.m_viewport.MaxDepth ||
             boundViewport.MinDepth != renderTask.m_viewport.MinDepth || boundViewport.TopLeftX != renderTask.m_viewport.TopLeftX || 
             boundViewport.TopLeftY != renderTask.m_viewport.TopLeftY || boundViewport.Width != renderTask.m_viewport.Width)
@@ -373,6 +395,23 @@ void D3D12Gpu::FinishFrame()
     // Note: we can have x frames in flight and y backbuffers
     m_currentBackbufferIndex = m_swapChain->GetCurrentBackBufferIndex();
     m_currentFrameIndex = (m_currentFrameIndex + 1) % m_framesInFlight;
+}
+ID3D12RootSignaturePtr D3D12Gpu::CreateRootSignature(ID3DBlobPtr signature, const std::wstring& name)
+{
+    ID3D12RootSignaturePtr rootSignature;
+    AssertIfFailed(m_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&rootSignature)));
+    rootSignature->SetName(name.c_str());
+
+    return rootSignature;
+}
+
+ID3D12PipelineStatePtr D3D12Gpu::CreatePSO(const D3D12_GRAPHICS_PIPELINE_STATE_DESC& psoDesc, const std::wstring& name)
+{
+    ID3D12PipelineStatePtr pso;
+    AssertIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pso)));
+    pso->SetName(name.c_str());
+
+    return pso;
 }
 
 // 
@@ -529,12 +568,10 @@ void D3D12Gpu::CreateDynamicConstantBuffersInfrastructure()
     m_dynamicConstantBuffersCurrentMemPtr = m_dynamicConstantBuffersMemPtr;
 }
 
-void D3D12Gpu::BindSimpleMaterialResources(const D3D12MaterialResources& materialResources, ID3D12GraphicsCommandListPtr cmdList)
+void D3D12Gpu::CheckFeatureSupport()
 {
-    const auto& cbDescID = m_dynamicConstantBuffers[materialResources[0]].m_cbvID[m_currentFrameIndex];
-    const auto& cbGpuHandle = m_srvDescHeap->GetDescriptorHandles(cbDescID).m_gpuHandle;
-    const auto& srvDescID = m_resources[materialResources[1]].m_resourceViewID;
-    const auto& srvGpuHandle = m_srvDescHeap->GetDescriptorHandles(srvDescID).m_gpuHandle;
+    D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
+    featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
 
-    m_simpleMaterial->Apply(cmdList, cbGpuHandle, srvGpuHandle);
+    AssertIfFailed(m_device->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData)));
 }

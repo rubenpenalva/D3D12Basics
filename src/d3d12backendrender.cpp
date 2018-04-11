@@ -3,6 +3,8 @@
 #include <unordered_map>
 #include "meshgenerator.h"
 
+#include "d3d12material.h"
+
 using namespace D3D12Render;
 using namespace D3D12Basics;
 
@@ -45,6 +47,7 @@ namespace
 
 D3D12BackendRender::D3D12BackendRender(const D3D12Basics::Scene& scene, bool isWaitableForPresentEnabled) : m_scene(scene), m_gpu(isWaitableForPresentEnabled)
 {
+    m_material = std::make_unique<D3D12Material>(&m_gpu);
 }
 
 D3D12BackendRender::~D3D12BackendRender()
@@ -92,15 +95,15 @@ void D3D12BackendRender::LoadSceneResources(D3D12Basics::SceneLoader& sceneLoade
     // Create a render task per model
     for (const auto& model : m_scene.m_models)
     {
-        D3D12MaterialResources materialResources;
+        D3D12Bindings materialBindings;
 
         D3D12DynamicResourceID dynamicCBID = m_gpu.CreateDynamicConstantBuffer(sizeof(Matrix44));
-        materialResources.push_back(dynamicCBID);
+        materialBindings.emplace_back(D3D12Binding{ D3D12ResourceType::DynamicConstantBuffer, dynamicCBID });
 
         if (!model.m_material.m_diffuseTexture.empty())
         {
             D3D12ResourceID diffuseTextureID = CreateTexture(model.m_material.m_diffuseTexture, sceneLoader);
-            materialResources.push_back(diffuseTextureID);
+            materialBindings.emplace_back(D3D12Binding{ D3D12ResourceType::StaticResource, diffuseTextureID });
 
             // TODO add light
             //if (model.m_material.m_specularTexture)
@@ -117,7 +120,7 @@ void D3D12BackendRender::LoadSceneResources(D3D12Basics::SceneLoader& sceneLoade
         {
             assert(model.m_material.m_specularTexture.empty() && model.m_material.m_normalsTexture.empty());
 
-            materialResources.push_back(defaultTexture2D);
+            materialBindings.emplace_back(D3D12Binding{ D3D12ResourceType::StaticResource, defaultTexture2D });
             // TODO add fallback material
             //materialResources.push_back(defaultDiffuseColorCBID);
         }
@@ -150,7 +153,9 @@ void D3D12BackendRender::LoadSceneResources(D3D12Basics::SceneLoader& sceneLoade
                                                             L"ib - " + model.m_name);
 
         D3D12GpuRenderTask renderTask;
-        renderTask.m_materialResources = materialResources;
+        renderTask.m_pipelineState = m_material->GetPSO();
+        renderTask.m_rootSignature = m_material->GetRootSignature();
+        renderTask.m_bindings = materialBindings;
         renderTask.m_viewport = m_defaultViewport;
         renderTask.m_scissorRect = m_defaultScissorRect;
         renderTask.m_vertexBufferResourceID = vbID;
@@ -174,7 +179,8 @@ void D3D12BackendRender::UpdateSceneResources()
         const auto& model = m_scene.m_models[i];
         const D3D12Basics::Matrix44 localToClip = (model.m_transform * worldToClip).Transpose();
         // TODO generalize this
-        m_gpu.UpdateDynamicConstantBuffer(m_renderTasks[i].m_materialResources[0], &localToClip);
+        assert(m_renderTasks[i].m_bindings[0].m_resourceType == D3D12ResourceType::DynamicConstantBuffer);
+        m_gpu.UpdateDynamicConstantBuffer(m_renderTasks[i].m_bindings[0].m_resourceID, &localToClip);
     }
 }
 

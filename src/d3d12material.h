@@ -15,25 +15,18 @@ namespace D3D12Render
     {
     public:
         
-        D3D12Material(ID3D12DevicePtr d3d12Device);
+        D3D12Material(D3D12Render::D3D12Gpu* gpu);
         
         ~D3D12Material();
 
-        ID3D12PipelineStatePtr GetPSO() const { return m_defaultPSO; }
+        ID3D12PipelineStatePtr GetPSO() const { return m_pso; }
 
         ID3D12RootSignaturePtr GetRootSignature() const { return m_rootSignature; }
 
-        void Apply(ID3D12GraphicsCommandListPtr commandList, D3D12_GPU_DESCRIPTOR_HANDLE cbv,
-                    D3D12_GPU_DESCRIPTOR_HANDLE srv);
-
     private:
-        void Load();
+        ID3D12PipelineStatePtr m_pso;
+        ID3D12RootSignaturePtr m_rootSignature;
 
-        ID3D12DevicePtr                 m_device;
-
-        ID3D12PipelineStatePtr          m_defaultPSO;
-        ID3D12RootSignaturePtr          m_rootSignature;
-
-        D3D12_FEATURE_DATA_ROOT_SIGNATURE GetFeatureRootSignatureHighestVerSupported();
+        void CreatePSO(D3D12Render::D3D12Gpu* gpu);
     };
 }

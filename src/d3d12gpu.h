@@ -3,7 +3,6 @@
 // project includes
 #include "utils.h"
 #include "d3d12basicsfwd.h"
-#include "d3d12material.h"
 
 // c++ includes
 #include <vector>
@@ -45,9 +44,25 @@ namespace D3D12Render
         void WaitForFence(UINT64 fenceValue);
     };
 
+    // TODO add root constants and root descriptors
+    // Samplers are always static for now
+    enum class D3D12ResourceType
+    {
+        DynamicConstantBuffer,
+        StaticResource,
+    };
+    struct D3D12Binding
+    {
+        D3D12ResourceType   m_resourceType;
+        D3D12ResourceID     m_resourceID;
+    };
+    using D3D12Bindings = std::vector<D3D12Binding>;
+
     struct D3D12GpuRenderTask
     {
-        D3D12MaterialResources  m_materialResources;
+        ID3D12PipelineStatePtr  m_pipelineState;
+        ID3D12RootSignaturePtr  m_rootSignature;
+        D3D12Bindings           m_bindings;
         D3D12_VIEWPORT          m_viewport;
         RECT                    m_scissorRect;
         size_t                  m_vertexBufferResourceID;
@@ -104,6 +119,11 @@ namespace D3D12Render
         void BeginFrame();
         void FinishFrame();
 
+        // GPU Others
+        // TODO think about how to expose this unifying the pipeline state
+        ID3D12RootSignaturePtr CreateRootSignature(ID3DBlobPtr signature, const std::wstring& name);
+        ID3D12PipelineStatePtr CreatePSO(const D3D12_GRAPHICS_PIPELINE_STATE_DESC& psoDesc, const std::wstring& name);
+
         // Callbacks
         void OnToggleFullScreen();
 
@@ -149,8 +169,6 @@ namespace D3D12Render
         ID3D12ResourcePtr           m_depthBufferResource;
         D3D12DescriptorID           m_depthBufferDescID;
 
-        D3D12MaterialPtr m_simpleMaterial;
-
         // Resources
         D3D12CommittedBufferLoaderPtr   m_committedBufferLoader;
         std::vector<D3D12ResourceExt>   m_resources;
@@ -182,6 +200,6 @@ namespace D3D12Render
 
         void CreateDynamicConstantBuffersInfrastructure();
 
-        void BindSimpleMaterialResources(const D3D12MaterialResources& materialResources, ID3D12GraphicsCommandListPtr cmdList);
+        void CheckFeatureSupport();
     };
 }

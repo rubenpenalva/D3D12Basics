@@ -58,7 +58,7 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_DEBUG;_WINDOWS;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>./thirdparty/stb/include;./thirdparty/assimp/include/;./thirdparty/directxtk12/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>./thirdparty/stb/include;./thirdparty/assimp/include/;./thirdparty/directxtk12/include;./thirdparty/;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -80,7 +80,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>./thirdparty/stb/include;./thirdparty/assimp/include/;./thirdparty/directxtk12/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>./thirdparty/stb/include;./thirdparty/assimp/include/;./thirdparty/directxtk12/include;./thirdparty/;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -101,10 +101,14 @@
     <ClCompile Include="src\d3d12backendrender.cpp" />
     <ClCompile Include="src\d3d12material.cpp" />
     <ClCompile Include="src\d3d12swapchain.cpp" />
+    <ClCompile Include="src\d3d12utils.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\meshgenerator.cpp" />
     <ClCompile Include="src\scene.cpp" />
     <ClCompile Include="src\utils.cpp" />
+    <ClCompile Include="thirdparty\imgui\imgui.cpp" />
+    <ClCompile Include="thirdparty\imgui\imgui_demo.cpp" />
+    <ClCompile Include="thirdparty\imgui\imgui_draw.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\d3d12basicsfwd.h" />
@@ -115,18 +119,13 @@
     <ClInclude Include="src\d3d12backendrender.h" />
     <ClInclude Include="src\d3d12material.h" />
     <ClInclude Include="src\d3d12swapchain.h" />
+    <ClInclude Include="src\d3d12utils.h" />
     <ClInclude Include="src\meshgenerator.h" />
     <ClInclude Include="src\scene.h" />
     <ClInclude Include="src\utils.h" />
+    <ClInclude Include="thirdparty\imgui\imconfig.h" />
+    <ClInclude Include="thirdparty\imgui\imgui.h" />
+    <ClInclude Include="thirdparty\imgui\imgui_internal.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets">
-    <Import Project="packages\WinPixEventRuntime.1.0.170918004\build\WinPixEventRuntime.targets" Condition="Exists('packages\WinPixEventRuntime.1.0.170918004\build\WinPixEventRuntime.targets')" />
-  </ImportGroup>
-  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
-    <PropertyGroup>
-      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
-    </PropertyGroup>
-    <Error Condition="!Exists('packages\WinPixEventRuntime.1.0.170918004\build\WinPixEventRuntime.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\WinPixEventRuntime.1.0.170918004\build\WinPixEventRuntime.targets'))" />
-  </Target>
 </Project>

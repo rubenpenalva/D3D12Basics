@@ -29,11 +29,11 @@ namespace
     D3D12Basics::GpuViewMarker g_gpuViewMarkerPreWaitFrame(g_preWaitName, g_preWaitUUID);
     D3D12Basics::GpuViewMarker g_gpuViewMarkerPostWaitFrame(g_postWaitName, g_postWaitUUID);
 
-    const uint64_t g_page_size_64kb_in_bytes    = 1024 * 64; // 64 << 10
-    const uint64_t g_page_size_128kb_in_bytes   = 1024 * 128;
-    const uint64_t g_page_size_256kb_in_bytes   = 1024 * 256;
-    const uint64_t g_page_size_512kb_in_bytes   = 1024 * 512;
-    const uint64_t g_page_size_1mb_in_bytes     = 1024 * 1024;
+    const uint64_t g_page_size_64kb_in_bytes = 1024 * 64; // 64 << 10
+    const uint64_t g_page_size_128kb_in_bytes = 1024 * 128;
+    const uint64_t g_page_size_256kb_in_bytes = 1024 * 256;
+    const uint64_t g_page_size_512kb_in_bytes = 1024 * 512;
+    const uint64_t g_page_size_1mb_in_bytes = 1024 * 1024;
 
     const auto g_swapChainFormat = DXGI_FORMAT::DXGI_FORMAT_R8G8B8A8_UNORM;
 
@@ -119,7 +119,8 @@ void D3D12GpuSynchronizer::WaitForFence(UINT64 fenceValue)
 D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_dynamicConstantBuffersMaxSize(4 * g_page_size_1mb_in_bytes),
                                                             m_dynamicConstantBuffersCurrentSize(0),
                                                             m_currentBackbufferIndex(0), m_currentFrameIndex(0), 
-                                                            m_isWaitableForPresentEnabled(isWaitableForPresentEnabled)
+                                                            m_isWaitableForPresentEnabled(isWaitableForPresentEnabled),
+                                                            m_depthBufferDescHandle(nullptr)
 {
     auto adapter = CreateDXGIInfrastructure();
     assert(adapter);
@@ -142,6 +143,8 @@ D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_dynamicConstantBuf
 D3D12Gpu::~D3D12Gpu()
 {
     m_gpuSync->WaitAll();
+
+    ClearResources();
 }
 
 unsigned int D3D12Gpu::GetFormatPlaneCount(DXGI_FORMAT format)
@@ -155,7 +158,7 @@ void D3D12Gpu::SetOutputWindow(HWND hwnd)
     // NOTE only one output supported
     m_swapChain = std::make_unique<D3D12SwapChain>(hwnd, g_swapChainFormat, m_safestResolution,
                                                    m_factory, m_device, m_graphicsCmdQueue,
-                                                   m_rtvDescriptorHeap.get(), m_isWaitableForPresentEnabled);
+                                                   m_isWaitableForPresentEnabled);
     assert(m_swapChain);
 
     CreateDepthBuffer();
@@ -182,9 +185,14 @@ D3D12ResourceID D3D12Gpu::CreateStaticConstantBuffer(const void* data, size_t da
     ID3D12ResourcePtr resource = m_committedBufferLoader->Upload(data, dataSizeBytes, requiredDataSizeBytes, resourceName);
     assert(resource);
 
-    const D3D12DescriptorID cbvID = m_srvDescHeap->CreateCBV(m_dynamicConstantBufferHeapCurrentPtr, requiredDataSizeBytes);
+    // TODO assert bufferSize complies with constant buffer memory alignment requirements
+    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+    cbvDesc.BufferLocation = m_dynamicConstantBufferHeapCurrentPtr;
+    cbvDesc.SizeInBytes = static_cast<UINT>(requiredDataSizeBytes);
 
-    m_resources.push_back({ cbvID, resource });
+    D3D12DescriptorHeapHandlePtr descHandle = m_srvDescHeap->CreateCBV(cbvDesc);
+
+    m_resources.push_back({ descHandle, resource });
 
     return m_resources.size() - 1;
 }
@@ -204,9 +212,9 @@ D3D12ResourceID D3D12Gpu::CreateTexture(const std::vector<D3D12_SUBRESOURCE_DATA
     viewDesc.Texture2D.PlaneSlice           = 0;
     viewDesc.Texture2D.ResourceMinLODClamp  = 0.0f;
 
-    const D3D12DescriptorID srvID = m_srvDescHeap->CreateSRV(resource.Get(), viewDesc);
+    D3D12DescriptorHeapHandlePtr handle = m_srvDescHeap->CreateSRV(resource.Get(), viewDesc);
 
-    m_resources.push_back({ srvID, resource });
+    m_resources.push_back({ handle, resource });
 
     return m_resources.size() - 1;
 }
@@ -224,10 +232,14 @@ D3D12DynamicResourceID D3D12Gpu::CreateDynamicConstantBuffer(unsigned int sizeIn
 
     for (unsigned int i = 0; i < m_framesInFlight; ++i)
     {
-        const D3D12DescriptorID cbvID = m_srvDescHeap->CreateCBV(m_dynamicConstantBufferHeapCurrentPtr, actualSize);
+        // TODO assert bufferSize complies with constant buffer memory alignment requirements
+        D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+        cbvDesc.BufferLocation = m_dynamicConstantBufferHeapCurrentPtr;
+        cbvDesc.SizeInBytes = static_cast<UINT>(actualSize);
+        D3D12DescriptorHeapHandlePtr cbvHandle = m_srvDescHeap->CreateCBV(cbvDesc);
 
         dynamicConstantBuffer.m_memPtr[i] = m_dynamicConstantBuffersCurrentMemPtr;
-        dynamicConstantBuffer.m_cbvID[i] = cbvID;
+        dynamicConstantBuffer.m_cbvHandle[i] = cbvHandle;
 
         m_dynamicConstantBufferHeapCurrentPtr += actualSize;
         m_dynamicConstantBuffersCurrentSize += actualSize;
@@ -265,11 +277,11 @@ void D3D12Gpu::ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderT
     // Execute the graphics commands
     // All render tasks have the same render target, depth buffer and clear value
     auto backbufferRT = m_swapChain->RTV(m_currentBackbufferIndex);
-    D3D12_CPU_DESCRIPTOR_HANDLE& depthStencilDescriptor = m_dsvDescHeap->GetDescriptorHandles(m_depthBufferDescID).m_cpuHandle;
+    D3D12_CPU_DESCRIPTOR_HANDLE& depthStencilDescriptor = m_depthBufferDescHandle->m_cpuHandle;
     cmdList->OMSetRenderTargets(1, &backbufferRT, FALSE, &depthStencilDescriptor);
     const auto& firstRenderTask = renderTasks[0];
     cmdList->ClearRenderTargetView(backbufferRT, firstRenderTask.m_clearColor, 0, nullptr);
-    auto& dsvDescriptorHandle = m_dsvDescHeap->GetDescriptorHandles(m_depthBufferDescID).m_cpuHandle;
+    auto& dsvDescriptorHandle = m_depthBufferDescHandle->m_cpuHandle;
     cmdList->ClearDepthStencilView(dsvDescriptorHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0x0, 0, nullptr);
 
     ID3D12DescriptorHeap* ppHeaps[] = { m_srvDescHeap->GetDescriptorHeap().Get() };
@@ -302,19 +314,14 @@ void D3D12Gpu::ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderT
         // Set bindings
         for (size_t i = 0; i < renderTask.m_bindings.size(); ++i)
         {
-            D3D12_GPU_DESCRIPTOR_HANDLE descriptorHandle;
+            D3D12_GPU_DESCRIPTOR_HANDLE descriptorHandle{};
             const auto& binding = renderTask.m_bindings[i];
             if (binding.m_resourceType == D3D12ResourceType::DynamicConstantBuffer)
-            {
-                const auto& cbDescID = m_dynamicConstantBuffers[binding.m_resourceID].m_cbvID[m_currentFrameIndex];
-                descriptorHandle = m_srvDescHeap->GetDescriptorHandles(cbDescID).m_gpuHandle;
-            }
-            else
-            {
-                assert(binding.m_resourceType == D3D12ResourceType::StaticResource);
-                const auto& srvDescID = m_resources[binding.m_resourceID].m_resourceViewID;
-                descriptorHandle = m_srvDescHeap->GetDescriptorHandles(srvDescID).m_gpuHandle;
-            }
+                descriptorHandle = m_dynamicConstantBuffers[binding.m_resourceID].m_cbvHandle[m_currentFrameIndex]->m_gpuHandle;
+            else if (binding.m_resourceType == D3D12ResourceType::StaticResource)
+                descriptorHandle = m_resources[binding.m_resourceID].m_resourceViewHandle->m_gpuHandle;
+
+            assert(descriptorHandle.ptr);
 
             cmdList->SetGraphicsRootDescriptorTable(static_cast<UINT>(i), descriptorHandle);
         }
@@ -526,19 +533,23 @@ IDXGIAdapterPtr D3D12Gpu::CreateDXGIInfrastructure()
 
 void D3D12Gpu::CreateDescriptorHeaps()
 {
-    m_rtvDescriptorHeap = std::make_unique<D3D12RTVDescriptorHeap>(m_device);
-    assert(m_rtvDescriptorHeap);
-
-    m_srvDescHeap = std::make_unique<D3D12CBVSRVUAVDescHeap>(m_device);
-    assert(m_srvDescHeap);
-
-    m_dsvDescHeap = std::make_unique<D3D12DSVDescriptorHeap>(m_device);
+    m_dsvDescHeap = std::make_unique<D3D12DSVDescriptorHeap>(m_device, 1);
     assert(m_dsvDescHeap);
+
+    const uint32_t maxDescriptors = 1024;
+    m_srvDescHeap = std::make_unique<D3D12CBV_SV_UAVDescriptorHeap>(m_device, true, maxDescriptors);
+    assert(m_srvDescHeap);
 }
 
 void D3D12Gpu::CreateDepthBuffer()
 {
-     const auto& resolution = m_swapChain->GetCurrentResolution();
+    if (m_depthBufferDescHandle)
+    {
+        m_dsvDescHeap->Destroy(m_depthBufferDescHandle);
+        m_depthBufferDescHandle = nullptr;
+    }
+
+    const auto& resolution = m_swapChain->GetCurrentResolution();
 
     D3D12_CLEAR_VALUE optimizedClearValue;
     optimizedClearValue.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
@@ -553,7 +564,7 @@ void D3D12Gpu::CreateDepthBuffer()
     desc.ViewDimension      = D3D12_DSV_DIMENSION_TEXTURE2D;
     desc.Flags              = D3D12_DSV_FLAG_NONE;
     desc.Texture2D.MipSlice = 0;
-    m_depthBufferDescID     = m_dsvDescHeap->CreateDSV(m_depthBufferResource, desc);
+    m_depthBufferDescHandle = m_dsvDescHeap->CreateDSV(m_depthBufferResource, desc);
 }
 
 void D3D12Gpu::CreateDynamicConstantBuffersInfrastructure()
@@ -574,4 +585,18 @@ void D3D12Gpu::CheckFeatureSupport()
     featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
 
     AssertIfFailed(m_device->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData)));
+}
+
+void D3D12Gpu::ClearResources()
+{
+    for (auto& resource : m_resources)
+    {
+        m_srvDescHeap->Destroy(resource.m_resourceViewHandle);
+    }
+
+    for (auto& dynamicCB : m_dynamicConstantBuffers)
+    {
+        m_srvDescHeap->Destroy(dynamicCB.m_cbvHandle[0]);
+        m_srvDescHeap->Destroy(dynamicCB.m_cbvHandle[1]);
+    }
 }

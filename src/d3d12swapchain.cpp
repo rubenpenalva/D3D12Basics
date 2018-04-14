@@ -10,23 +10,22 @@
 
 // c++ includes
 #include <sstream>
+
 using namespace D3D12Render;
 using namespace D3D12Basics;
 
 D3D12SwapChain::D3D12SwapChain(HWND hwnd, DXGI_FORMAT format, 
                                const D3D12Basics::Resolution& resolution,
                                IDXGIFactory4Ptr factory, ID3D12DevicePtr device,
-                               ID3D12CommandQueuePtr commandQueue, 
-                               D3D12RTVDescriptorHeap* descriptorHeap,
+                               ID3D12CommandQueuePtr commandQueue,
                                bool waitForPresentEnabled)  :   m_device(device),
-                                                                m_descriptorHeap(descriptorHeap),
+                                                                m_descriptorHeap(device, D3D12Gpu::m_backBuffersCount),
                                                                 m_resolution(resolution),
                                                                 m_waitForPresentEnabled(waitForPresentEnabled)
 {
     assert(factory);
     assert(device);
     assert(commandQueue);
-    assert(descriptorHeap);
 
     // NOTE: not sRGB format available directly for Swap Chain back buffer
     //       Create with UNORM format and use a sRGB Render Target View.
@@ -57,6 +56,9 @@ D3D12SwapChain::D3D12SwapChain(HWND hwnd, DXGI_FORMAT format,
         m_frameLatencyWaitableObject = m_swapChain->GetFrameLatencyWaitableObject();
         assert(m_frameLatencyWaitableObject);
     }
+    
+    for (size_t i = 0; i < 2; ++i)
+        m_backbuffersRTVHandles[i] = nullptr;
 
     CreateBackBuffers();
 }
@@ -112,9 +114,7 @@ D3D12_RESOURCE_BARRIER& D3D12SwapChain::Transition(unsigned int backBufferIndex,
 
 D3D12_CPU_DESCRIPTOR_HANDLE D3D12SwapChain::RTV(unsigned int backBufferIndex)
 {
-    auto& descriptorHandles = m_descriptorHeap->GetDescriptorHandles(m_backbuffersDescIDs[backBufferIndex]);
-
-    return descriptorHandles.m_cpuHandle;
+    return m_backbuffersRTVHandles[backBufferIndex]->m_cpuHandle;
 }
 
 void D3D12SwapChain::Resize(const DXGI_MODE_DESC1& mode)
@@ -124,7 +124,7 @@ void D3D12SwapChain::Resize(const DXGI_MODE_DESC1& mode)
         return;
 
     for (unsigned int i = 0; i < D3D12Gpu::m_backBuffersCount; ++i)
-        m_bacbufferResources[i] = nullptr;
+        m_backbufferResources[i] = nullptr;
     
     AssertIfFailed(m_swapChain->ResizeTarget(reinterpret_cast<const DXGI_MODE_DESC*>(&mode)));
 
@@ -140,17 +140,17 @@ void D3D12SwapChain::CreateBackBuffers()
 {
     for (unsigned int i = 0; i < D3D12Gpu::m_backBuffersCount; ++i)
     {
-        AssertIfFailed(m_swapChain->GetBuffer(i, IID_PPV_ARGS(&m_bacbufferResources[i])));
+        AssertIfFailed(m_swapChain->GetBuffer(i, IID_PPV_ARGS(&m_backbufferResources[i])));
         std::wstringstream converter;
         converter << L"Back buffer " << i;
-        m_bacbufferResources[i]->SetName(converter.str().c_str());
+        m_backbufferResources[i]->SetName(converter.str().c_str());
 
-        m_backbuffersDescIDs[i] = m_descriptorHeap->CreateRTV(m_bacbufferResources[i].Get(), nullptr);
+        m_backbuffersRTVHandles[i] = m_descriptorHeap.CreateRTV(m_backbufferResources[i].Get(), m_backbuffersRTVHandles[i]);
 
         // Create the transitions
         m_transitions[Present_To_RenderTarget][i].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         m_transitions[Present_To_RenderTarget][i].Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-        m_transitions[Present_To_RenderTarget][i].Transition.pResource = m_bacbufferResources[i].Get();
+        m_transitions[Present_To_RenderTarget][i].Transition.pResource = m_backbufferResources[i].Get();
         m_transitions[Present_To_RenderTarget][i].Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
         m_transitions[Present_To_RenderTarget][i].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
         m_transitions[Present_To_RenderTarget][i].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
@@ -165,15 +165,15 @@ void D3D12SwapChain::UpdateBackBuffers()
 {
     for (unsigned int i = 0; i < D3D12Gpu::m_backBuffersCount; ++i)
     {
-        AssertIfFailed(m_swapChain->GetBuffer(i, IID_PPV_ARGS(&m_bacbufferResources[i])));
+        AssertIfFailed(m_swapChain->GetBuffer(i, IID_PPV_ARGS(&m_backbufferResources[i])));
         std::wstringstream converter;
         converter << L"Back buffer " << i;
-        m_bacbufferResources[i]->SetName(converter.str().c_str());
+        m_backbufferResources[i]->SetName(converter.str().c_str());
 
-        m_backbuffersDescIDs[i] = m_descriptorHeap->CreateRTV(m_bacbufferResources[i].Get(), nullptr);
+        m_backbuffersRTVHandles[i] = m_descriptorHeap.CreateRTV(m_backbufferResources[i].Get(), m_backbuffersRTVHandles[i]);
 
         // Update backbuffer resources
-        m_transitions[Present_To_RenderTarget][i].Transition.pResource = m_bacbufferResources[i].Get();
-        m_transitions[RenderTarget_To_Present][i].Transition.pResource = m_bacbufferResources[i].Get();
+        m_transitions[Present_To_RenderTarget][i].Transition.pResource = m_backbufferResources[i].Get();
+        m_transitions[RenderTarget_To_Present][i].Transition.pResource = m_backbufferResources[i].Get();
     }
 }

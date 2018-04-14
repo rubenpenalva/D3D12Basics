@@ -3,6 +3,7 @@
 // project includes
 #include "utils.h"
 #include "d3d12basicsfwd.h"
+#include "d3d12descriptorheap.h"
 
 // c++ includes
 #include <vector>
@@ -11,6 +12,9 @@
 #include "d3d12fwd.h"
 #include <dxgi1_4.h>
 #include <windows.h>
+
+// directx includes
+#include <d3d12.h>
 
 namespace D3D12Render
 {
@@ -132,15 +136,15 @@ namespace D3D12Render
     private:
         struct D3D12ResourceExt
         {
-            D3D12DescriptorID m_resourceViewID;
-            ID3D12ResourcePtr m_resource;
+            D3D12DescriptorHeapHandlePtr    m_resourceViewHandle;
+            ID3D12ResourcePtr               m_resource;
         };
         struct DynamicConstantBuffer
         {
-            uint64_t            m_sizeInBytes;
-            uint64_t            m_requiredSizeInBytes;
-            void*               m_memPtr[m_framesInFlight];
-            D3D12DescriptorID   m_cbvID[m_framesInFlight];
+            uint64_t                        m_sizeInBytes;
+            uint64_t                        m_requiredSizeInBytes;
+            void*                           m_memPtr[m_framesInFlight];
+            D3D12DescriptorHeapHandlePtr    m_cbvHandle[m_framesInFlight];
         };
 
         // dxgi data
@@ -163,16 +167,15 @@ namespace D3D12Render
 
         bool                        m_isWaitableForPresentEnabled;
         D3D12SwapChainPtr           m_swapChain;
-        D3D12RTVDescriptorHeapPtr   m_rtvDescriptorHeap;
 
-        D3D12DSVDescriptorHeapPtr   m_dsvDescHeap;
-        ID3D12ResourcePtr           m_depthBufferResource;
-        D3D12DescriptorID           m_depthBufferDescID;
+        D3D12DSVDescriptorHeapPtr       m_dsvDescHeap;
+        ID3D12ResourcePtr               m_depthBufferResource;
+        D3D12DescriptorHeapHandlePtr    m_depthBufferDescHandle;
 
         // Resources
-        D3D12CommittedBufferLoaderPtr   m_committedBufferLoader;
-        std::vector<D3D12ResourceExt>   m_resources;
-        D3D12CBVSRVUAVDescHeapPtr       m_srvDescHeap;
+        D3D12CommittedBufferLoaderPtr       m_committedBufferLoader;
+        std::vector<D3D12ResourceExt>       m_resources;
+        D3D12CBV_SV_UAVDescriptorHeapPtr    m_srvDescHeap;
 
         // TODO move all these to a ring buffer class
         // Dynamic constant buffer
@@ -201,5 +204,7 @@ namespace D3D12Render
         void CreateDynamicConstantBuffersInfrastructure();
 
         void CheckFeatureSupport();
+
+        void ClearResources();
     };
 }

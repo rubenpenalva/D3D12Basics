@@ -20,34 +20,6 @@ namespace D3D12Render
 {
     using DisplayModes = std::vector<DXGI_MODE_DESC1>;
 
-    class D3D12GpuSynchronizer
-    {
-    public:
-        D3D12GpuSynchronizer(ID3D12DevicePtr device, ID3D12CommandQueuePtr cmdQueue, unsigned int maxFramesInFlight);
-        ~D3D12GpuSynchronizer();
-
-        void Wait();
-
-        void WaitAll();
-
-    private:
-        ID3D12CommandQueuePtr m_cmdQueue;
-
-        const unsigned int  m_maxFramesInFlight;
-        unsigned int        m_framesInFlight;
-
-        HANDLE          m_event;
-        ID3D12FencePtr  m_fence;
-        UINT64          m_currentFenceValue;
-        UINT64          m_nextFenceValue;
-
-        float m_waitTime;
-
-        void SignalWork();
-
-        void WaitForFence(UINT64 fenceValue);
-    };
-
     // TODO add root constants and root descriptors
     // Samplers are always static for now
     enum class D3D12ResourceType
@@ -55,12 +27,16 @@ namespace D3D12Render
         DynamicConstantBuffer,
         StaticResource,
     };
-    struct D3D12Binding
+    
+    struct D3D12ResourceDescriptor
     {
         D3D12ResourceType   m_resourceType;
         D3D12ResourceID     m_resourceID;
     };
-    using D3D12Bindings = std::vector<D3D12Binding>;
+
+    using D3D12ResourceDescriptorTable = std::vector<D3D12ResourceDescriptor>;
+
+    using D3D12Bindings = std::vector<D3D12ResourceDescriptorTable>;
 
     struct D3D12GpuRenderTask
     {
@@ -175,7 +151,8 @@ namespace D3D12Render
         // Resources
         D3D12CommittedBufferLoaderPtr       m_committedBufferLoader;
         std::vector<D3D12ResourceExt>       m_resources;
-        D3D12CBV_SV_UAVDescriptorHeapPtr    m_srvDescHeap;
+        D3D12CPUDescriptorBufferPtr         m_cpuSRV_CBVDescHeap;
+        D3D12GPUDescriptorRingBufferPtr     m_gpuDescriptorRingBuffer;
 
         // TODO move all these to a ring buffer class
         // Dynamic constant buffer

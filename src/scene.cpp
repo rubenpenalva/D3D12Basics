@@ -132,6 +132,9 @@ void Camera::UpdateCameraToWorld(const Float3& position)
 
 SceneLoader::SceneLoader(const std::wstring& sceneFile, Scene& scene, const std::wstring& dataWorkingPath) : m_outScene(scene)
 {
+    if (sceneFile.empty())
+        return;
+
     // TODO flattening the hierarchy of nodes for now
     m_assImporter.SetPropertyInteger(AI_CONFIG_PP_SLM_VERTEX_LIMIT, 0x0000ffff);
     const int importFlags = aiProcess_PreTransformVertices | aiProcess_Triangulate | aiProcess_GenNormals | 

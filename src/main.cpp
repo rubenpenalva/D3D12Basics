@@ -15,6 +15,9 @@ using namespace D3D12Render;
 
 #define PROCESS_EVENTS_IN_FRAME (0)
 
+#define LOAD_ONLY_PLANE (0)
+#define LOAD_SPONZA (1 && !LOAD_ONLY_PLANE)
+
 namespace
 {
     // NOTE:  Assuming working directory contains the data folder
@@ -35,7 +38,11 @@ namespace
     const size_t g_cubesModelStartID    = g_spheresModelStartID + g_spheresCount;
     const float g_cubesAngleDiff        = (D3D12Basics::M_2PI / g_cubesCount);
 
-    const size_t g_modelsCount          = g_planesCount + g_spheresCount + g_cubesCount;
+#if LOAD_ONLY_PLANE
+    const size_t g_modelsCount = 1;
+#else
+    const size_t g_modelsCount = g_planesCount + g_spheresCount + g_cubesCount;
+#endif
 
     const wchar_t* g_enableWaitForPresentCmdName        = L"waitForPresent";
     const size_t g_enableWaitForPresentCmdNameLength    = wcslen(g_enableWaitForPresentCmdName);
@@ -102,7 +109,8 @@ namespace
             // TODO use a proper constructor
             models[g_planeModelID] = Model{ L"Ground plane", Model::Type::Plane, 0, localToWorld, material };
         }
-
+        
+#if !LOAD_ONLY_PLANE
         // Spheres
         Material sphereMaterial { g_texture1024FileName };
         for (size_t i = 0; i < g_spheresCount; ++i)
@@ -130,9 +138,11 @@ namespace
 
             models[g_cubesModelStartID + i] = Model{ converter.str().c_str(), Model::Type::Cube, 0, localToWorld, cubeMaterial};
         }
-
+#endif
         Scene scene;
+#if LOAD_SPONZA
         scene.m_sceneFile = g_sponzaModel;
+#endif
         scene.m_models = std::move(models);
         return scene;
     }
@@ -173,6 +183,7 @@ namespace
             }
         }
 
+#if !LOAD_ONLY_PLANE
         // Spheres
         for (size_t i = 0; i < g_spheresCount; ++i)
         {
@@ -180,6 +191,7 @@ namespace
             
             sphereModel.m_transform = CalculateSphereLocalToWorld(i, totalTime);
         }
+#endif
     }
 
     CommandLine ProcessCmndLine(LPWSTR szCmdLine)

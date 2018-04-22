@@ -23,6 +23,8 @@ namespace D3D12Render
     class D3D12SwapChain;
     class D3D12CommittedBufferLoader;
     class D3D12GpuSynchronizer;
+    class D3D12CPUDescriptorBuffer;
+    class D3D12GPUDescriptorRingBuffer;
 
     using IDXGIAdapters                     = std::vector<IDXGIAdapterPtr>;
     using D3D12MaterialPtr                  = std::unique_ptr<D3D12Material>;
@@ -33,4 +35,6 @@ namespace D3D12Render
     using D3D12CommittedBufferLoaderPtr     = std::unique_ptr<D3D12CommittedBufferLoader>;
     using D3D12GpuRenderTaskPtr             = std::unique_ptr<D3D12GpuRenderTask>;
     using D3D12GpuSynchronizerPtr           = std::unique_ptr<D3D12GpuSynchronizer>;
+    using D3D12CPUDescriptorBufferPtr       = std::unique_ptr<D3D12CPUDescriptorBuffer>;
+    using D3D12GPUDescriptorRingBufferPtr   = std::unique_ptr<D3D12GPUDescriptorRingBuffer>;
 }

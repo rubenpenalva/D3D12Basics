@@ -2,7 +2,7 @@
 
 // project includes
 #include "d3d12fwd.h"
-#include "d3d12gpu.h"
+#include "d3d12gpu_sync.h"
 
 // c++ includes
 #include <string>

@@ -63,6 +63,9 @@
     <ClCompile Include="src\d3d12utils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\d3d12gpu_sync.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\d3d12basicsfwd.h">
@@ -108,6 +111,9 @@
       <Filter>Thirdparty\imgui</Filter>
     </ClInclude>
     <ClInclude Include="src\d3d12utils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\d3d12gpu_sync.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

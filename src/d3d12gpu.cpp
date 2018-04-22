@@ -5,9 +5,11 @@
 #include "d3d12descriptorheap.h"
 #include "d3d12swapchain.h"
 #include "d3d12committedbuffer.h"
+#include "d3d12gpu_sync.h"
 
 // c++ includes
 #include <sstream>
+#include <algorithm>
 
 using namespace D3D12Basics;
 using namespace D3D12Render;
@@ -44,78 +46,6 @@ namespace
     }
 }
 
-D3D12GpuSynchronizer::D3D12GpuSynchronizer(ID3D12DevicePtr device, ID3D12CommandQueuePtr cmdQueue,
-                                           unsigned int maxFramesInFlight)  :   m_cmdQueue(cmdQueue), m_maxFramesInFlight(maxFramesInFlight),
-                                                                                m_framesInFlight(0), m_currentFenceValue(0)
-{
-    assert(device);
-    assert(m_cmdQueue);
-
-    AssertIfFailed(device->CreateFence(m_currentFenceValue, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence)));
-    assert(m_fence);
-    m_nextFenceValue = m_currentFenceValue + 1;
-
-    // Create an event handle to use for frame synchronization.
-    m_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-    assert(m_event);
-    if (!m_event)
-        AssertIfFailed(HRESULT_FROM_WIN32(GetLastError()));
-}
-
-D3D12GpuSynchronizer::~D3D12GpuSynchronizer()
-{
-    CloseHandle(m_event);
-}
-
-void D3D12GpuSynchronizer::Wait()
-{
-    SignalWork();
-
-    if (m_framesInFlight == m_maxFramesInFlight)
-    {
-        auto completedFenceValue = m_fence->GetCompletedValue();
-
-        assert(m_currentFenceValue <= m_currentFenceValue);
-        if (completedFenceValue < m_currentFenceValue)
-        {
-            WaitForFence(completedFenceValue + 1);
-            completedFenceValue++;
-        }
-
-        auto completedFramesCount = static_cast<unsigned int>(completedFenceValue - m_currentFenceValue + m_framesInFlight);
-        assert(m_framesInFlight >= completedFramesCount);
-        m_framesInFlight -= completedFramesCount;
-    }
-}
-
-void D3D12GpuSynchronizer::WaitAll()
-{
-    SignalWork();
-
-    WaitForFence(m_currentFenceValue);
-
-    m_framesInFlight = 0;
-}
-
-void D3D12GpuSynchronizer::SignalWork()
-{
-    AssertIfFailed(m_cmdQueue->Signal(m_fence.Get(), m_nextFenceValue));
-    m_currentFenceValue = m_nextFenceValue;
-    m_nextFenceValue++;
-
-    m_framesInFlight++;
-    assert(m_framesInFlight <= m_maxFramesInFlight);
-}
-
-void D3D12GpuSynchronizer::WaitForFence(UINT64 fenceValue)
-{
-    Timer timer;
-    AssertIfFailed(m_fence->SetEventOnCompletion(fenceValue, m_event));
-    WaitForSingleObject(m_event, INFINITE);
-    timer.Mark();
-    m_waitTime = timer.ElapsedTime();
-}
-
 D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_dynamicConstantBuffersMaxSize(4 * g_page_size_1mb_in_bytes),
                                                             m_dynamicConstantBuffersCurrentSize(0),
                                                             m_currentBackbufferIndex(0), m_currentFrameIndex(0), 
@@ -143,8 +73,6 @@ D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_dynamicConstantBuf
 D3D12Gpu::~D3D12Gpu()
 {
     m_gpuSync->WaitAll();
-
-    ClearResources();
 }
 
 unsigned int D3D12Gpu::GetFormatPlaneCount(DXGI_FORMAT format)
@@ -190,7 +118,7 @@ D3D12ResourceID D3D12Gpu::CreateStaticConstantBuffer(const void* data, size_t da
     cbvDesc.BufferLocation = m_dynamicConstantBufferHeapCurrentPtr;
     cbvDesc.SizeInBytes = static_cast<UINT>(requiredDataSizeBytes);
 
-    D3D12DescriptorHeapHandlePtr descHandle = m_srvDescHeap->CreateCBV(cbvDesc);
+    D3D12DescriptorHeapHandlePtr descHandle = m_cpuSRV_CBVDescHeap->CreateCBV(cbvDesc);
 
     m_resources.push_back({ descHandle, resource });
 
@@ -212,7 +140,7 @@ D3D12ResourceID D3D12Gpu::CreateTexture(const std::vector<D3D12_SUBRESOURCE_DATA
     viewDesc.Texture2D.PlaneSlice           = 0;
     viewDesc.Texture2D.ResourceMinLODClamp  = 0.0f;
 
-    D3D12DescriptorHeapHandlePtr handle = m_srvDescHeap->CreateSRV(resource.Get(), viewDesc);
+    D3D12DescriptorHeapHandlePtr handle = m_cpuSRV_CBVDescHeap->CreateSRV(resource.Get(), viewDesc);
 
     m_resources.push_back({ handle, resource });
 
@@ -236,7 +164,7 @@ D3D12DynamicResourceID D3D12Gpu::CreateDynamicConstantBuffer(unsigned int sizeIn
         D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
         cbvDesc.BufferLocation = m_dynamicConstantBufferHeapCurrentPtr;
         cbvDesc.SizeInBytes = static_cast<UINT>(actualSize);
-        D3D12DescriptorHeapHandlePtr cbvHandle = m_srvDescHeap->CreateCBV(cbvDesc);
+        D3D12DescriptorHeapHandlePtr cbvHandle = m_cpuSRV_CBVDescHeap->CreateCBV(cbvDesc);
 
         dynamicConstantBuffer.m_memPtr[i] = m_dynamicConstantBuffersCurrentMemPtr;
         dynamicConstantBuffer.m_cbvHandle[i] = cbvHandle;
@@ -284,12 +212,11 @@ void D3D12Gpu::ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderT
     auto& dsvDescriptorHandle = m_depthBufferDescHandle->m_cpuHandle;
     cmdList->ClearDepthStencilView(dsvDescriptorHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0x0, 0, nullptr);
 
-    ID3D12DescriptorHeap* ppHeaps[] = { m_srvDescHeap->GetDescriptorHeap().Get() };
+    ID3D12DescriptorHeap* ppHeaps[] = { m_gpuDescriptorRingBuffer->GetDescriptorHeap().Get() };
     cmdList->SetDescriptorHeaps(1, ppHeaps);
 
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    //D3D12MaterialResources boundSimpleMaterialResources{ 0xffffffff, 0xffffffff };
     D3D12_VIEWPORT  boundViewport {};
     RECT            boundScissorRect {};
 
@@ -314,16 +241,24 @@ void D3D12Gpu::ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderT
         // Set bindings
         for (size_t i = 0; i < renderTask.m_bindings.size(); ++i)
         {
-            D3D12_GPU_DESCRIPTOR_HANDLE descriptorHandle{};
-            const auto& binding = renderTask.m_bindings[i];
-            if (binding.m_resourceType == D3D12ResourceType::DynamicConstantBuffer)
-                descriptorHandle = m_dynamicConstantBuffers[binding.m_resourceID].m_cbvHandle[m_currentFrameIndex]->m_gpuHandle;
-            else if (binding.m_resourceType == D3D12ResourceType::StaticResource)
-                descriptorHandle = m_resources[binding.m_resourceID].m_resourceViewHandle->m_gpuHandle;
+            D3D12_GPU_DESCRIPTOR_HANDLE descriptorTableHandle = m_gpuDescriptorRingBuffer->CurrentDescriptor();
 
-            assert(descriptorHandle.ptr);
+            const auto& resourceDescriptorTable = renderTask.m_bindings[i];
+            for (const auto& resourceDescriptor : resourceDescriptorTable)
+            {
+                D3D12_CPU_DESCRIPTOR_HANDLE descriptorHandle{};
+                if (resourceDescriptor.m_resourceType == D3D12ResourceType::DynamicConstantBuffer)
+                    descriptorHandle = m_dynamicConstantBuffers[resourceDescriptor.m_resourceID].m_cbvHandle[m_currentFrameIndex]->m_cpuHandle;
+                else if (resourceDescriptor.m_resourceType == D3D12ResourceType::StaticResource)
+                    descriptorHandle = m_resources[resourceDescriptor.m_resourceID].m_resourceViewHandle->m_cpuHandle;
+                else
+                    assert(true);
 
-            cmdList->SetGraphicsRootDescriptorTable(static_cast<UINT>(i), descriptorHandle);
+                m_gpuDescriptorRingBuffer->CopyToCurrentDescriptor(1, descriptorHandle);
+                m_gpuDescriptorRingBuffer->NextCurrentStackDescriptor();
+            }
+
+            cmdList->SetGraphicsRootDescriptorTable(static_cast<UINT>(i), descriptorTableHandle);
         }
 
         if (boundViewport.Height != renderTask.m_viewport.Height || boundViewport.MaxDepth != renderTask.m_viewport.MaxDepth ||
@@ -387,6 +322,7 @@ void D3D12Gpu::FinishFrame()
     g_gpuViewMarkerPreWaitFrame.Mark();
 
     m_gpuSync->Wait();
+
     // TODO Fences for gpu/cpu sync after present are already being used.
     //      Why would be needed to use the waitable object to wait for
     //      the present if its already being counted for in the fence?
@@ -402,7 +338,11 @@ void D3D12Gpu::FinishFrame()
     // Note: we can have x frames in flight and y backbuffers
     m_currentBackbufferIndex = m_swapChain->GetCurrentBackBufferIndex();
     m_currentFrameIndex = (m_currentFrameIndex + 1) % m_framesInFlight;
+
+    m_gpuDescriptorRingBuffer->NextDescriptorStack();
+    m_gpuDescriptorRingBuffer->ClearCurrentStack();
 }
+
 ID3D12RootSignaturePtr D3D12Gpu::CreateRootSignature(ID3DBlobPtr signature, const std::wstring& name)
 {
     ID3D12RootSignaturePtr rootSignature;
@@ -537,18 +477,15 @@ void D3D12Gpu::CreateDescriptorHeaps()
     assert(m_dsvDescHeap);
 
     const uint32_t maxDescriptors = 1024;
-    m_srvDescHeap = std::make_unique<D3D12CBV_SV_UAVDescriptorHeap>(m_device, true, maxDescriptors);
-    assert(m_srvDescHeap);
+    m_cpuSRV_CBVDescHeap = std::make_unique<D3D12CPUDescriptorBuffer>(m_device, maxDescriptors);
+    assert(m_cpuSRV_CBVDescHeap);
+
+    m_gpuDescriptorRingBuffer = std::make_unique<D3D12GPUDescriptorRingBuffer>(m_device, std::max(m_framesInFlight, m_backBuffersCount), maxDescriptors);
+    assert(m_gpuDescriptorRingBuffer);
 }
 
 void D3D12Gpu::CreateDepthBuffer()
 {
-    if (m_depthBufferDescHandle)
-    {
-        m_dsvDescHeap->Destroy(m_depthBufferDescHandle);
-        m_depthBufferDescHandle = nullptr;
-    }
-
     const auto& resolution = m_swapChain->GetCurrentResolution();
 
     D3D12_CLEAR_VALUE optimizedClearValue;
@@ -564,7 +501,7 @@ void D3D12Gpu::CreateDepthBuffer()
     desc.ViewDimension      = D3D12_DSV_DIMENSION_TEXTURE2D;
     desc.Flags              = D3D12_DSV_FLAG_NONE;
     desc.Texture2D.MipSlice = 0;
-    m_depthBufferDescHandle = m_dsvDescHeap->CreateDSV(m_depthBufferResource, desc);
+    m_depthBufferDescHandle = m_dsvDescHeap->CreateDSV(m_depthBufferResource, desc, m_depthBufferDescHandle);
 }
 
 void D3D12Gpu::CreateDynamicConstantBuffersInfrastructure()
@@ -585,18 +522,4 @@ void D3D12Gpu::CheckFeatureSupport()
     featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
 
     AssertIfFailed(m_device->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData)));
-}
-
-void D3D12Gpu::ClearResources()
-{
-    for (auto& resource : m_resources)
-    {
-        m_srvDescHeap->Destroy(resource.m_resourceViewHandle);
-    }
-
-    for (auto& dynamicCB : m_dynamicConstantBuffers)
-    {
-        m_srvDescHeap->Destroy(dynamicCB.m_cbvHandle[0]);
-        m_srvDescHeap->Destroy(dynamicCB.m_cbvHandle[1]);
-    }
 }

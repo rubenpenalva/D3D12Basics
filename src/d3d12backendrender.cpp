@@ -95,15 +95,16 @@ void D3D12BackendRender::LoadSceneResources(D3D12Basics::SceneLoader& sceneLoade
     // Create a render task per model
     for (const auto& model : m_scene.m_models)
     {
-        D3D12Bindings materialBindings;
-
         D3D12DynamicResourceID dynamicCBID = m_gpu.CreateDynamicConstantBuffer(sizeof(Matrix44));
-        materialBindings.emplace_back(D3D12Binding{ D3D12ResourceType::DynamicConstantBuffer, dynamicCBID });
 
+        D3D12ResourceDescriptorTable dynamicCBDescriptorTable;
+        dynamicCBDescriptorTable.emplace_back(D3D12ResourceDescriptor{ D3D12ResourceType::DynamicConstantBuffer, dynamicCBID });
+
+        D3D12ResourceDescriptorTable texturesDescriptorTable;
         if (!model.m_material.m_diffuseTexture.empty())
         {
             D3D12ResourceID diffuseTextureID = CreateTexture(model.m_material.m_diffuseTexture, sceneLoader);
-            materialBindings.emplace_back(D3D12Binding{ D3D12ResourceType::StaticResource, diffuseTextureID });
+            texturesDescriptorTable.emplace_back(D3D12ResourceDescriptor{ D3D12ResourceType::StaticResource, diffuseTextureID });
 
             // TODO add light
             //if (model.m_material.m_specularTexture)
@@ -120,10 +121,12 @@ void D3D12BackendRender::LoadSceneResources(D3D12Basics::SceneLoader& sceneLoade
         {
             assert(model.m_material.m_specularTexture.empty() && model.m_material.m_normalsTexture.empty());
 
-            materialBindings.emplace_back(D3D12Binding{ D3D12ResourceType::StaticResource, defaultTexture2D });
+            texturesDescriptorTable.emplace_back(D3D12ResourceDescriptor{ D3D12ResourceType::StaticResource, defaultTexture2D });
             // TODO add fallback material
             //materialResources.push_back(defaultDiffuseColorCBID);
         }
+        
+        D3D12Bindings materialBindings{ dynamicCBDescriptorTable, texturesDescriptorTable };
 
         Mesh mesh;
         switch (model.m_type)
@@ -179,8 +182,9 @@ void D3D12BackendRender::UpdateSceneResources()
         const auto& model = m_scene.m_models[i];
         const D3D12Basics::Matrix44 localToClip = (model.m_transform * worldToClip).Transpose();
         // TODO generalize this
-        assert(m_renderTasks[i].m_bindings[0].m_resourceType == D3D12ResourceType::DynamicConstantBuffer);
-        m_gpu.UpdateDynamicConstantBuffer(m_renderTasks[i].m_bindings[0].m_resourceID, &localToClip);
+        // TODO find the proper way to do this
+        assert(m_renderTasks[i].m_bindings[0].back().m_resourceType == D3D12ResourceType::DynamicConstantBuffer);
+        m_gpu.UpdateDynamicConstantBuffer(m_renderTasks[i].m_bindings[0].back().m_resourceID, &localToClip);
     }
 }
 

@@ -99,6 +99,7 @@
     <ClCompile Include="src\d3d12descriptorheap.cpp" />
     <ClCompile Include="src\d3d12gpu.cpp" />
     <ClCompile Include="src\d3d12backendrender.cpp" />
+    <ClCompile Include="src\d3d12gpu_sync.cpp" />
     <ClCompile Include="src\d3d12material.cpp" />
     <ClCompile Include="src\d3d12swapchain.cpp" />
     <ClCompile Include="src\d3d12utils.cpp" />
@@ -117,6 +118,7 @@
     <ClInclude Include="src\d3d12fwd.h" />
     <ClInclude Include="src\d3d12gpu.h" />
     <ClInclude Include="src\d3d12backendrender.h" />
+    <ClInclude Include="src\d3d12gpu_sync.h" />
     <ClInclude Include="src\d3d12material.h" />
     <ClInclude Include="src\d3d12swapchain.h" />
     <ClInclude Include="src\d3d12utils.h" />

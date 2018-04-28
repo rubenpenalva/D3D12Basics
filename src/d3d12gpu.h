@@ -46,8 +46,8 @@ namespace D3D12Render
         D3D12Bindings           m_bindings;
         D3D12_VIEWPORT          m_viewport;
         RECT                    m_scissorRect;
-        size_t                  m_vertexBufferResourceID;
-        size_t                  m_indexBufferResourceID;
+        D3D12ResourceID         m_vertexBufferResourceID;
+        D3D12ResourceID         m_indexBufferResourceID;
         size_t                  m_vertexCount;
         size_t                  m_vertexSizeBytes;
         size_t                  m_indexCount;
@@ -70,7 +70,7 @@ namespace D3D12Render
         static const bool           m_vsync                 = true;
 
         D3D12Gpu(bool isWaitableForPresentEnabled);
-        
+
         ~D3D12Gpu();
 
         // Features support
@@ -84,15 +84,17 @@ namespace D3D12Render
         const D3D12Basics::Resolution& GetCurrentResolution() const;
 
         // GPU Resources
-        D3D12ResourceID CreateCommittedBuffer(const void* data, size_t  dataSizeBytes, const std::wstring& debugName);
+        D3D12ResourceID CreateBuffer(const void* data, size_t  dataSizeBytes, const std::wstring& debugName);
+
+        D3D12ResourceID CreateDynamicBuffer(unsigned int sizeInBytes);
 
         D3D12ResourceID CreateTexture(const std::vector<D3D12_SUBRESOURCE_DATA>& subresources, const D3D12_RESOURCE_DESC& desc,
                                       const std::wstring& debugName);
 
-        D3D12DynamicResourceID CreateDynamicConstantBuffer(unsigned int sizeInBytes);
-        
+        D3D12ResourceID CreateDynamicConstantBuffer(unsigned int sizeInBytes);
+
         // TODO can be done better than void*? maybe uint64_t or one of the pointer types?
-        void UpdateDynamicConstantBuffer(D3D12DynamicResourceID id, const void* data, size_t sizeInBytes);
+        void UpdateDynamicConstantBuffer(D3D12ResourceID id, const void* data, size_t sizeInBytes);
 
         // GPU Execution
         void ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderTasks);
@@ -110,15 +112,33 @@ namespace D3D12Render
         void OnResize(const D3D12Basics::Resolution& resolution);
 
     private:
-        struct D3D12ResourceExt
+        struct Buffer
+        {
+            ID3D12ResourcePtr               m_resource;
+        };
+        struct ViewBuffer
         {
             D3D12DescriptorHeapHandlePtr    m_resourceViewHandle;
             ID3D12ResourcePtr               m_resource;
+        };
+        struct DynamicBuffer
+        {
+            D3D12BufferAllocation           m_allocation[m_framesInFlight];
         };
         struct DynamicConstantBuffer
         {
             D3D12BufferAllocation           m_allocation[m_framesInFlight];
             D3D12DescriptorHeapHandlePtr    m_cbvHandle[m_framesInFlight];
+        };
+        enum class BufferType
+        {
+            Static,
+            Dynamic
+        };
+        struct BufferDesc
+        {
+            size_t      m_resourceId;
+            BufferType  m_type;
         };
 
         // dxgi data
@@ -146,14 +166,21 @@ namespace D3D12Render
         ID3D12ResourcePtr               m_depthBufferResource;
         D3D12DescriptorHeapHandlePtr    m_depthBufferDescHandle;
 
-        // Resources
-        D3D12CommittedBufferLoaderPtr       m_committedBufferLoader;
-        std::vector<D3D12ResourceExt>       m_resources;
+        // Resources descriptors
         D3D12CPUDescriptorBufferPtr         m_cpuSRV_CBVDescHeap;
         D3D12GPUDescriptorRingBufferPtr     m_gpuDescriptorRingBuffer;
 
+        // Static resources
+        D3D12CommittedBufferLoaderPtr       m_committedBufferLoader;
+        std::vector<ViewBuffer>             m_viewBuffers;
+        std::vector<Buffer>                 m_buffers;
+
+        // Dynamic resources
         D3D12BufferAllocatorPtr             m_dynamicCBHeap;
         std::vector<DynamicConstantBuffer>  m_dynamicConstantBuffers;
+        std::vector<DynamicBuffer>          m_dynamicBuffers;
+
+        std::vector<BufferDesc>             m_buffersDescs; // TODO get rid of this. Good for now but dont like it
 
         DisplayModes EnumerateDisplayModes(DXGI_FORMAT format);
 
@@ -170,5 +197,15 @@ namespace D3D12Render
         void CreateDepthBuffer();
 
         void CheckFeatureSupport();
+
+        BufferDesc& GetBufferDesc(D3D12ResourceID resourceId);
+        
+        D3D12_GPU_VIRTUAL_ADDRESS GetBufferVA(D3D12ResourceID resourceId);
+
+        void SetVertexBuffer(D3D12ResourceID resourceId, size_t vertexCount, size_t vertexSizeBytes, 
+                             ID3D12GraphicsCommandListPtr cmdList);
+
+        void SetIndexBuffer(D3D12ResourceID resourceId, size_t indexBufferSizeBytes, 
+                            ID3D12GraphicsCommandListPtr cmdList);
     };
 }

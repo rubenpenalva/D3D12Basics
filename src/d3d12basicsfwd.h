@@ -10,10 +10,8 @@
 namespace D3D12Render
 {
     using D3D12ResourceID           = size_t;
-    using D3D12DynamicResourceID    = size_t;
 
     struct D3D12GpuRenderTask;
-    struct D3D12ResourceExt;
     struct D3D12BufferAllocation;
 
     class D3D12Gpu;

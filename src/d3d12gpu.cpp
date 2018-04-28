@@ -84,14 +84,34 @@ const Resolution& D3D12Gpu::GetCurrentResolution() const
     return m_swapChain->GetCurrentResolution(); 
 }
 
-D3D12ResourceID D3D12Gpu::CreateCommittedBuffer(const void* data, size_t  dataSizeBytes, const std::wstring& debugName)
+D3D12ResourceID D3D12Gpu::CreateBuffer(const void* data, size_t  dataSizeBytes, const std::wstring& debugName)
 {
     ID3D12ResourcePtr resource = m_committedBufferLoader->Upload(data, dataSizeBytes, dataSizeBytes, debugName);
     assert(resource);
 
-    m_resources.push_back({ 0, resource });
+    D3D12ResourceID resourceID = m_buffersDescs.size();
+    m_buffersDescs.push_back(BufferDesc{ m_buffers.size(), BufferType::Static });
+    m_buffers.push_back(Buffer{ resource });
 
-    return m_resources.size() - 1;
+    return resourceID;
+}
+
+D3D12ResourceID D3D12Gpu::CreateDynamicBuffer(unsigned int sizeInBytes)
+{
+    DynamicBuffer dynamicBuffer;
+
+    for (unsigned int i = 0; i < m_framesInFlight; ++i)
+    {
+        dynamicBuffer.m_allocation[i] = m_dynamicCBHeap->Allocate(sizeInBytes, g_constantBufferReadAlignment);
+        assert(D3D12Basics::IsAlignedToPowerof2(dynamicBuffer.m_allocation[i].m_gpuPtr, g_constantBufferReadAlignment));
+    }
+
+    D3D12ResourceID resourceID = m_buffersDescs.size();
+    m_buffersDescs.push_back(BufferDesc{ m_dynamicBuffers.size(), BufferType::Dynamic });
+
+    m_dynamicBuffers.push_back(dynamicBuffer);
+
+    return resourceID;
 }
 
 D3D12ResourceID D3D12Gpu::CreateTexture(const std::vector<D3D12_SUBRESOURCE_DATA>& subresources, const D3D12_RESOURCE_DESC& desc,
@@ -111,12 +131,12 @@ D3D12ResourceID D3D12Gpu::CreateTexture(const std::vector<D3D12_SUBRESOURCE_DATA
 
     D3D12DescriptorHeapHandlePtr handle = m_cpuSRV_CBVDescHeap->CreateSRV(resource.Get(), viewDesc);
 
-    m_resources.push_back({ handle, resource });
+    m_viewBuffers.push_back(ViewBuffer{ handle, resource });
 
-    return m_resources.size() - 1;
+    return m_viewBuffers.size() - 1;
 }
 
-D3D12DynamicResourceID D3D12Gpu::CreateDynamicConstantBuffer(unsigned int sizeInBytes)
+D3D12ResourceID D3D12Gpu::CreateDynamicConstantBuffer(unsigned int sizeInBytes)
 {
     const size_t cbID = m_dynamicConstantBuffers.size();
 
@@ -127,7 +147,6 @@ D3D12DynamicResourceID D3D12Gpu::CreateDynamicConstantBuffer(unsigned int sizeIn
         dynamicConstantBuffer.m_allocation[i] = m_dynamicCBHeap->Allocate(sizeInBytes, g_constantBufferReadAlignment);
         assert(D3D12Basics::IsAlignedToPowerof2(dynamicConstantBuffer.m_allocation[i].m_gpuPtr, g_constantBufferReadAlignment));
 
-        // TODO assert bufferSize complies with constant buffer memory alignment requirements
         D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
         cbvDesc.BufferLocation = dynamicConstantBuffer.m_allocation[i].m_gpuPtr;
         cbvDesc.SizeInBytes = static_cast<UINT>(dynamicConstantBuffer.m_allocation[i].m_size);
@@ -141,7 +160,7 @@ D3D12DynamicResourceID D3D12Gpu::CreateDynamicConstantBuffer(unsigned int sizeIn
     return cbID;
 }
 
-void D3D12Gpu::UpdateDynamicConstantBuffer(D3D12DynamicResourceID id, const void* data, size_t sizeInBytes)
+void D3D12Gpu::UpdateDynamicConstantBuffer(D3D12ResourceID id, const void* data, size_t sizeInBytes)
 {
     assert(id < m_dynamicConstantBuffers.size());
 
@@ -212,7 +231,7 @@ void D3D12Gpu::ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderT
                 if (resourceDescriptor.m_resourceType == D3D12ResourceType::DynamicConstantBuffer)
                     descriptorHandle = m_dynamicConstantBuffers[resourceDescriptor.m_resourceID].m_cbvHandle[m_currentFrameIndex]->m_cpuHandle;
                 else if (resourceDescriptor.m_resourceType == D3D12ResourceType::StaticResource)
-                    descriptorHandle = m_resources[resourceDescriptor.m_resourceID].m_resourceViewHandle->m_cpuHandle;
+                    descriptorHandle = m_viewBuffers[resourceDescriptor.m_resourceID].m_resourceViewHandle->m_cpuHandle;
                 else
                     assert(true);
 
@@ -239,20 +258,9 @@ void D3D12Gpu::ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderT
         }
 
         // NOTE creating the vb and ib views on the fly shouldn't be a performance issue
-        D3D12_VERTEX_BUFFER_VIEW vertexBufferView
-        {
-            m_resources[renderTask.m_vertexBufferResourceID].m_resource->GetGPUVirtualAddress(),
-            static_cast<UINT>(renderTask.m_vertexSizeBytes * renderTask.m_vertexCount),
-            static_cast<UINT>(renderTask.m_vertexSizeBytes)
-        };
-        cmdList->IASetVertexBuffers(0, 1, &vertexBufferView);
-            
-        D3D12_INDEX_BUFFER_VIEW indexBufferView
-        {
-            m_resources[renderTask.m_indexBufferResourceID].m_resource->GetGPUVirtualAddress(),
-            static_cast<UINT>(renderTask.m_indexCount * sizeof(uint16_t)), DXGI_FORMAT_R16_UINT
-        };
-        cmdList->IASetIndexBuffer(&indexBufferView);
+        SetVertexBuffer(renderTask.m_vertexBufferResourceID, renderTask.m_vertexCount, renderTask.m_vertexSizeBytes, cmdList);
+
+        SetIndexBuffer(renderTask.m_indexBufferResourceID, renderTask.m_indexCount * sizeof(uint16_t), cmdList);
 
         cmdList->DrawIndexedInstanced(static_cast<UINT>(renderTask.m_indexCount), 1, 0, 0, 0);
     }
@@ -473,3 +481,47 @@ void D3D12Gpu::CheckFeatureSupport()
 
     AssertIfFailed(m_device->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData)));
 }
+
+D3D12Gpu::BufferDesc& D3D12Gpu::GetBufferDesc(D3D12ResourceID resourceId)
+{
+    assert(resourceId < m_buffersDescs.size());
+    return m_buffersDescs[resourceId];
+}
+
+D3D12_GPU_VIRTUAL_ADDRESS D3D12Gpu::GetBufferVA(D3D12ResourceID resourceId)
+{
+    auto& bufferDesc = GetBufferDesc(resourceId);
+
+    if (bufferDesc.m_type == BufferType::Dynamic)
+    {
+        assert(bufferDesc.m_resourceId < m_dynamicBuffers.size());
+        return m_dynamicBuffers[bufferDesc.m_resourceId].m_allocation[m_currentFrameIndex].m_gpuPtr;
+    }
+
+    assert(bufferDesc.m_type == BufferType::Static);
+    assert(bufferDesc.m_resourceId < m_buffers.size());
+    return m_buffers[bufferDesc.m_resourceId].m_resource->GetGPUVirtualAddress();
+}
+
+void D3D12Gpu::SetVertexBuffer(D3D12ResourceID resourceId, size_t vertexCount, size_t vertexSizeBytes, 
+                               ID3D12GraphicsCommandListPtr cmdList)
+{
+    D3D12_VERTEX_BUFFER_VIEW vertexBufferView
+    {
+        GetBufferVA(resourceId),
+        static_cast<UINT>(vertexCount * vertexSizeBytes),
+        static_cast<UINT>(vertexSizeBytes)
+    };
+    cmdList->IASetVertexBuffers(0, 1, &vertexBufferView);
+}
+
+void D3D12Gpu::SetIndexBuffer(D3D12ResourceID resourceId, size_t indexBufferSizeBytes, ID3D12GraphicsCommandListPtr cmdList)
+{
+    D3D12_INDEX_BUFFER_VIEW indexBufferView
+    {
+        GetBufferVA(resourceId),
+        static_cast<UINT>(indexBufferSizeBytes), DXGI_FORMAT_R16_UINT
+    };
+    cmdList->IASetIndexBuffer(&indexBufferView);
+}
+

@@ -95,7 +95,7 @@ void D3D12BackendRender::LoadSceneResources(D3D12Basics::SceneLoader& sceneLoade
     // Create a render task per model
     for (const auto& model : m_scene.m_models)
     {
-        D3D12DynamicResourceID dynamicCBID = m_gpu.CreateDynamicConstantBuffer(sizeof(Matrix44));
+        D3D12ResourceID dynamicCBID = m_gpu.CreateDynamicConstantBuffer(sizeof(Matrix44));
 
         D3D12ResourceDescriptorTable dynamicCBDescriptorTable;
         dynamicCBDescriptorTable.emplace_back(D3D12ResourceDescriptor{ D3D12ResourceType::DynamicConstantBuffer, dynamicCBID });
@@ -149,11 +149,9 @@ void D3D12BackendRender::LoadSceneResources(D3D12Basics::SceneLoader& sceneLoade
             assert(false);
         }
 
-        D3D12ResourceID vbID = m_gpu.CreateCommittedBuffer(&mesh.Vertices()[0], mesh.VertexBufferSizeBytes(),
-                                                            L"vb - " + model.m_name);
+        D3D12ResourceID vbID = m_gpu.CreateBuffer(&mesh.Vertices()[0], mesh.VertexBufferSizeBytes(), L"vb - " + model.m_name);
 
-        D3D12ResourceID ibID = m_gpu.CreateCommittedBuffer(&mesh.Indices()[0], mesh.IndexBufferSizeBytes(),
-                                                            L"ib - " + model.m_name);
+        D3D12ResourceID ibID = m_gpu.CreateBuffer(&mesh.Indices()[0], mesh.IndexBufferSizeBytes(), L"ib - " + model.m_name);
 
         D3D12GpuRenderTask renderTask;
         renderTask.m_pipelineState = m_material->GetPSO();

@@ -18,6 +18,21 @@
 
 namespace D3D12Basics
 {
+    const uint32_t g_1kb    = 1 << 10;
+    const uint32_t g_2kb    = g_1kb << 1;
+    const uint32_t g_4kb    = g_2kb << 1;
+    const uint32_t g_8kb    = g_4kb << 1;
+    const uint32_t g_16kb   = g_8kb << 1;
+    const uint32_t g_32kb   = g_16kb << 1;
+    const uint32_t g_64kb   = g_32kb << 1;
+    const uint32_t g_128kb  = g_64kb << 1;
+    const uint32_t g_256kb  = g_128kb << 1;
+    const uint32_t g_512kb  = g_256kb << 1;
+    const uint32_t g_1mb    = g_512kb << 1;
+    const uint32_t g_2mb    = g_1mb << 1;
+    const uint32_t g_4mb    = g_2mb << 1;
+
+
     using Float2    = DirectX::SimpleMath::Vector2;
     using Float3    = DirectX::SimpleMath::Vector3;
     using Matrix44  = DirectX::SimpleMath::Matrix;
@@ -225,4 +240,11 @@ namespace D3D12Basics
     std::string ConvertFromUTF16ToUTF8(const std::wstring& str);
 
     std::wstring ConvertFromUTF8ToUTF16(const std::string& str);
+
+    // alignmentPower2 has to be a power of 2
+    size_t AlignToPowerof2(size_t value, size_t alignmentPower2);
+
+    bool IsPowerOf2(size_t value);
+
+    bool IsAlignedToPowerof2(size_t value, size_t alignmentPower2);
 }

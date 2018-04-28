@@ -4,6 +4,7 @@
 #include "utils.h"
 #include "d3d12basicsfwd.h"
 #include "d3d12descriptorheap.h"
+#include "d3d12committedbuffer.h"
 
 // c++ includes
 #include <vector>
@@ -85,14 +86,13 @@ namespace D3D12Render
         // GPU Resources
         D3D12ResourceID CreateCommittedBuffer(const void* data, size_t  dataSizeBytes, const std::wstring& debugName);
 
-        D3D12ResourceID CreateStaticConstantBuffer(const void* data, size_t dataSizeBytes, const std::wstring& resourceName);
-
         D3D12ResourceID CreateTexture(const std::vector<D3D12_SUBRESOURCE_DATA>& subresources, const D3D12_RESOURCE_DESC& desc,
                                       const std::wstring& debugName);
 
         D3D12DynamicResourceID CreateDynamicConstantBuffer(unsigned int sizeInBytes);
         
-        void UpdateDynamicConstantBuffer(D3D12DynamicResourceID id, const void* data);
+        // TODO can be done better than void*? maybe uint64_t or one of the pointer types?
+        void UpdateDynamicConstantBuffer(D3D12DynamicResourceID id, const void* data, size_t sizeInBytes);
 
         // GPU Execution
         void ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderTasks);
@@ -117,9 +117,7 @@ namespace D3D12Render
         };
         struct DynamicConstantBuffer
         {
-            uint64_t                        m_sizeInBytes;
-            uint64_t                        m_requiredSizeInBytes;
-            void*                           m_memPtr[m_framesInFlight];
+            D3D12BufferAllocation           m_allocation[m_framesInFlight];
             D3D12DescriptorHeapHandlePtr    m_cbvHandle[m_framesInFlight];
         };
 
@@ -154,14 +152,7 @@ namespace D3D12Render
         D3D12CPUDescriptorBufferPtr         m_cpuSRV_CBVDescHeap;
         D3D12GPUDescriptorRingBufferPtr     m_gpuDescriptorRingBuffer;
 
-        // TODO move all these to a ring buffer class
-        // Dynamic constant buffer
-        ID3D12ResourcePtr                   m_dynamicConstantBuffersHeap;
-        const size_t                        m_dynamicConstantBuffersMaxSize;
-        size_t                              m_dynamicConstantBuffersCurrentSize;
-        D3D12_GPU_VIRTUAL_ADDRESS           m_dynamicConstantBufferHeapCurrentPtr;
-        void*                               m_dynamicConstantBuffersMemPtr;         // TODO is caching the memorys start ptr useful?
-        void*                               m_dynamicConstantBuffersCurrentMemPtr;
+        D3D12BufferAllocatorPtr             m_dynamicCBHeap;
         std::vector<DynamicConstantBuffer>  m_dynamicConstantBuffers;
 
         DisplayModes EnumerateDisplayModes(DXGI_FORMAT format);
@@ -178,10 +169,6 @@ namespace D3D12Render
 
         void CreateDepthBuffer();
 
-        void CreateDynamicConstantBuffersInfrastructure();
-
         void CheckFeatureSupport();
-
-        void ClearResources();
     };
 }

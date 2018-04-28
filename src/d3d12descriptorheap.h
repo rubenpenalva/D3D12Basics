@@ -39,7 +39,6 @@ namespace D3D12Render
         size_t m_stackTop;
         std::vector<D3D12DescriptorHeapAllocation> m_allocations;
     };
-    using D3D12DescriptorStackAllocatorPtr = std::unique_ptr<D3D12DescriptorStackAllocator>;
 
     // Pool allocator
     class D3D12DescriptorHeapAllocator
@@ -142,6 +141,8 @@ namespace D3D12Render
         ID3D12DescriptorHeapPtr GetDescriptorHeap() const { return m_descriptorHeap; }
 
     private:
+        using D3D12DescriptorStackAllocatorPtr = std::unique_ptr<D3D12DescriptorStackAllocator>;
+
         ID3D12DevicePtr m_d3d12Device;
 
         size_t m_ringBufferSize;

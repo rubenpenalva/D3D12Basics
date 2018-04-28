@@ -184,7 +184,7 @@ void D3D12BackendRender::UpdateSceneResources()
         // TODO generalize this
         // TODO find the proper way to do this
         assert(m_renderTasks[i].m_bindings[0].back().m_resourceType == D3D12ResourceType::DynamicConstantBuffer);
-        m_gpu.UpdateDynamicConstantBuffer(m_renderTasks[i].m_bindings[0].back().m_resourceID, &localToClip);
+        m_gpu.UpdateDynamicConstantBuffer(m_renderTasks[i].m_bindings[0].back().m_resourceID, &localToClip, sizeof(D3D12Basics::Matrix44));
     }
 }
 

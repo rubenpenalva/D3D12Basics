@@ -14,6 +14,7 @@ namespace D3D12Render
 
     struct D3D12GpuRenderTask;
     struct D3D12ResourceExt;
+    struct D3D12BufferAllocation;
 
     class D3D12Gpu;
     class D3D12Material;
@@ -25,6 +26,7 @@ namespace D3D12Render
     class D3D12GpuSynchronizer;
     class D3D12CPUDescriptorBuffer;
     class D3D12GPUDescriptorRingBuffer;
+    class D3D12BufferAllocator;
 
     using IDXGIAdapters                     = std::vector<IDXGIAdapterPtr>;
     using D3D12MaterialPtr                  = std::unique_ptr<D3D12Material>;
@@ -37,4 +39,5 @@ namespace D3D12Render
     using D3D12GpuSynchronizerPtr           = std::unique_ptr<D3D12GpuSynchronizer>;
     using D3D12CPUDescriptorBufferPtr       = std::unique_ptr<D3D12CPUDescriptorBuffer>;
     using D3D12GPUDescriptorRingBufferPtr   = std::unique_ptr<D3D12GPUDescriptorRingBuffer>;
+    using D3D12BufferAllocatorPtr           = std::unique_ptr<D3D12BufferAllocator>;
 }

@@ -31,24 +31,10 @@ namespace
     D3D12Basics::GpuViewMarker g_gpuViewMarkerPreWaitFrame(g_preWaitName, g_preWaitUUID);
     D3D12Basics::GpuViewMarker g_gpuViewMarkerPostWaitFrame(g_postWaitName, g_postWaitUUID);
 
-    const uint64_t g_page_size_64kb_in_bytes = 1024 * 64; // 64 << 10
-    const uint64_t g_page_size_128kb_in_bytes = 1024 * 128;
-    const uint64_t g_page_size_256kb_in_bytes = 1024 * 256;
-    const uint64_t g_page_size_512kb_in_bytes = 1024 * 512;
-    const uint64_t g_page_size_1mb_in_bytes = 1024 * 1024;
-
     const auto g_swapChainFormat = DXGI_FORMAT::DXGI_FORMAT_R8G8B8A8_UNORM;
-
-    size_t CalculateConstantBufferRequiredSize(size_t requestedSizeInBytes)
-    {
-        const size_t requiredAlignmentForCB = 256;
-        return (requestedSizeInBytes + (requiredAlignmentForCB - 1)) & ~(requiredAlignmentForCB - 1);
-    }
 }
 
-D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_dynamicConstantBuffersMaxSize(4 * g_page_size_1mb_in_bytes),
-                                                            m_dynamicConstantBuffersCurrentSize(0),
-                                                            m_currentBackbufferIndex(0), m_currentFrameIndex(0), 
+D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_currentBackbufferIndex(0), m_currentFrameIndex(0), 
                                                             m_isWaitableForPresentEnabled(isWaitableForPresentEnabled),
                                                             m_depthBufferDescHandle(nullptr)
 {
@@ -65,7 +51,8 @@ D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_dynamicConstantBuf
     m_committedBufferLoader = std::make_unique<D3D12CommittedBufferLoader>(m_device, m_cmdAllocators[0], m_graphicsCmdQueue, m_cmdLists[0]);
     assert(m_committedBufferLoader);
 
-    CreateDynamicConstantBuffersInfrastructure();
+    m_dynamicCBHeap = std::make_unique<D3D12BufferAllocator>(m_device, g_64kb);
+    assert(m_dynamicCBHeap);
 
     m_gpuSync = std::make_unique<D3D12GpuSynchronizer>(m_device, m_graphicsCmdQueue, m_framesInFlight);
 }
@@ -107,24 +94,6 @@ D3D12ResourceID D3D12Gpu::CreateCommittedBuffer(const void* data, size_t  dataSi
     return m_resources.size() - 1;
 }
 
-D3D12ResourceID D3D12Gpu::CreateStaticConstantBuffer(const void* data, size_t dataSizeBytes, const std::wstring& resourceName)
-{
-    size_t requiredDataSizeBytes = CalculateConstantBufferRequiredSize(dataSizeBytes);
-    ID3D12ResourcePtr resource = m_committedBufferLoader->Upload(data, dataSizeBytes, requiredDataSizeBytes, resourceName);
-    assert(resource);
-
-    // TODO assert bufferSize complies with constant buffer memory alignment requirements
-    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
-    cbvDesc.BufferLocation = m_dynamicConstantBufferHeapCurrentPtr;
-    cbvDesc.SizeInBytes = static_cast<UINT>(requiredDataSizeBytes);
-
-    D3D12DescriptorHeapHandlePtr descHandle = m_cpuSRV_CBVDescHeap->CreateCBV(cbvDesc);
-
-    m_resources.push_back({ descHandle, resource });
-
-    return m_resources.size() - 1;
-}
-
 D3D12ResourceID D3D12Gpu::CreateTexture(const std::vector<D3D12_SUBRESOURCE_DATA>& subresources, const D3D12_RESOURCE_DESC& desc,
                                         const std::wstring& debugName)
 {
@@ -149,29 +118,22 @@ D3D12ResourceID D3D12Gpu::CreateTexture(const std::vector<D3D12_SUBRESOURCE_DATA
 
 D3D12DynamicResourceID D3D12Gpu::CreateDynamicConstantBuffer(unsigned int sizeInBytes)
 {
-    const size_t actualSize = CalculateConstantBufferRequiredSize(sizeInBytes);
-    assert(m_dynamicConstantBuffersCurrentSize + m_framesInFlight * actualSize <= m_dynamicConstantBuffersMaxSize);
-
     const size_t cbID = m_dynamicConstantBuffers.size();
-    
+
     DynamicConstantBuffer dynamicConstantBuffer;
-    dynamicConstantBuffer.m_sizeInBytes = sizeInBytes;
-    dynamicConstantBuffer.m_requiredSizeInBytes = actualSize;
 
     for (unsigned int i = 0; i < m_framesInFlight; ++i)
     {
+        dynamicConstantBuffer.m_allocation[i] = m_dynamicCBHeap->Allocate(sizeInBytes, g_constantBufferReadAlignment);
+        assert(D3D12Basics::IsAlignedToPowerof2(dynamicConstantBuffer.m_allocation[i].m_gpuPtr, g_constantBufferReadAlignment));
+
         // TODO assert bufferSize complies with constant buffer memory alignment requirements
         D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
-        cbvDesc.BufferLocation = m_dynamicConstantBufferHeapCurrentPtr;
-        cbvDesc.SizeInBytes = static_cast<UINT>(actualSize);
+        cbvDesc.BufferLocation = dynamicConstantBuffer.m_allocation[i].m_gpuPtr;
+        cbvDesc.SizeInBytes = static_cast<UINT>(dynamicConstantBuffer.m_allocation[i].m_size);
         D3D12DescriptorHeapHandlePtr cbvHandle = m_cpuSRV_CBVDescHeap->CreateCBV(cbvDesc);
 
-        dynamicConstantBuffer.m_memPtr[i] = m_dynamicConstantBuffersCurrentMemPtr;
         dynamicConstantBuffer.m_cbvHandle[i] = cbvHandle;
-
-        m_dynamicConstantBufferHeapCurrentPtr += actualSize;
-        m_dynamicConstantBuffersCurrentSize += actualSize;
-        m_dynamicConstantBuffersCurrentMemPtr = static_cast<char*>(m_dynamicConstantBuffersCurrentMemPtr) + actualSize;
     }
 
     m_dynamicConstantBuffers.push_back(dynamicConstantBuffer);
@@ -179,13 +141,13 @@ D3D12DynamicResourceID D3D12Gpu::CreateDynamicConstantBuffer(unsigned int sizeIn
     return cbID;
 }
 
-void D3D12Gpu::UpdateDynamicConstantBuffer(D3D12DynamicResourceID id, const void* data)
+void D3D12Gpu::UpdateDynamicConstantBuffer(D3D12DynamicResourceID id, const void* data, size_t sizeInBytes)
 {
     assert(id < m_dynamicConstantBuffers.size());
 
     auto& dynamicConstantBuffer = m_dynamicConstantBuffers[id];
 
-    memcpy(dynamicConstantBuffer.m_memPtr[m_currentFrameIndex], data, dynamicConstantBuffer.m_sizeInBytes);
+    memcpy(dynamicConstantBuffer.m_allocation[m_currentFrameIndex].m_cpuPtr, data, sizeInBytes);
 }
 
 void D3D12Gpu::ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderTasks)
@@ -502,18 +464,6 @@ void D3D12Gpu::CreateDepthBuffer()
     desc.Flags              = D3D12_DSV_FLAG_NONE;
     desc.Texture2D.MipSlice = 0;
     m_depthBufferDescHandle = m_dsvDescHeap->CreateDSV(m_depthBufferResource, desc, m_depthBufferDescHandle);
-}
-
-void D3D12Gpu::CreateDynamicConstantBuffersInfrastructure()
-{
-    m_dynamicConstantBuffersHeap = D3D12CreateDynamicCommittedBuffer(m_device, m_dynamicConstantBuffersMaxSize);
-    m_dynamicConstantBufferHeapCurrentPtr = m_dynamicConstantBuffersHeap->GetGPUVirtualAddress();
-            
-    // NOTE: Leaving the constant buffer memory mapped is used to avoid map/unmap pattern
-    D3D12_RANGE readRange{ 0, 0 };
-    D3D12Basics::AssertIfFailed(m_dynamicConstantBuffersHeap->Map(0, &readRange, &m_dynamicConstantBuffersMemPtr));
-
-    m_dynamicConstantBuffersCurrentMemPtr = m_dynamicConstantBuffersMemPtr;
 }
 
 void D3D12Gpu::CheckFeatureSupport()

@@ -314,3 +314,18 @@ std::wstring D3D12Basics::ConvertFromUTF8ToUTF16(const std::string& str)
 
     return outStr;
 }
+
+size_t D3D12Basics::AlignToPowerof2(size_t value, size_t alignmentPower2)
+{
+    return (value + (alignmentPower2 - 1)) & ~(alignmentPower2 - 1);
+}
+
+bool D3D12Basics::IsPowerOf2(size_t value)
+{
+    return (value & (value - 1)) == 0;
+}
+
+bool D3D12Basics::IsAlignedToPowerof2(size_t value, size_t alignmentPower2)
+{
+    return (value & (alignmentPower2 - 1)) == 0;
+}

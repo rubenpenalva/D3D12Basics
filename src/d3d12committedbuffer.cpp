@@ -7,6 +7,7 @@ using namespace D3D12Render;
 
 // c++ libs
 #include <cstdint>
+#include <algorithm>
 
 // directx
 #include <d3d12.h>
@@ -39,6 +40,8 @@ namespace
     {
         D3D12_RESOURCE_DESC resourceDesc;
         resourceDesc.Dimension           = D3D12_RESOURCE_DIMENSION_BUFFER;
+        // https://msdn.microsoft.com/en-us/library/windows/desktop/dn903813(v=vs.85).aspx
+        // Alignment must be 64KB (D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT) or 0, which is effectively 64KB.
         resourceDesc.Alignment           = 0;
         resourceDesc.Width               = sizeBytes;
         resourceDesc.Height              = 1;
@@ -133,6 +136,16 @@ namespace
 
         uploadHeap->Unmap(0, NULL);
     }
+
+    ID3D12ResourcePtr D3D12CreateDynamicCommittedBuffer(ID3D12DevicePtr device, size_t dataSizeBytes)
+    {
+        D3D12_RESOURCE_DESC resourceDesc = CreateBufferDesc(dataSizeBytes);
+        ID3D12ResourcePtr resource = CreateResourceHeap(device, resourceDesc, ResourceHeapType::UploadHeap,
+                                                        D3D12_RESOURCE_STATE_GENERIC_READ);
+        assert(resource);
+
+        return resource;
+    }
 }
 
 ID3D12ResourcePtr D3D12Render::D3D12CreateCommittedDepthStencil(ID3D12DevicePtr device, unsigned int width, unsigned int height, 
@@ -146,16 +159,6 @@ ID3D12ResourcePtr D3D12Render::D3D12CreateCommittedDepthStencil(ID3D12DevicePtr 
     assert(resource);
     resource->SetName(debugName.c_str());
     
-    return resource;
-}
-
-ID3D12ResourcePtr D3D12Render::D3D12CreateDynamicCommittedBuffer(ID3D12DevicePtr device, size_t dataSizeBytes)
-{
-    D3D12_RESOURCE_DESC resourceDesc = CreateBufferDesc(dataSizeBytes);
-    ID3D12ResourcePtr resource = CreateResourceHeap(device, resourceDesc, ResourceHeapType::UploadHeap, 
-                                                    D3D12_RESOURCE_STATE_GENERIC_READ);
-    assert(resource);
-
     return resource;
 }
 
@@ -274,4 +277,98 @@ void D3D12CommittedBufferLoader::EnqueueTextureCopyCmd(ID3D12ResourcePtr uploadH
         dest.SubresourceIndex = i;
         m_cmdList->CopyTextureRegion(&dest, 0, 0, 0, &src, nullptr);
     }
+}
+
+D3D12BufferAllocator::D3D12BufferAllocator(ID3D12DevicePtr device, size_t pageSizeInBytes) : m_device(device), m_pageSizeInBytes(pageSizeInBytes)
+{
+    assert(m_device);
+    assert(m_pageSizeInBytes > 0);
+
+    AllocatePage();
+}
+
+D3D12BufferAllocator::~D3D12BufferAllocator()
+{
+    D3D12_RANGE readRange{ 0, 0 };
+    for(auto& page : m_pages)
+        page.m_resource->Unmap(0, &readRange);
+}
+
+// TODO memory alignment
+D3D12BufferAllocation D3D12BufferAllocator::Allocate(size_t sizeInBytes, size_t alignment)
+{
+    assert(alignment);
+    assert(m_pages.size());
+    assert(D3D12Basics::IsPowerOf2(alignment));
+
+    const auto alignedSize = AlignToPowerof2(sizeInBytes, alignment);
+    assert(alignedSize >= sizeInBytes);
+    
+    D3D12BufferAllocation* freeBlock = nullptr;
+
+    // Linearly search through all the pages for a free block that fits the requested alignedSize
+    for (size_t i = 0; i < m_pages.size(); ++i)
+    {
+        auto& page = m_pages[i];
+        
+        auto foundFreeBlock = std::find_if(page.m_freeBlocks.begin(), page.m_freeBlocks.end(), [alignedSize](const auto& element)
+        {
+            return element.m_size >= alignedSize;
+        });
+
+        if (foundFreeBlock != page.m_freeBlocks.end())
+        {
+            freeBlock = &(*foundFreeBlock);
+            break;
+        }
+    }
+
+    // No memory no problem. Allocate another page!
+    if (!freeBlock)
+    {
+        AllocatePage();
+        freeBlock = &m_pages.back().m_freeBlocks.back();
+    }
+
+    assert(freeBlock);
+    assert(freeBlock->m_size >= alignedSize);
+
+    // Book keeping for allocation
+    D3D12BufferAllocation allocation = *freeBlock;
+    allocation.m_size = alignedSize;
+
+    freeBlock->m_cpuPtr += alignedSize;
+    freeBlock->m_gpuPtr += alignedSize;
+    freeBlock->m_size -= alignedSize;
+
+    return allocation;
+}
+
+void D3D12BufferAllocator::Deallocate(const D3D12BufferAllocation& allocation)
+{
+    assert(allocation.m_pageIndex < m_pages.size());
+
+    auto& page = m_pages[allocation.m_pageIndex];
+    page.m_freeBlocks.push_back(allocation);
+}
+
+void D3D12BufferAllocator::AllocatePage()
+{
+    Page page;
+    page.m_resource = D3D12CreateDynamicCommittedBuffer(m_device, m_pageSizeInBytes);
+    assert(page.m_resource);
+
+    auto gpuPtr = page.m_resource->GetGPUVirtualAddress();
+    assert(gpuPtr);
+    assert(D3D12Basics::IsAlignedToPowerof2(gpuPtr, g_64kb));
+
+    D3D12_RANGE readRange{ 0, 0 };
+    uint8_t* cpuPtr;
+    D3D12Basics::AssertIfFailed(page.m_resource->Map(0, &readRange, reinterpret_cast<void**>(&cpuPtr)));
+    assert(D3D12Basics::IsAlignedToPowerof2(reinterpret_cast<size_t>(cpuPtr), g_4kb));
+
+    const size_t pageIndex = m_pages.size();
+    page.m_freeBlocks.push_back(D3D12BufferAllocation{ cpuPtr, gpuPtr, m_pageSizeInBytes, pageIndex });
+
+    m_pages.emplace_back(std::move(page));
 }

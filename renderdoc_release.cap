@@ -5,13 +5,13 @@
         "commandLine": "",
         "environment": [
         ],
-        "executable": "C:\\Development\\GitHub\\D3D12Basics\\x64\\Release\\D3D12Basics.exe",
+        "executable": "C:\\Development\\GitHub\\D3D12Basics\\x64\\Release\\D3D12Basics_vs2017.exe",
         "inject": false,
         "options": {
             "allowFullscreen": true,
             "allowVSync": true,
             "apiValidation": true,
-            "captureAllCmdLists": true,
+            "captureAllCmdLists": false,
             "captureCallstacks": true,
             "captureCallstacksOnlyDraws": false,
             "debugOutputMute": true,

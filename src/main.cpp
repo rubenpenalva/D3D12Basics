@@ -385,6 +385,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
         if (!messagesProcessed)
 #endif
         {
+            backendRender.BeginFrame();
+
             // Process gamepad input
             inputController.Update();
             quit |= ProcessInput(inputController, customWindow, cameraState);
@@ -407,7 +409,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
             backendRender.RenderFrame();
 
-            backendRender.FinishFrame();
+            backendRender.EndFrame();
 
             // Measure elapsed time
             timer.Mark();

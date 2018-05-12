@@ -21,14 +21,17 @@ namespace D3D12Render
 
         void WaitAll();
 
-        unsigned int GetCompletedFramesCountOnLastGPUSync() const { return m_completedFramesCount; }
+        uint64_t GetLastRetiredFrameId() const { return m_lastRetiredFrameId; }
+
+        uint64_t GetNextFrameId() const { return m_nextFenceValue; }
 
     private:
         ID3D12CommandQueuePtr m_cmdQueue;
 
-        const unsigned int  m_maxFramesInFlight;
-        unsigned int        m_framesInFlight;
-        unsigned int        m_completedFramesCount;
+        const uint64_t      m_maxFramesInFlight;
+        uint64_t            m_framesInFlight;
+        uint64_t            m_completedFramesCount;
+        uint64_t            m_lastRetiredFrameId;
 
         HANDLE          m_event;
         ID3D12FencePtr  m_fence;

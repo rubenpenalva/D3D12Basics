@@ -9,8 +9,6 @@
 
 namespace D3D12Render
 {
-    using D3D12MaterialResources = std::vector<D3D12ResourceID>;
-
     class D3D12Material
     {
     public:

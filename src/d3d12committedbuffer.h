@@ -7,6 +7,7 @@
 // c++ includes
 #include <string>
 #include <list>
+#include <cassert>
 
 // directx includes
 #include <d3d12.h>
@@ -15,49 +16,37 @@ namespace D3D12Render
 {
     const uint16_t g_constantBufferReadAlignment = 256;
 
-    // TODO remove committed from names
+    struct D3D12GpuUploadContext
+    {
+        D3D12GpuUploadContext(ID3D12DevicePtr device, 
+                              ID3D12CommandAllocatorPtr cmdAllocator,
+                              ID3D12CommandQueuePtr cmdQueue, 
+                              ID3D12GraphicsCommandListPtr cmdList) :   m_device(device), m_cmdAllocator(cmdAllocator),
+                                                                        m_cmdQueue(cmdQueue), m_cmdList(cmdList)
+        {
+            assert(m_device);
+            assert(m_cmdList);
+            assert(m_cmdAllocator);
+            assert(m_cmdQueue);
+        }
+
+        ID3D12DevicePtr                 m_device;
+        ID3D12CommandAllocatorPtr       m_cmdAllocator;
+        ID3D12CommandQueuePtr           m_cmdQueue;
+        ID3D12GraphicsCommandListPtr    m_cmdList;
+    };
 
     ID3D12ResourcePtr D3D12CreateCommittedDepthStencil(ID3D12DevicePtr device, unsigned int width, unsigned int height, DXGI_FORMAT format,
                                                        const D3D12_CLEAR_VALUE* clearValue, const std::wstring& debugName);
 
-    // TODO why is this a class if it doest have state? refactor it to a free function
-    class D3D12CommittedBufferLoader
-    {
-    public:
-        D3D12CommittedBufferLoader(ID3D12DevicePtr device, ID3D12CommandAllocatorPtr cmdAllocator,
-                                   ID3D12CommandQueuePtr cmdQueue, ID3D12GraphicsCommandListPtr cmdList);
-
-        ~D3D12CommittedBufferLoader();
-
-        ID3D12ResourcePtr Upload(const void* data, size_t dataSizeBytes, size_t requiredDataSize, const std::wstring& resourceName);
-
-        ID3D12ResourcePtr Upload(const std::vector<D3D12_SUBRESOURCE_DATA>& subresources, const D3D12_RESOURCE_DESC& desc, 
-                                 const std::wstring& resourceName);
+    // NOTE: These function uploads system memory to local vidmem. It waits to the whole thing is uploaded.
+    ID3D12ResourcePtr D3D12CreateCommittedBuffer(const D3D12GpuUploadContext& uploadContext, const void* data, size_t dataSizeBytes,
+                                                 const std::wstring& resourceName);
     
-    private:
-        enum class CopyType
-        {
-            Buffer,
-            Texture
-        };
-
-        ID3D12DevicePtr m_device;
-
-        ID3D12GraphicsCommandListPtr    m_cmdList;
-        ID3D12CommandAllocatorPtr       m_cmdAllocator;
-        ID3D12CommandQueuePtr           m_cmdQueue;
-
-        D3D12GpuSynchronizer            m_gpuSync;
-
-        ID3D12ResourcePtr UploadInternal(const std::vector<D3D12_SUBRESOURCE_DATA>& subresources,
-                                         const D3D12_RESOURCE_DESC& resourceDesc, 
-                                         const std::wstring& resourceName, CopyType copyType);
-
-        void EnqueueBufferCopyCmd(ID3D12ResourcePtr uploadHeap, ID3D12ResourcePtr defaultHeap, size_t dataSizeBytes);
-
-        void EnqueueTextureCopyCmd(ID3D12ResourcePtr uploadHeap, ID3D12ResourcePtr defaultHeap,
-                                   const std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT>& layouts);
-    };
+    // NOTE: These function uploads system memory to local vidmem. It waits to the whole thing is uploaded.
+    ID3D12ResourcePtr D3D12CreateCommittedBuffer(const D3D12GpuUploadContext& uploadContext, 
+                                                 const std::vector<D3D12_SUBRESOURCE_DATA>& subresources, const D3D12_RESOURCE_DESC& desc,
+                                                 const std::wstring& resourceName);
 
     struct D3D12BufferAllocation
     {

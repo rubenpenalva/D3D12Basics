@@ -14,7 +14,8 @@ using namespace D3D12Render;
 
 D3D12GpuSynchronizer::D3D12GpuSynchronizer(ID3D12DevicePtr device, ID3D12CommandQueuePtr cmdQueue,
                                            unsigned int maxFramesInFlight)  :   m_cmdQueue(cmdQueue), m_maxFramesInFlight(maxFramesInFlight),
-                                                                                m_framesInFlight(0), m_currentFenceValue(0), m_completedFramesCount(0)
+                                                                                m_framesInFlight(0), m_currentFenceValue(0), m_completedFramesCount(0),
+                                                                                m_lastRetiredFrameId(0)
 {
     assert(device);
     assert(m_cmdQueue);
@@ -42,19 +43,19 @@ bool D3D12GpuSynchronizer::Wait()
 
     SignalWork();
 
+    m_lastRetiredFrameId = m_fence->GetCompletedValue();
+
     if (m_framesInFlight == m_maxFramesInFlight)
     {
-        auto completedFenceValue = m_fence->GetCompletedValue();
-
-        assert(completedFenceValue <= m_currentFenceValue);
-        if (completedFenceValue < m_currentFenceValue)
+        assert(m_lastRetiredFrameId <= m_currentFenceValue);
+        if (m_lastRetiredFrameId < m_currentFenceValue)
         {
-            WaitForFence(completedFenceValue + 1);
-            completedFenceValue++;
+            WaitForFence(m_lastRetiredFrameId + 1);
+            m_lastRetiredFrameId++;
             hasWaitedForFence = true;
         }
 
-        m_completedFramesCount = static_cast<unsigned int>(completedFenceValue - m_currentFenceValue + m_maxFramesInFlight);
+        m_completedFramesCount = m_lastRetiredFrameId - m_currentFenceValue + m_maxFramesInFlight;
         assert(m_maxFramesInFlight >= m_completedFramesCount);
         m_framesInFlight -= m_completedFramesCount;
     }

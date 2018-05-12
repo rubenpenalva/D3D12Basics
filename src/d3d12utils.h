@@ -20,8 +20,16 @@ namespace D3D12Render
 
     D3D12_DESCRIPTOR_RANGE1 CreateDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE rangeType, unsigned int descriptorsCount);
 
+    D3D12_ROOT_PARAMETER1 CreateConstantsRootParameter(UINT shaderRegister, UINT constantsCount, UINT registerSpace,
+                                                       D3D12_SHADER_VISIBILITY shaderVisibility);
+
+    D3D12_ROOT_PARAMETER1 CreateCBVRootParameter(UINT shaderRegister, UINT registerSpace, D3D12_ROOT_DESCRIPTOR_FLAGS flags,
+                                                 D3D12_SHADER_VISIBILITY shaderVisibility);
+
     D3D12_ROOT_PARAMETER1 CreateDescTableRootParameter(D3D12_DESCRIPTOR_RANGE1* ranges, unsigned int rangesCount,
                                                        D3D12_SHADER_VISIBILITY shaderVisibility);
 
     D3D12_STATIC_SAMPLER_DESC CreateStaticLinearSamplerDesc();
+
+    void OutputDebugBlobErrorMsg(ID3DBlobPtr errorMsg);
 }

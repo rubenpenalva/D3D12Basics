@@ -60,6 +60,9 @@
     <ClCompile Include="thirdparty\imgui\imgui_draw.cpp">
       <Filter>Thirdparty\imgui</Filter>
     </ClCompile>
+    <ClCompile Include="src\d3d12imgui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\d3d12utils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -109,6 +112,9 @@
     </ClInclude>
     <ClInclude Include="thirdparty\imgui\imgui_internal.h">
       <Filter>Thirdparty\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="src\d3d12imgui.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\d3d12utils.h">
       <Filter>Header Files</Filter>

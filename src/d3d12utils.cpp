@@ -29,21 +29,21 @@ D3D12_RASTERIZER_DESC D3D12Render::CreateDefaultRasterizerState()
 // TODO: is there a more elegant way of constructing a D3D12_BLEND_DESC object?
 D3D12_BLEND_DESC D3D12Render::CreateDefaultBlendState()
 {
-    const D3D12_RENDER_TARGET_BLEND_DESC defaultRenderTargetBlendDesc =
-    {
-        FALSE,FALSE,
-        D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
-        D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
-        D3D12_LOGIC_OP_NOOP,
-        D3D12_COLOR_WRITE_ENABLE_ALL,
-    };
+    D3D12_RENDER_TARGET_BLEND_DESC defaultRenderTargetBlendDesc;
+    defaultRenderTargetBlendDesc.BlendEnable            = FALSE;
+    defaultRenderTargetBlendDesc.LogicOpEnable          = FALSE;
+    defaultRenderTargetBlendDesc.SrcBlend               = D3D12_BLEND_ONE;
+    defaultRenderTargetBlendDesc.DestBlend              = D3D12_BLEND_ZERO;
+    defaultRenderTargetBlendDesc.BlendOp                = D3D12_BLEND_OP_ADD;
+    defaultRenderTargetBlendDesc.SrcBlendAlpha          = D3D12_BLEND_ONE;
+    defaultRenderTargetBlendDesc.DestBlendAlpha         = D3D12_BLEND_ZERO;
+    defaultRenderTargetBlendDesc.BlendOpAlpha           = D3D12_BLEND_OP_ADD;
+    defaultRenderTargetBlendDesc.LogicOp                = D3D12_LOGIC_OP_NOOP;
+    defaultRenderTargetBlendDesc.RenderTargetWriteMask  = D3D12_COLOR_WRITE_ENABLE_ALL;
         
-    D3D12_BLEND_DESC blendDesc
-    {
-        /*AlphaToCoverageEnable*/   FALSE,
-        /*IndependentBlendEnable*/  FALSE,
-        /*RenderTarget*/ {}
-    };
+    D3D12_BLEND_DESC blendDesc;
+    blendDesc.AlphaToCoverageEnable = FALSE;
+    blendDesc.IndependentBlendEnable = FALSE;
 
     for (UINT i = 0; i < D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
         blendDesc.RenderTarget[i] = defaultRenderTargetBlendDesc;
@@ -54,15 +54,16 @@ D3D12_BLEND_DESC D3D12Render::CreateDefaultBlendState()
 D3D12_BLEND_DESC D3D12Render::CreateAlphaBlendState()
 {
     D3D12_RENDER_TARGET_BLEND_DESC rtBlendDesc;
-    rtBlendDesc.BlendEnable     = TRUE;
-    rtBlendDesc.LogicOpEnable   = FALSE;
-    rtBlendDesc.SrcBlend        = D3D12_BLEND_SRC_ALPHA;
-    rtBlendDesc.DestBlend       = D3D12_BLEND_INV_SRC_ALPHA;
-    rtBlendDesc.BlendOp         = D3D12_BLEND_OP_ADD;
-    rtBlendDesc.SrcBlendAlpha   = D3D12_BLEND_INV_SRC_ALPHA;
-    rtBlendDesc.DestBlendAlpha  = D3D12_BLEND_ZERO;
-    rtBlendDesc.BlendOpAlpha    = D3D12_BLEND_OP_ADD;
-    rtBlendDesc.LogicOp         = D3D12_LOGIC_OP_CLEAR;
+    rtBlendDesc.BlendEnable             = TRUE;
+    rtBlendDesc.LogicOpEnable           = FALSE;
+    rtBlendDesc.SrcBlend                = D3D12_BLEND_SRC_ALPHA;
+    rtBlendDesc.DestBlend               = D3D12_BLEND_INV_SRC_ALPHA;
+    rtBlendDesc.BlendOp                 = D3D12_BLEND_OP_ADD;
+    rtBlendDesc.SrcBlendAlpha           = D3D12_BLEND_INV_SRC_ALPHA;
+    rtBlendDesc.DestBlendAlpha          = D3D12_BLEND_ZERO;
+    rtBlendDesc.BlendOpAlpha            = D3D12_BLEND_OP_ADD;
+    rtBlendDesc.LogicOp                 = D3D12_LOGIC_OP_CLEAR;
+    rtBlendDesc.RenderTargetWriteMask   = D3D12_COLOR_WRITE_ENABLE_ALL;
 
     //UINT8 RenderTargetWriteMask;
     D3D12_BLEND_DESC blendDesc;
@@ -105,8 +106,32 @@ D3D12_DESCRIPTOR_RANGE1 D3D12Render::CreateDescriptorRange(D3D12_DESCRIPTOR_RANG
     return range;
 }
 
+D3D12_ROOT_PARAMETER1 D3D12Render::CreateConstantsRootParameter(UINT shaderRegister, UINT constantsCount, UINT registerSpace,
+                                                                D3D12_SHADER_VISIBILITY shaderVisibility)
+{
+    D3D12_ROOT_PARAMETER1 rootParameter;
+    rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+    rootParameter.Constants.ShaderRegister = shaderRegister;
+    rootParameter.Constants.Num32BitValues = constantsCount;
+    rootParameter.Constants.RegisterSpace = registerSpace;
+    rootParameter.ShaderVisibility = shaderVisibility;
+    return rootParameter;
+}
+
+D3D12_ROOT_PARAMETER1 D3D12Render::CreateCBVRootParameter(UINT shaderRegister, UINT registerSpace, D3D12_ROOT_DESCRIPTOR_FLAGS flags,
+                                                          D3D12_SHADER_VISIBILITY shaderVisibility)
+{
+    D3D12_ROOT_PARAMETER1 rootParameter;
+    rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParameter.Descriptor.ShaderRegister = shaderRegister;
+    rootParameter.Descriptor.RegisterSpace = registerSpace;
+    rootParameter.Descriptor.Flags = flags;
+    rootParameter.ShaderVisibility = shaderVisibility;
+    return rootParameter;
+}
+
 D3D12_ROOT_PARAMETER1 D3D12Render::CreateDescTableRootParameter(D3D12_DESCRIPTOR_RANGE1* ranges, unsigned int rangesCount,
-                                                    D3D12_SHADER_VISIBILITY shaderVisibility)
+                                                                D3D12_SHADER_VISIBILITY shaderVisibility)
 {
     D3D12_ROOT_PARAMETER1 rootParameter;
     rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -136,4 +161,9 @@ D3D12_STATIC_SAMPLER_DESC D3D12Render::CreateStaticLinearSamplerDesc()
     };
 
     return staticSamplerDesc;
+}
+
+void D3D12Render::OutputDebugBlobErrorMsg(ID3DBlobPtr errorMsg)
+{
+    OutputDebugStringA(static_cast<LPCSTR>(errorMsg->GetBufferPointer()));
 }

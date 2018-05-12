@@ -4,6 +4,8 @@
 #include "meshgenerator.h"
 
 #include "d3d12material.h"
+#include "d3d12imgui.h"
+#include "imgui/imgui.h"
 
 using namespace D3D12Render;
 using namespace D3D12Basics;
@@ -21,7 +23,7 @@ namespace
 
     static const float g_defaultClearColor[4] = { 0.0f, 0.2f, 0.4f, 1.0f };
 
-    D3D12ResourceID CreateDefaultTexture2D(D3D12Gpu& gpu)
+    D3D12GpuMemoryView CreateDefaultTexture2D(D3D12Gpu& gpu)
     {
         std::vector<D3D12_SUBRESOURCE_DATA> subresources(1);
         uint8_t data[] = { 0, 0, 0, 0, 0, 0, 0, 0 };
@@ -41,17 +43,24 @@ namespace
         resourceDesc.SampleDesc = { 1, 0 };
         resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
         resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-        return gpu.CreateTexture(subresources, resourceDesc, L"Default Texture 2D");
+        auto memHandle = gpu.AllocateStaticMemory(subresources, resourceDesc, L"Default Texture 2D");
+
+        return gpu.CreateTextureView(memHandle, resourceDesc);
     }
 }
 
 D3D12BackendRender::D3D12BackendRender(const D3D12Basics::Scene& scene, bool isWaitableForPresentEnabled) : m_scene(scene), m_gpu(isWaitableForPresentEnabled)
 {
     m_material = std::make_unique<D3D12Material>(&m_gpu);
+    assert(m_material);
+
+    m_imgui = std::make_unique<D3D12ImGui>(&m_gpu);
+    assert(m_imgui);
 }
 
 D3D12BackendRender::~D3D12BackendRender()
 {
+    m_gpu.WaitAll();
 }
 
 const D3D12Basics::Resolution& D3D12BackendRender::GetSafestResolutionSupported() const
@@ -87,24 +96,30 @@ void D3D12BackendRender::OnResize(const D3D12Basics::Resolution& resolution)
 
 void D3D12BackendRender::LoadSceneResources(D3D12Basics::SceneLoader& sceneLoader)
 {
-    D3D12ResourceID defaultTexture2D = CreateDefaultTexture2D(m_gpu);
+    D3D12GpuMemoryView defaultTexture2D = CreateDefaultTexture2D(m_gpu);
     // TODO add fallback material
     //auto defaultDiffuseColorCBID = m_gpu.CreateStaticConstantBuffer(&Material::m_diffuseColor, sizeof(Float3), L"Default Diffuse Color Static CB");
 
     // Load resources into vram
     // Create a render task per model
+    D3D12GpuRenderTask clearRenderTask;
+    clearRenderTask.m_clear = true;
+    memcpy(clearRenderTask.m_clearColor, g_defaultClearColor, sizeof(float) * 4);
+    m_renderTasks.emplace_back(std::move(clearRenderTask));
+
     for (const auto& model : m_scene.m_models)
     {
-        D3D12ResourceID dynamicCBID = m_gpu.CreateDynamicConstantBuffer(sizeof(Matrix44));
+        D3D12GpuMemoryHandle dynamicCBMemHandle = m_gpu.AllocateDynamicMemory(sizeof(Matrix44), L"Dynamic CB - Transform " + model.m_name);
+        D3D12GpuMemoryView dynamicCBView = m_gpu.CreateConstantBufferView(dynamicCBMemHandle);
 
-        D3D12ResourceDescriptorTable dynamicCBDescriptorTable;
-        dynamicCBDescriptorTable.emplace_back(D3D12ResourceDescriptor{ D3D12ResourceType::DynamicConstantBuffer, dynamicCBID });
+        D3D12DescriptorTable dynamicCBDescriptorTable{ 0, {} };
+        dynamicCBDescriptorTable.m_views.emplace_back(dynamicCBView);
 
-        D3D12ResourceDescriptorTable texturesDescriptorTable;
+        D3D12DescriptorTable texturesDescriptorTable{ 1, {} };
         if (!model.m_material.m_diffuseTexture.empty())
         {
-            D3D12ResourceID diffuseTextureID = CreateTexture(model.m_material.m_diffuseTexture, sceneLoader);
-            texturesDescriptorTable.emplace_back(D3D12ResourceDescriptor{ D3D12ResourceType::StaticResource, diffuseTextureID });
+            auto diffuseTextureView = CreateTexture(model.m_material.m_diffuseTexture, sceneLoader);
+            texturesDescriptorTable.m_views.emplace_back(diffuseTextureView);
 
             // TODO add light
             //if (model.m_material.m_specularTexture)
@@ -121,12 +136,13 @@ void D3D12BackendRender::LoadSceneResources(D3D12Basics::SceneLoader& sceneLoade
         {
             assert(model.m_material.m_specularTexture.empty() && model.m_material.m_normalsTexture.empty());
 
-            texturesDescriptorTable.emplace_back(D3D12ResourceDescriptor{ D3D12ResourceType::StaticResource, defaultTexture2D });
+            texturesDescriptorTable.m_views.emplace_back(defaultTexture2D);
             // TODO add fallback material
             //materialResources.push_back(defaultDiffuseColorCBID);
         }
         
-        D3D12Bindings materialBindings{ dynamicCBDescriptorTable, texturesDescriptorTable };
+        D3D12Bindings materialBindings;
+        materialBindings.m_descriptorTables = { dynamicCBDescriptorTable, texturesDescriptorTable };
 
         Mesh mesh;
         switch (model.m_type)
@@ -149,9 +165,9 @@ void D3D12BackendRender::LoadSceneResources(D3D12Basics::SceneLoader& sceneLoade
             assert(false);
         }
 
-        D3D12ResourceID vbID = m_gpu.CreateBuffer(&mesh.Vertices()[0], mesh.VertexBufferSizeBytes(), L"vb - " + model.m_name);
+        D3D12GpuMemoryHandle vbID = m_gpu.AllocateStaticMemory(&mesh.Vertices()[0], mesh.VertexBufferSizeBytes(), L"vb - " + model.m_name);
 
-        D3D12ResourceID ibID = m_gpu.CreateBuffer(&mesh.Indices()[0], mesh.IndexBufferSizeBytes(), L"ib - " + model.m_name);
+        D3D12GpuMemoryHandle ibID = m_gpu.AllocateStaticMemory(&mesh.Indices()[0], mesh.IndexBufferSizeBytes(), L"ib - " + model.m_name);
 
         D3D12GpuRenderTask renderTask;
         renderTask.m_pipelineState = m_material->GetPSO();
@@ -159,12 +175,15 @@ void D3D12BackendRender::LoadSceneResources(D3D12Basics::SceneLoader& sceneLoade
         renderTask.m_bindings = materialBindings;
         renderTask.m_viewport = m_defaultViewport;
         renderTask.m_scissorRect = m_defaultScissorRect;
-        renderTask.m_vertexBufferResourceID = vbID;
-        renderTask.m_indexBufferResourceID = ibID;
-        renderTask.m_vertexCount = mesh.VerticesCount();
+        renderTask.m_vertexBufferId = vbID;
+        renderTask.m_indexBufferId = ibID;
+        renderTask.m_vertexBufferSizeBytes = mesh.VertexBufferSizeBytes();
         renderTask.m_vertexSizeBytes = mesh.VertexSizeBytes();
-        renderTask.m_indexCount = mesh.IndicesCount();
-        memcpy(renderTask.m_clearColor, g_defaultClearColor, sizeof(float) * 4);
+        renderTask.m_vertexOffset = 0;
+        renderTask.m_indexBufferSizeBytes = mesh.IndexBufferSizeBytes();
+        renderTask.m_indexCountPerInstance = mesh.IndicesCount();
+        renderTask.m_indexOffset = 0;
+        renderTask.m_clear = false;
 
         m_renderTasks.push_back(renderTask);
     }
@@ -174,26 +193,45 @@ void D3D12BackendRender::UpdateSceneResources()
 {
     const D3D12Basics::Matrix44 worldToClip = m_scene.m_camera.WorldToCamera() * m_scene.m_camera.CameraToClip();
 
-    assert(m_scene.m_models.size() == m_renderTasks.size());
+    // Note first task is clearing the rt
+    assert(m_scene.m_models.size() + 1 == m_renderTasks.size());
     for (size_t i = 0; i < m_scene.m_models.size(); ++i)
     {
         const auto& model = m_scene.m_models[i];
         const D3D12Basics::Matrix44 localToClip = (model.m_transform * worldToClip).Transpose();
         // TODO generalize this
         // TODO find the proper way to do this
-        assert(m_renderTasks[i].m_bindings[0].back().m_resourceType == D3D12ResourceType::DynamicConstantBuffer);
-        m_gpu.UpdateDynamicConstantBuffer(m_renderTasks[i].m_bindings[0].back().m_resourceID, &localToClip, sizeof(D3D12Basics::Matrix44));
+        assert(m_renderTasks[i + 1].m_bindings.m_descriptorTables.size() && m_renderTasks[i + 1].m_bindings.m_descriptorTables[0].m_views.size());
+        m_gpu.UpdateMemory(m_renderTasks[i + 1].m_bindings.m_descriptorTables[0].m_views[0].m_memHandle, &localToClip, sizeof(D3D12Basics::Matrix44));
     }
+}
+
+void D3D12BackendRender::BeginFrame()
+{
+    m_imgui->BeginFrame();
 }
 
 void D3D12BackendRender::RenderFrame()
 {
     m_gpu.BeginFrame();
 
-    m_gpu.ExecuteRenderTasks(m_renderTasks);
+    {
+        ImGui::Begin("About Dear ImGui");
+        ImGui::Text("Dear ImGui, %s", ImGui::GetVersion());
+        ImGui::Separator();
+        ImGui::Text("By Omar Cornut and all dear imgui contributors.");
+        ImGui::Text("Dear ImGui is licensed under the MIT License, see LICENSE for more information.");
+        ImGui::End();
+
+    }
+    auto imguiRenderTasks = m_imgui->EndFrame();
+
+    auto mergedRenderTasks = m_renderTasks;
+    mergedRenderTasks.insert(mergedRenderTasks.end(), imguiRenderTasks.begin(), imguiRenderTasks.end());
+    m_gpu.ExecuteRenderTasks(mergedRenderTasks);
 }
 
-void D3D12BackendRender::FinishFrame()
+void D3D12BackendRender::EndFrame()
 {
     g_gpuViewMarkerPreFinishFrame.Mark();
 
@@ -223,11 +261,13 @@ void D3D12BackendRender::UpdateDefaultNotPSOState()
     };
 }
 
-D3D12ResourceID D3D12BackendRender::CreateTexture(const std::wstring& textureFile, D3D12Basics::SceneLoader& sceneLoader)
+D3D12GpuMemoryView D3D12BackendRender::CreateTexture(const std::wstring& textureFile, D3D12Basics::SceneLoader& sceneLoader)
 {
     if (m_textureCache.count(textureFile))
         return m_textureCache[textureFile];
 
     auto textureData = sceneLoader.LoadTextureData(textureFile);
-    return m_gpu.CreateTexture(textureData.GetSubResources(), textureData.GetDesc(), textureFile);
+    auto memory = m_gpu.AllocateStaticMemory(textureData.GetSubResources(), textureData.GetDesc(), textureFile);
+
+    return m_gpu.CreateTextureView(memory, textureData.GetDesc());
 }

@@ -6,6 +6,7 @@
 // project includes
 #include "scene.h"
 #include "d3d12gpu.h"
+#include "d3d12basicsfwd.h"
 
 namespace D3D12Render
 {
@@ -31,14 +32,16 @@ namespace D3D12Render
 
         void UpdateSceneResources();
 
+        void BeginFrame();
+
         void RenderFrame();
 
-        void FinishFrame();
+        void EndFrame();
 
     private:
         const D3D12Basics::Scene& m_scene;
 
-        // TODO material needs to be destroyed afer gpu. fix this.
+        // TODO material needs to be destroyed after gpu. fix this.
         D3D12MaterialPtr m_material;
 
         D3D12Gpu m_gpu;
@@ -48,10 +51,12 @@ namespace D3D12Render
 
         std::vector<D3D12GpuRenderTask> m_renderTasks;
 
-        std::unordered_map<std::wstring, D3D12ResourceID> m_textureCache;
+        std::unordered_map<std::wstring, D3D12GpuMemoryView> m_textureCache;
+
+        D3D12ImGuiPtr m_imgui;
 
         void UpdateDefaultNotPSOState();
 
-        D3D12ResourceID CreateTexture(const std::wstring& textureFile, D3D12Basics::SceneLoader& sceneLoader);
+        D3D12GpuMemoryView CreateTexture(const std::wstring& textureFile, D3D12Basics::SceneLoader& sceneLoader);
     };
 }

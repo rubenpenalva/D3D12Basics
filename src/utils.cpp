@@ -71,14 +71,13 @@ namespace
             GetClientRect(hwnd, &windowRect);
             customWindow->ChangeResolution(windowRect);
         }
-
-        return 0;
+        break;
 
         default:
-            break;
+            return DefWindowProc(hwnd, message, wparam, lparam);
         }
 
-        return DefWindowProc(hwnd, message, wparam, lparam);
+        return 0;
     }
 
 }
@@ -102,11 +101,11 @@ void VertexStreams::AddStream(size_t elementsCount, std::vector<float>&& data)
     m_streams.push_back(std::move(stream));
 }
 
-Mesh::Mesh(const std::vector<VertexStream>& streams, 
-           std::vector<uint16_t>&& indices, size_t verticesCount,
-           size_t vertexSizeBytes, size_t vertexElementsCount)  :   m_verticesCount(verticesCount), m_vertexSizeBytes(vertexSizeBytes),
-                                                                    m_vertexBufferSizeBytes(0), m_indexBufferSizeBytes(0),
-                                                                    m_indices(std::move(indices))
+MeshData::MeshData(const std::vector<VertexStream>& streams,
+                   std::vector<uint16_t>&& indices, size_t verticesCount,
+                   size_t vertexSizeBytes, size_t vertexElementsCount)  :   m_verticesCount(verticesCount), m_vertexSizeBytes(vertexSizeBytes),
+                                                                            m_vertexBufferSizeBytes(0), m_indexBufferSizeBytes(0),
+                                                                            m_indices(std::move(indices))
 {
     assert(streams.size());
     assert(m_vertexSizeBytes);

@@ -18,7 +18,7 @@
 // directx includes
 #include <d3d12.h>
 
-namespace D3D12Render
+namespace D3D12Basics
 {
     using DisplayModes = std::vector<DXGI_MODE_DESC1>;
 
@@ -210,5 +210,7 @@ namespace D3D12Render
 
         void SetIndexBuffer(D3D12GpuMemoryHandle memHandle, size_t indexBufferSizeBytes,
                             ID3D12GraphicsCommandListPtr cmdList);
+
+        void DestroyRetiredAllocations();
     };
 }

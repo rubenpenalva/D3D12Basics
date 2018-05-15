@@ -7,13 +7,13 @@
 // d3d12 includes
 #include <d3d12.h>
 
-namespace D3D12Render
+namespace D3D12Basics
 {
     class D3D12Material
     {
     public:
         
-        D3D12Material(D3D12Render::D3D12Gpu* gpu);
+        D3D12Material(D3D12Gpu& gpu);
         
         ~D3D12Material();
 
@@ -25,6 +25,6 @@ namespace D3D12Render
         ID3D12PipelineStatePtr m_pso;
         ID3D12RootSignaturePtr m_rootSignature;
 
-        void CreatePSO(D3D12Render::D3D12Gpu* gpu);
+        void CreatePSO(D3D12Gpu& gpu);
     };
 }

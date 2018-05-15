@@ -2,15 +2,11 @@
 
 // project includes
 #include "utils.h"
-//#include "d3d12descriptorheap.h"
-//#include "d3d12swapchain.h"
-//#include "d3d12committedbuffer.h"
-//
+
 // c++ includes
 #include <cassert>
 
 using namespace D3D12Basics;
-using namespace D3D12Render;
 
 D3D12GpuSynchronizer::D3D12GpuSynchronizer(ID3D12DevicePtr device, ID3D12CommandQueuePtr cmdQueue,
                                            unsigned int maxFramesInFlight)  :   m_cmdQueue(cmdQueue), m_maxFramesInFlight(maxFramesInFlight),

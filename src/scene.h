@@ -1,3 +1,5 @@
+#pragma once
+
 // project includes
 #include "utils.h"
 
@@ -52,6 +54,8 @@ namespace D3D12Basics
     class TextureData
     {
     public:
+        TextureData() {}
+
         TextureData(const D3D12_RESOURCE_DESC& resourceDesc,
                     std::unique_ptr<uint8_t[]> rawData,
                     std::vector<D3D12_SUBRESOURCE_DATA>&& subresources) :   m_resourceDesc(resourceDesc), m_rawData(std::move(rawData)),
@@ -102,11 +106,67 @@ namespace D3D12Basics
 
         TextureData LoadTextureData(const std::wstring& textureFile);
 
-        Mesh LoadMesh(size_t modelId);
+        MeshData LoadMesh(size_t modelId);
 
     private:
         Assimp::Importer m_assImporter;
 
         Scene& m_outScene;
+
+        unsigned int m_assimpModelIdStart;
+    };
+
+    class CameraController
+    {
+    public:
+        CameraController(InputController& inputController);
+
+        void Update(Camera& camera, float deltaTime, float totalTime);
+
+    private:
+        struct UserCameraState
+        {
+            bool m_manualMovement = false;
+
+            Float3  m_direction = Float3(0.0f, 0.0f, 1.0f);
+            Float3  m_target = Float3{};
+            float   m_maxSpeed = 10.0f;
+            float   m_maxLookSpeed = 5.0f;
+            float   m_speedModifier = 0.0f;
+            float   m_speedLookModifier = 0.0f;
+        };
+
+        InputController& m_inputController;
+
+        UserCameraState m_cameraState;
+
+        void ProcessMouseInput(const DirectX::Mouse::State& mouseState);
+
+        void ProcessKeyboardInput(const DirectX::Keyboard::State& keyboardState,
+            const DirectX::Keyboard::KeyboardStateTracker& keyboardTracker);
+
+        void ProcessGamePadInput(const DirectX::GamePad::State& gamepadState,
+            const DirectX::GamePad::ButtonStateTracker& gamepadTracker);
+
+        void ProcessInput();
+
+        void UpdateCamera(Camera& camera, float deltaTime, float totalTime);
+    };
+
+    class AppController
+    {
+    public:
+        AppController(const InputController& inputController);
+
+        void Update(CustomWindow& customWindow, bool& quit);
+
+    private:
+        const InputController& m_inputController;
+
+        bool ProcessKeyboardInput(const DirectX::Keyboard::State& keyboardState,
+                                  const DirectX::Keyboard::KeyboardStateTracker& keyboardTracker,
+                                  D3D12Basics::CustomWindow& customWindow);
+
+        bool ProcessGamePadInput(const DirectX::GamePad::ButtonStateTracker& gamepadTracker);
     };
 }

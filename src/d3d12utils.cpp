@@ -8,7 +8,7 @@
 
 using namespace D3D12Basics;
 
-D3D12_RASTERIZER_DESC D3D12Render::CreateDefaultRasterizerState()
+D3D12_RASTERIZER_DESC D3D12Basics::CreateDefaultRasterizerState()
 {
     return  D3D12_RASTERIZER_DESC 
     {
@@ -27,7 +27,7 @@ D3D12_RASTERIZER_DESC D3D12Render::CreateDefaultRasterizerState()
 }
 
 // TODO: is there a more elegant way of constructing a D3D12_BLEND_DESC object?
-D3D12_BLEND_DESC D3D12Render::CreateDefaultBlendState()
+D3D12_BLEND_DESC D3D12Basics::CreateDefaultBlendState()
 {
     D3D12_RENDER_TARGET_BLEND_DESC defaultRenderTargetBlendDesc;
     defaultRenderTargetBlendDesc.BlendEnable            = FALSE;
@@ -51,7 +51,7 @@ D3D12_BLEND_DESC D3D12Render::CreateDefaultBlendState()
     return blendDesc;
 }
 
-D3D12_BLEND_DESC D3D12Render::CreateAlphaBlendState()
+D3D12_BLEND_DESC D3D12Basics::CreateAlphaBlendState()
 {
     D3D12_RENDER_TARGET_BLEND_DESC rtBlendDesc;
     rtBlendDesc.BlendEnable             = TRUE;
@@ -76,7 +76,7 @@ D3D12_BLEND_DESC D3D12Render::CreateAlphaBlendState()
     return blendDesc;
 }
 
-D3D12Render::ID3DBlobPtr D3D12Render::CompileShader(const char* src, const char* mainName, const char* shaderModel, unsigned int compileFlags)
+D3D12Basics::ID3DBlobPtr D3D12Basics::CompileShader(const char* src, const char* mainName, const char* shaderModel, unsigned int compileFlags)
 {
     ID3DBlobPtr shader;
 #if _DEBUG
@@ -94,7 +94,7 @@ D3D12Render::ID3DBlobPtr D3D12Render::CompileShader(const char* src, const char*
     return shader;
 }
 
-D3D12_DESCRIPTOR_RANGE1 D3D12Render::CreateDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE rangeType, unsigned int descriptorsCount)
+D3D12_DESCRIPTOR_RANGE1 D3D12Basics::CreateDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE rangeType, unsigned int descriptorsCount)
 {
     D3D12_DESCRIPTOR_RANGE1 range;
     range.RangeType = rangeType;
@@ -106,7 +106,7 @@ D3D12_DESCRIPTOR_RANGE1 D3D12Render::CreateDescriptorRange(D3D12_DESCRIPTOR_RANG
     return range;
 }
 
-D3D12_ROOT_PARAMETER1 D3D12Render::CreateConstantsRootParameter(UINT shaderRegister, UINT constantsCount, UINT registerSpace,
+D3D12_ROOT_PARAMETER1 D3D12Basics::CreateConstantsRootParameter(UINT shaderRegister, UINT constantsCount, UINT registerSpace,
                                                                 D3D12_SHADER_VISIBILITY shaderVisibility)
 {
     D3D12_ROOT_PARAMETER1 rootParameter;
@@ -118,7 +118,7 @@ D3D12_ROOT_PARAMETER1 D3D12Render::CreateConstantsRootParameter(UINT shaderRegis
     return rootParameter;
 }
 
-D3D12_ROOT_PARAMETER1 D3D12Render::CreateCBVRootParameter(UINT shaderRegister, UINT registerSpace, D3D12_ROOT_DESCRIPTOR_FLAGS flags,
+D3D12_ROOT_PARAMETER1 D3D12Basics::CreateCBVRootParameter(UINT shaderRegister, UINT registerSpace, D3D12_ROOT_DESCRIPTOR_FLAGS flags,
                                                           D3D12_SHADER_VISIBILITY shaderVisibility)
 {
     D3D12_ROOT_PARAMETER1 rootParameter;
@@ -130,7 +130,7 @@ D3D12_ROOT_PARAMETER1 D3D12Render::CreateCBVRootParameter(UINT shaderRegister, U
     return rootParameter;
 }
 
-D3D12_ROOT_PARAMETER1 D3D12Render::CreateDescTableRootParameter(D3D12_DESCRIPTOR_RANGE1* ranges, unsigned int rangesCount,
+D3D12_ROOT_PARAMETER1 D3D12Basics::CreateDescTableRootParameter(D3D12_DESCRIPTOR_RANGE1* ranges, unsigned int rangesCount,
                                                                 D3D12_SHADER_VISIBILITY shaderVisibility)
 {
     D3D12_ROOT_PARAMETER1 rootParameter;
@@ -141,7 +141,7 @@ D3D12_ROOT_PARAMETER1 D3D12Render::CreateDescTableRootParameter(D3D12_DESCRIPTOR
     return rootParameter;
 }
 
-D3D12_STATIC_SAMPLER_DESC D3D12Render::CreateStaticLinearSamplerDesc()
+D3D12_STATIC_SAMPLER_DESC D3D12Basics::CreateStaticLinearSamplerDesc()
 {
     D3D12_STATIC_SAMPLER_DESC staticSamplerDesc
     {
@@ -163,7 +163,7 @@ D3D12_STATIC_SAMPLER_DESC D3D12Render::CreateStaticLinearSamplerDesc()
     return staticSamplerDesc;
 }
 
-void D3D12Render::OutputDebugBlobErrorMsg(ID3DBlobPtr errorMsg)
+void D3D12Basics::OutputDebugBlobErrorMsg(ID3DBlobPtr errorMsg)
 {
     OutputDebugStringA(static_cast<LPCSTR>(errorMsg->GetBufferPointer()));
 }

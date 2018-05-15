@@ -141,6 +141,8 @@ SceneLoader::SceneLoader(const std::wstring& sceneFile, Scene& scene, const std:
                             aiProcess_ConvertToLeftHanded | aiProcess_SplitLargeMeshes;
     auto assimpScene = m_assImporter.ReadFile(ConvertFromUTF16ToUTF8(sceneFile), importFlags);
     assert(assimpScene);
+    
+    m_assimpModelIdStart = scene.m_models.empty() ? 0 : static_cast<unsigned int>(scene.m_models.back().m_id) + 1;
 
     for (unsigned int i = 0; i < assimpScene->mNumMeshes; ++i)
     {
@@ -150,7 +152,7 @@ SceneLoader::SceneLoader(const std::wstring& sceneFile, Scene& scene, const std:
         model.m_name = ConvertFromUTF8ToUTF16(mesh->mName.C_Str());
         model.m_type = Model::Type::MeshFile;
         model.m_transform = D3D12Basics::Matrix44::Identity;
-        model.m_id = i;
+        model.m_id = m_assimpModelIdStart + i;
 
         auto material = assimpScene->mMaterials[mesh->mMaterialIndex];
         model.m_material.m_diffuseTexture = ExtractAssimpTextureFile(material, aiTextureType_DIFFUSE, dataWorkingPath);
@@ -171,18 +173,20 @@ TextureData SceneLoader::LoadTextureData(const std::wstring& textureFile)
     return LoadSTBLoadableImage(textureFile);
 }
 
-Mesh SceneLoader::LoadMesh(size_t modelId)
+MeshData SceneLoader::LoadMesh(size_t modelId)
 {
+    assert(m_assimpModelIdStart <= modelId);
+    auto assimpMeshId = modelId - m_assimpModelIdStart;
     // TODO compile time assert
     assert(sizeof(aiVector3D) == sizeof(Float3));
 
     auto* assimpScene = m_assImporter.GetScene();
     assert(assimpScene);
-    assert(assimpScene->mNumMeshes > modelId);
+    assert(assimpScene->mNumMeshes > assimpMeshId);
 
-    auto* model = assimpScene->mMeshes[modelId];
+    auto* model = assimpScene->mMeshes[assimpMeshId];
     assert(model->HasPositions() && model->HasTextureCoords(0));
-    assert(model->mNumVertices <= Mesh::m_maxVertexCount);
+    assert(model->mNumVertices <= MeshData::m_maxVertexCount);
 
     // Copy the indices
     const unsigned int numIndicesPerTriangle = 3;
@@ -211,5 +215,219 @@ Mesh SceneLoader::LoadMesh(size_t modelId)
     streams.AddStream(uvElementsCount, std::move(uvs));
     const auto vertexElementsCount = streams.VertexElementsCount();
 
-    return Mesh{ streams.GetStreams(), std::move(indices), model->mNumVertices, vertexElementsCount * sizeof(float), vertexElementsCount };
+    return MeshData{ streams.GetStreams(), std::move(indices), model->mNumVertices, vertexElementsCount * sizeof(float), vertexElementsCount };
+}
+
+
+CameraController::CameraController(InputController& inputController) : m_inputController(inputController)
+{
+}
+
+void CameraController::Update(Camera& camera, float deltaTime, float totalTime)
+{
+    ProcessInput();
+
+    UpdateCamera(camera, deltaTime, totalTime);
+}
+
+void CameraController::ProcessMouseInput(const DirectX::Mouse::State& mouseState)
+{
+    if (mouseState.positionMode != DirectX::Mouse::MODE_RELATIVE)
+        return;
+
+    Float3 direction = Float3(static_cast<float>(mouseState.x), static_cast<float>(-mouseState.y), 0.0f);
+    m_cameraState.m_speedLookModifier = 0.5f;
+    direction.Normalize();
+
+    m_cameraState.m_target = direction;
+}
+
+void CameraController::ProcessKeyboardInput(const DirectX::Keyboard::State& keyboardState,
+    const DirectX::Keyboard::KeyboardStateTracker& keyboardTracker)
+{
+    if (keyboardTracker.IsKeyPressed(DirectX::Keyboard::Enter))
+        m_cameraState.m_manualMovement = !m_cameraState.m_manualMovement;
+
+    if (keyboardState.OemMinus)
+        m_cameraState.m_maxSpeed -= 0.5f;
+    if (keyboardState.OemPlus)
+        m_cameraState.m_maxSpeed += 0.5f;
+
+    bool keyPressed = false;
+    if (keyboardState.W)
+    {
+        keyPressed = true;
+        m_cameraState.m_direction = Float3(0.0f, 0.0f, 1.0f);
+    }
+    if (keyboardState.S)
+    {
+        keyPressed = true;
+        m_cameraState.m_direction = Float3(0.0f, 0.0f, -1.0f);
+    }
+    if (keyboardState.A)
+    {
+        keyPressed = true;
+        m_cameraState.m_direction = Float3(-1.0f, 0.0f, 0.0f);
+    }
+    if (keyboardState.D)
+    {
+        keyPressed = true;
+        m_cameraState.m_direction = Float3(1.0f, 0.0f, 0.0f);
+    }
+    if (keyPressed)
+        m_cameraState.m_speedModifier = 1.0f;
+}
+
+void CameraController::ProcessGamePadInput(const DirectX::GamePad::State& gamepadState,
+    const DirectX::GamePad::ButtonStateTracker& gamepadTracker)
+{
+    if (gamepadTracker.start == DirectX::GamePad::ButtonStateTracker::PRESSED)
+        m_cameraState.m_manualMovement = !m_cameraState.m_manualMovement;
+
+    if (gamepadTracker.leftShoulder == DirectX::GamePad::ButtonStateTracker::PRESSED)
+        m_cameraState.m_maxSpeed -= 0.5f;
+    else if (gamepadTracker.rightShoulder == DirectX::GamePad::ButtonStateTracker::PRESSED)
+        m_cameraState.m_maxSpeed += 0.5f;
+
+    if (gamepadState.thumbSticks.leftX != 0.0f || gamepadState.thumbSticks.leftY != 0.0f)
+    {
+        Float3 direction = Float3(gamepadState.thumbSticks.leftX, 0.0f, gamepadState.thumbSticks.leftY);
+        m_cameraState.m_speedModifier = direction.Length();
+        direction.Normalize();
+
+        m_cameraState.m_direction = direction;
+    }
+
+    if (gamepadState.thumbSticks.rightX != 0.0f || gamepadState.thumbSticks.rightY != 0.0f)
+    {
+        Float3 direction = Float3(gamepadState.thumbSticks.rightX, gamepadState.thumbSticks.rightY, 0.0f);
+        m_cameraState.m_speedLookModifier = direction.Length();
+        direction.Normalize();
+
+        m_cameraState.m_target = direction;
+    }
+}
+
+void CameraController::ProcessInput()
+{
+    m_cameraState.m_speedModifier = 0.0f;
+    m_cameraState.m_speedLookModifier = 0.0f;
+    if (m_cameraState.m_maxSpeed < 0.0f)
+        m_cameraState.m_maxSpeed = 0.0f;
+
+    if (m_inputController.IsMainGamePadConnected())
+    {
+        const auto& gamepadTracker = m_inputController.GetGamepadTracker();
+        const auto& gamepadState = m_inputController.GetMainGamePadState();
+
+        ProcessGamePadInput(gamepadState, gamepadTracker);
+    }
+
+    if (m_inputController.IsKeyboardConnected())
+    {
+        const auto& keyboardState = m_inputController.GetKeyboardState();
+        const auto& keyboardTracker = m_inputController.GetKeyboardTracker();
+        ProcessKeyboardInput(keyboardState, keyboardTracker);
+    }
+
+    if (m_inputController.IsMouseConnected())
+    {
+        const auto& mouseState = m_inputController.GetMouseState();
+        const auto& mouseTracker = m_inputController.GetMouseTracker();
+        if (mouseTracker.leftButton == DirectX::Mouse::ButtonStateTracker::ButtonState::PRESSED &&
+            (mouseState.x != 0 && mouseState.y != 0) && m_cameraState.m_manualMovement)
+            m_inputController.SetMouseRelativeMode(true);
+        else if (mouseTracker.leftButton == DirectX::Mouse::ButtonStateTracker::ButtonState::RELEASED &&
+                 mouseState.positionMode == DirectX::Mouse::MODE_RELATIVE)
+            m_inputController.SetMouseRelativeMode(false);
+
+        ProcessMouseInput(mouseState);
+    }
+}
+
+void CameraController::UpdateCamera(Camera& camera, float deltaTime, float totalTime)
+{
+    if (m_cameraState.m_manualMovement)
+    {
+        Float3 cameraPos = camera.Position();
+
+        if (m_cameraState.m_speedModifier != 0.0f)
+        {
+            cameraPos += Float3::TransformNormal(m_cameraState.m_direction, camera.CameraToWorld()) *
+                deltaTime * m_cameraState.m_speedModifier *
+                m_cameraState.m_maxSpeed;
+        }
+
+        Float3 cameraTarget = cameraPos + camera.Forward();
+
+        if (m_cameraState.m_speedLookModifier != 0.0f)
+        {
+            cameraTarget += Float3::TransformNormal(m_cameraState.m_target, camera.CameraToWorld()) *
+                deltaTime * m_cameraState.m_speedLookModifier *
+                m_cameraState.m_maxLookSpeed;
+        }
+
+        camera.TranslateLookingAt(cameraPos, cameraTarget);
+    }
+    else
+    {
+        Float3 cameraPos;
+        Float3 cameraTarget = D3D12Basics::Float3::Zero;
+
+        const float longitude = 2.f * (1.0f / D3D12Basics::M_2PI) * totalTime;
+        const float latitude = D3D12Basics::M_PI_4 + D3D12Basics::M_PI_8;
+        const float altitude = 5.0f;
+        cameraPos = D3D12Basics::SphericalToCartersian(longitude, latitude, altitude);
+
+        camera.TranslateLookingAt(cameraPos, cameraTarget);
+    }
+}
+
+AppController::AppController(const InputController& inputController) : m_inputController(inputController)
+{
+
+}
+
+void AppController::Update(CustomWindow& customWindow, bool& quit)
+{
+    quit = false;
+
+    if (m_inputController.IsMainGamePadConnected())
+    {
+        const auto& gamepadTracker = m_inputController.GetGamepadTracker();
+        if (ProcessGamePadInput(gamepadTracker))
+        {
+            quit = true;
+            return;
+        }
+    }
+
+    if (m_inputController.IsKeyboardConnected())
+    {
+        const auto& keyboardState = m_inputController.GetKeyboardState();
+        const auto& keyboardTracker = m_inputController.GetKeyboardTracker();
+        if (ProcessKeyboardInput(keyboardState, keyboardTracker, customWindow))
+        {
+            quit = true;
+            return;
+        }
+    }
+}
+
+bool AppController::ProcessKeyboardInput(const DirectX::Keyboard::State& keyboardState,
+                                         const DirectX::Keyboard::KeyboardStateTracker& keyboardTracker,
+                                         D3D12Basics::CustomWindow& customWindow)
+{
+    if (keyboardState.Escape)
+        return true;
+
+    if (keyboardTracker.IsKeyPressed(DirectX::Keyboard::Space))
+        customWindow.ChangeFullscreenMode();
+
+    return false;
+}
+
+bool AppController::ProcessGamePadInput(const DirectX::GamePad::ButtonStateTracker& gamepadTracker)
+{
+    return gamepadTracker.view;
 }

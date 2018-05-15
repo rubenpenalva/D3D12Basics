@@ -12,7 +12,7 @@
 // directx includes
 #include <d3d12.h>
 
-namespace D3D12Render
+namespace D3D12Basics
 {
     const uint16_t g_constantBufferReadAlignment = 256;
 

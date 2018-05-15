@@ -12,7 +12,7 @@
 // project includes
 #include "d3d12basicsfwd.h"
 
-namespace D3D12Render
+namespace D3D12Basics
 {
     struct D3D12DescriptorHeapAllocation
     {

@@ -7,7 +7,7 @@
 // project includes
 #include "d3d12fwd.h"
 
-namespace D3D12Render
+namespace D3D12Basics
 {
     D3D12_RASTERIZER_DESC CreateDefaultRasterizerState();
 

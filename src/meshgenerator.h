@@ -15,13 +15,13 @@ namespace D3D12Basics
     };
 
     // TODO move vertex composition to compile time?
-    Mesh CreatePlane(const VertexDesc& vertexDesc);
+    MeshData CreatePlane(const VertexDesc& vertexDesc);
 
     // NOTE: Check https://github.com/caosdoar/spheres
     // Review of ways of creating a mesh sphere by @caosdoar
     // TODO fix uv issues
-    Mesh CreateSphere(const VertexDesc& vertexDesc, unsigned int parallelsCount = 2, unsigned int meridiansCount = 4);
+    MeshData CreateSphere(const VertexDesc& vertexDesc, unsigned int parallelsCount = 2, unsigned int meridiansCount = 4);
 
-    Mesh CreateCube(const VertexDesc& vertexDesc,
-                    Cube_TexCoord_MappingType texcoordType = Cube_TexCoord_MappingType::Cube_TexCoord_UV_SingleFace);
+    MeshData CreateCube(const VertexDesc& vertexDesc,
+                        Cube_TexCoord_MappingType texcoordType = Cube_TexCoord_MappingType::Cube_TexCoord_UV_SingleFace);
 }

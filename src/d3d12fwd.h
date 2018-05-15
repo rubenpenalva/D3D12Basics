@@ -25,7 +25,7 @@ typedef ID3D10Blob ID3DBlob;
 struct D3D12_CPU_DESCRIPTOR_HANDLE;
 struct D3D12_FEATURE_DATA_ROOT_SIGNATURE;
 
-namespace D3D12Render
+namespace D3D12Basics
 {
     using IDXGIFactory4Ptr              = Microsoft::WRL::ComPtr<IDXGIFactory4>;
     using IDXGISwapChain3Ptr            = Microsoft::WRL::ComPtr<IDXGISwapChain3>;

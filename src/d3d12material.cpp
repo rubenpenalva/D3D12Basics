@@ -14,20 +14,17 @@
 #include "d3d12gpu.h"
 #include "d3d12utils.h"
 
-using namespace D3D12Render;
 using namespace D3D12Basics;
 
-D3D12Material::D3D12Material(D3D12Render::D3D12Gpu* gpu)
+D3D12Material::D3D12Material(D3D12Gpu& gpu)
 {
-    assert(gpu);
-
     CreatePSO(gpu);
 }
 
 D3D12Material::~D3D12Material()
 {}
 
-void D3D12Material::CreatePSO(D3D12Render::D3D12Gpu* gpu)
+void D3D12Material::CreatePSO(D3D12Gpu& gpu)
 {
     D3D12_DESCRIPTOR_RANGE1 vertexCBVRanges = CreateDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1);
     D3D12_DESCRIPTOR_RANGE1 pixelSRVRanges = CreateDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1);
@@ -53,7 +50,7 @@ void D3D12Material::CreatePSO(D3D12Render::D3D12Gpu* gpu)
 
     ID3DBlobPtr signature;
     AssertIfFailed(D3D12SerializeVersionedRootSignature(&rootSignatureDesc, &signature, nullptr));
-    m_rootSignature = gpu->CreateRootSignature(signature, L"D3D12Material Root Signature");
+    m_rootSignature = gpu.CreateRootSignature(signature, L"D3D12Material Root Signature");
     assert(m_rootSignature);
 
     // Define the vertex input layout.
@@ -125,6 +122,6 @@ void D3D12Material::CreatePSO(D3D12Render::D3D12Gpu* gpu)
     psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
     psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
     psoDesc.SampleDesc.Count = 1;
-    m_pso = gpu->CreatePSO(psoDesc, L"D3D12Material PSO");
+    m_pso = gpu.CreatePSO(psoDesc, L"D3D12Material PSO");
     assert(m_pso);
 }

@@ -14,7 +14,7 @@
 //      without having to add dependencies.
 #include "d3d12gpu.h" 
 
-namespace D3D12Render
+namespace D3D12Basics
 {
     class D3D12SwapChain
     {

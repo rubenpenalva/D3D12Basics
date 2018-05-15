@@ -7,3 +7,7 @@ packages.config
 *AutoRecover*.vcxproj
 *.user
 *.db
+
+src/d3d12pipelinestate\.h
+
+imgui\.ini

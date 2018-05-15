@@ -7,12 +7,14 @@
 // d3d12 fwd decls
 #include "d3d12fwd.h"
 
-namespace D3D12Render
+namespace D3D12Basics
 {
     using D3D12GpuMemoryHandle = uint64_t;
 
     struct D3D12GpuRenderTask;
     struct D3D12BufferAllocation;
+
+    class CustomWindow;
 
     class D3D12Gpu;
     class D3D12Material;
@@ -25,7 +27,9 @@ namespace D3D12Render
     class D3D12GPUDescriptorRingBuffer;
     class D3D12BufferAllocator;
     class D3D12ImGui;
+    class D3D12SceneRender;
 
+    using CustomWindowPtr                   = std::unique_ptr<CustomWindow>;
     using IDXGIAdapters                     = std::vector<IDXGIAdapterPtr>;
     using D3D12MaterialPtr                  = std::unique_ptr<D3D12Material>;
     using D3D12CBV_SV_UAVDescriptorHeapPtr  = std::unique_ptr<D3D12CBV_SV_UAVDescriptorHeap>;
@@ -38,4 +42,5 @@ namespace D3D12Render
     using D3D12GPUDescriptorRingBufferPtr   = std::unique_ptr<D3D12GPUDescriptorRingBuffer>;
     using D3D12BufferAllocatorPtr           = std::unique_ptr<D3D12BufferAllocator>;
     using D3D12ImGuiPtr                     = std::unique_ptr<D3D12ImGui>;
+    using D3D12SceneRenderPtr               = std::unique_ptr<D3D12SceneRender>;
 }

@@ -11,7 +11,6 @@
 // c++ includes
 #include <sstream>
 
-using namespace D3D12Render;
 using namespace D3D12Basics;
 
 D3D12SwapChain::D3D12SwapChain(HWND hwnd, DXGI_FORMAT format, 

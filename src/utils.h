@@ -78,15 +78,15 @@ namespace D3D12Basics
         std::vector<VertexStream> m_streams;
     };
 
-    class Mesh
+    class MeshData
     {
     public:
         static const uint32_t m_maxVertexCount = 0x0000ffff;
 
-        Mesh() {}
+        MeshData() {}
 
-        Mesh(const std::vector<VertexStream>& streams, std::vector<uint16_t>&& indices, 
-             size_t verticesCount, size_t vertexSizeBytes, size_t vertexElementsCount);
+        MeshData(const std::vector<VertexStream>& streams, std::vector<uint16_t>&& indices,
+                 size_t verticesCount, size_t vertexSizeBytes, size_t vertexElementsCount);
 
         size_t VerticesCount() const { return m_verticesCount; }
         size_t VertexSizeBytes() const { return m_vertexSizeBytes; }

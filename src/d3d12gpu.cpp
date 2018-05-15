@@ -12,7 +12,6 @@
 #include <algorithm>
 
 using namespace D3D12Basics;
-using namespace D3D12Render;
 
 namespace
 {
@@ -121,9 +120,9 @@ D3D12GpuMemoryHandle D3D12Gpu::AllocateDynamicMemory(size_t sizeBytes, const std
 
 D3D12GpuMemoryHandle D3D12Gpu::AllocateStaticMemory(const void* data, size_t  sizeBytes, const std::wstring& debugName)
 {
-    D3D12GpuUploadContext uploadContext{ m_device, m_cmdAllocators[0], m_graphicsCmdQueue, m_cmdLists[0] };
+    D3D12GpuUploadContext uploadContext{ m_device, m_cmdAllocators[m_currentFrameIndex], m_graphicsCmdQueue, m_cmdLists[m_currentFrameIndex] };
 
-    ID3D12ResourcePtr resource = D3D12Render::D3D12CreateCommittedBuffer(uploadContext, data, sizeBytes, debugName);
+    ID3D12ResourcePtr resource = D3D12Basics::D3D12CreateCommittedBuffer(uploadContext, data, sizeBytes, debugName);
     assert(resource);
 
     auto encodedHandle = EncodeGpuMemoryHandle(m_nextMemoryHandle++, false);
@@ -135,9 +134,9 @@ D3D12GpuMemoryHandle D3D12Gpu::AllocateStaticMemory(const void* data, size_t  si
 D3D12GpuMemoryHandle D3D12Gpu::AllocateStaticMemory(const std::vector<D3D12_SUBRESOURCE_DATA>& subresources, const D3D12_RESOURCE_DESC& desc,
                                                     const std::wstring& debugName)
 {
-    D3D12GpuUploadContext uploadContext{ m_device, m_cmdAllocators[0], m_graphicsCmdQueue, m_cmdLists[0] };
+    D3D12GpuUploadContext uploadContext{ m_device, m_cmdAllocators[m_currentFrameIndex], m_graphicsCmdQueue, m_cmdLists[m_currentFrameIndex] };
 
-    ID3D12ResourcePtr resource = D3D12Render::D3D12CreateCommittedBuffer(uploadContext, subresources, desc, debugName);
+    ID3D12ResourcePtr resource = D3D12Basics::D3D12CreateCommittedBuffer(uploadContext, subresources, desc, debugName);
     assert(resource);
 
     // TODO this only works for 1d and 2d textures
@@ -414,42 +413,10 @@ void D3D12Gpu::FinishFrame()
     m_gpuDescriptorRingBuffer->NextDescriptorStack();
     m_gpuDescriptorRingBuffer->ClearCurrentStack();
 
-    auto lastRetiredFrameId = m_gpuSync->GetLastRetiredFrameId();
+    
     // TODO destroy retired buffers depending on if the frames they were bound are
     // still in flight.
-    for (auto it = m_retiredAllocations.begin(); it != m_retiredAllocations.end(); )
-    {
-        auto& memAllocation = *it;
-
-        bool completelyRetired = true;
-        if (DecodeGpuMemoryHandle_IsDynamic(memAllocation))
-        {
-            assert(m_dynamicMemoryAllocations.count(memAllocation) == 1);
-            auto& dynamicMemoryAllocation = m_dynamicMemoryAllocations[memAllocation];
-            for (auto i = 0; i < m_framesInFlight; ++i)
-                completelyRetired &= dynamicMemoryAllocation.m_frameId[i] <= lastRetiredFrameId;
-
-            if (completelyRetired)
-            {
-                for (auto i = 0; i < m_framesInFlight; ++i)
-                    m_dynamicMemoryAllocator->Deallocate(dynamicMemoryAllocation.m_allocation[i]);
-            }
-
-            m_dynamicMemoryAllocations.erase(memAllocation);
-        }
-        else
-        {
-            assert(m_staticMemoryAllocations.count(memAllocation) == 1);
-            completelyRetired &= m_staticMemoryAllocations[memAllocation].m_frameId <= lastRetiredFrameId;
-            if (completelyRetired)
-                m_staticMemoryAllocations.erase(memAllocation);
-        }
-
-        if (completelyRetired)
-            it = m_retiredAllocations.erase(it);
-        else
-            ++it;
-    }
+    DestroyRetiredAllocations();
 }
 
 void D3D12Gpu::WaitAll()
@@ -664,4 +631,42 @@ void D3D12Gpu::SetIndexBuffer(D3D12GpuMemoryHandle memHandle, size_t indexBuffer
         static_cast<UINT>(indexBufferSizeBytes), DXGI_FORMAT_R16_UINT
     };
     cmdList->IASetIndexBuffer(&indexBufferView);
+}
+
+void D3D12Gpu::DestroyRetiredAllocations()
+{
+    auto lastRetiredFrameId = m_gpuSync->GetLastRetiredFrameId();
+    for (auto it = m_retiredAllocations.begin(); it != m_retiredAllocations.end(); )
+    {
+        auto& memAllocation = *it;
+
+        bool completelyRetired = true;
+        if (DecodeGpuMemoryHandle_IsDynamic(memAllocation))
+        {
+            assert(m_dynamicMemoryAllocations.count(memAllocation) == 1);
+            auto& dynamicMemoryAllocation = m_dynamicMemoryAllocations[memAllocation];
+            for (auto i = 0; i < m_framesInFlight; ++i)
+                completelyRetired &= dynamicMemoryAllocation.m_frameId[i] <= lastRetiredFrameId;
+
+            if (completelyRetired)
+            {
+                for (auto i = 0; i < m_framesInFlight; ++i)
+                    m_dynamicMemoryAllocator->Deallocate(dynamicMemoryAllocation.m_allocation[i]);
+            }
+
+            m_dynamicMemoryAllocations.erase(memAllocation);
+        }
+        else
+        {
+            assert(m_staticMemoryAllocations.count(memAllocation) == 1);
+            completelyRetired &= m_staticMemoryAllocations[memAllocation].m_frameId <= lastRetiredFrameId;
+            if (completelyRetired)
+                m_staticMemoryAllocations.erase(memAllocation);
+        }
+
+        if (completelyRetired)
+            it = m_retiredAllocations.erase(it);
+        else
+            ++it;
+    }
 }

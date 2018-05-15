@@ -9,12 +9,10 @@
 // thirdparty libraries include
 #include "imgui/imgui.h"
 
-using namespace D3D12Render;
+using namespace D3D12Basics;
 
-D3D12ImGui::D3D12ImGui(D3D12Render::D3D12Gpu* gpu) : m_gpu(gpu), m_vertexBufferSizeBytes(0), m_indexBufferSizeBytes(0)
+D3D12ImGui::D3D12ImGui(D3D12Basics::D3D12Gpu& gpu) : m_gpu(gpu), m_vertexBufferSizeBytes(0), m_indexBufferSizeBytes(0)
 {
-    assert(m_gpu);
-
     // Application init
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -33,7 +31,7 @@ D3D12ImGui::D3D12ImGui(D3D12Render::D3D12Gpu* gpu) : m_gpu(gpu), m_vertexBufferS
         D3D12_MIN_DEPTH, D3D12_MAX_DEPTH
     };
 
-    m_transformation = m_gpu->AllocateDynamicMemory(sizeof(float) * 16, L"Dynamic CB - DearImgui Transformation");
+    m_transformation = m_gpu.AllocateDynamicMemory(sizeof(float) * 16, L"Dynamic CB - DearImgui Transformation");
 }
 
 D3D12ImGui::~D3D12ImGui()
@@ -73,7 +71,7 @@ std::vector<D3D12GpuRenderTask> D3D12ImGui::EndFrame()
             0.0f,               0.0f,               0.5f,       0.0f ,
             (R + L) / (L - R),  (T + B) / (B - T),  0.5f,       1.0f ,
         };
-        m_gpu->UpdateMemory(m_transformation, &mvp[0], sizeof(float) * 16);
+        m_gpu.UpdateMemory(m_transformation, &mvp[0], sizeof(float) * 16);
 
         D3D12ConstantBufferView constants{ 0, m_transformation };
         bindings.m_constantBufferViews.emplace_back(std::move(constants));
@@ -147,10 +145,10 @@ void D3D12ImGui::CreatePSO()
     ID3DBlobPtr errorMessage;
     auto result = D3D12SerializeVersionedRootSignature(&rootSignatureDesc, &signature, &errorMessage);
     if (errorMessage)
-        D3D12Render::OutputDebugBlobErrorMsg(errorMessage);
+        D3D12Basics::OutputDebugBlobErrorMsg(errorMessage);
     D3D12Basics::AssertIfFailed(result);
 
-    m_rootSignature = m_gpu->CreateRootSignature(signature, L"ImGui Root Signature");
+    m_rootSignature = m_gpu.CreateRootSignature(signature, L"ImGui Root Signature");
 
     // Define the vertex input layout.
     const size_t inputElementDescsCount = 3;
@@ -223,7 +221,7 @@ void D3D12ImGui::CreatePSO()
     psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
     psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
     psoDesc.SampleDesc.Count = 1;
-    m_pso = m_gpu->CreatePSO(psoDesc, L"ImGui PSO");
+    m_pso = m_gpu.CreatePSO(psoDesc, L"ImGui PSO");
 }
 
 void D3D12ImGui::CreateFontTexture()
@@ -248,8 +246,8 @@ void D3D12ImGui::CreateFontTexture()
     desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
     desc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
-    D3D12GpuMemoryHandle textureMemHandle = m_gpu->AllocateStaticMemory(subresources, desc, L"ImGui Font Texture");
-    m_textureView = m_gpu->CreateTextureView(textureMemHandle, desc);
+    D3D12GpuMemoryHandle textureMemHandle = m_gpu.AllocateStaticMemory(subresources, desc, L"ImGui Font Texture");
+    m_textureView = m_gpu.CreateTextureView(textureMemHandle, desc);
 }
 
 void D3D12ImGui::CreateVertexBuffer(ImDrawData* drawData)
@@ -261,9 +259,9 @@ void D3D12ImGui::CreateVertexBuffer(ImDrawData* drawData)
     if (m_vertexBufferSizeBytes < vertexBufferSize)
     {
         if (m_vertexBufferSizeBytes != 0)
-            m_gpu->FreeMemory(m_vertexBuffer);
+            m_gpu.FreeMemory(m_vertexBuffer);
 
-        m_vertexBuffer = m_gpu->AllocateDynamicMemory(vertexBufferSize, L"Vertex Buffer - DearImgui");
+        m_vertexBuffer = m_gpu.AllocateDynamicMemory(vertexBufferSize, L"Vertex Buffer - DearImgui");
 
         m_vertexBufferSizeBytes = vertexBufferSize;
     }
@@ -278,9 +276,9 @@ void D3D12ImGui::CreateIndexBuffer(ImDrawData* drawData)
     if (m_indexBufferSizeBytes < indexBufferSize)
     {
         if (m_indexBufferSizeBytes != 0)
-            m_gpu->FreeMemory(m_indexBuffer);
+            m_gpu.FreeMemory(m_indexBuffer);
 
-        m_indexBuffer = m_gpu->AllocateDynamicMemory(indexBufferSize, L"Index Buffer - DearImgui");
+        m_indexBuffer = m_gpu.AllocateDynamicMemory(indexBufferSize, L"Index Buffer - DearImgui");
 
         m_indexBufferSizeBytes = indexBufferSize;
     }
@@ -293,8 +291,8 @@ void D3D12ImGui::UpdateBuffers(ImDrawData* drawData)
     for (int i = 0; i < drawData->CmdListsCount; ++i )
     {
         const ImDrawList* cmdList = drawData->CmdLists[i];
-        m_gpu->UpdateMemory(m_vertexBuffer, cmdList->VtxBuffer.Data, cmdList->VtxBuffer.Size * sizeof(ImDrawVert), vertexBufferOffset);
-        m_gpu->UpdateMemory(m_indexBuffer, cmdList->IdxBuffer.Data, cmdList->IdxBuffer.Size * sizeof(ImDrawIdx), indexBufferOffset);
+        m_gpu.UpdateMemory(m_vertexBuffer, cmdList->VtxBuffer.Data, cmdList->VtxBuffer.Size * sizeof(ImDrawVert), vertexBufferOffset);
+        m_gpu.UpdateMemory(m_indexBuffer, cmdList->IdxBuffer.Data, cmdList->IdxBuffer.Size * sizeof(ImDrawIdx), indexBufferOffset);
 
         vertexBufferOffset += cmdList->VtxBuffer.Size;
         indexBufferOffset += cmdList->IdxBuffer.Size;

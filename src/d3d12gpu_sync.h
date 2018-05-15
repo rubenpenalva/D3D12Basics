@@ -9,7 +9,7 @@
 // directx includes
 #include <d3d12.h>
 
-namespace D3D12Render
+namespace D3D12Basics
 {
     class D3D12GpuSynchronizer
     {

@@ -2,7 +2,7 @@
 
 using namespace D3D12Basics;
 
-Mesh D3D12Basics::CreatePlane(const VertexDesc& vertexDesc)
+MeshData D3D12Basics::CreatePlane(const VertexDesc& vertexDesc)
 {
     std::vector<uint16_t> indices = { 0, 1, 2, 0, 2, 3 };
     const size_t verticesCount = 4;
@@ -55,7 +55,7 @@ Mesh D3D12Basics::CreatePlane(const VertexDesc& vertexDesc)
     }
     const auto vertexElementsCount = streams.VertexElementsCount();
 
-    return Mesh {streams.GetStreams(), std::move(indices), verticesCount, vertexElementsCount * sizeof(float), vertexElementsCount};
+    return MeshData{streams.GetStreams(), std::move(indices), verticesCount, vertexElementsCount * sizeof(float), vertexElementsCount};
 }
 
 // NOTE: Check https://github.com/caosdoar/spheres
@@ -63,7 +63,7 @@ Mesh D3D12Basics::CreatePlane(const VertexDesc& vertexDesc)
 // TODO fix uv issues
 // TODO optimization proposed by @caosdoar: cache the angles to avoid unnecessary calculations
 // TODO use vertexDesc
-Mesh D3D12Basics::CreateSphere(const VertexDesc& /*vertexDesc*/, unsigned int parallelsCount, unsigned int meridiansCount)
+MeshData D3D12Basics::CreateSphere(const VertexDesc& /*vertexDesc*/, unsigned int parallelsCount, unsigned int meridiansCount)
 {
     assert(parallelsCount > 1 && meridiansCount > 3);
 
@@ -157,10 +157,10 @@ Mesh D3D12Basics::CreateSphere(const VertexDesc& /*vertexDesc*/, unsigned int pa
     streams.AddStream(uvElementsCount, std::move(uvs));
     const auto vertexElementsCount = streams.VertexElementsCount();
 
-    return Mesh{ streams.GetStreams(), std::move(indices), verticesCount, vertexElementsCount * sizeof(float), vertexElementsCount };
+    return MeshData{ streams.GetStreams(), std::move(indices), verticesCount, vertexElementsCount * sizeof(float), vertexElementsCount };
 }
 
-Mesh D3D12Basics::CreateCube(const VertexDesc& vertexDesc, Cube_TexCoord_MappingType /*texcoordType*/)
+MeshData D3D12Basics::CreateCube(const VertexDesc& vertexDesc, Cube_TexCoord_MappingType /*texcoordType*/)
 {
     std::vector<uint16_t> indices =
     {
@@ -265,5 +265,5 @@ Mesh D3D12Basics::CreateCube(const VertexDesc& vertexDesc, Cube_TexCoord_Mapping
 
     const auto vertexElementsCount = streams.VertexElementsCount();
 
-    return Mesh{ streams.GetStreams(), std::move(indices), verticesCount, vertexElementsCount * sizeof(float), vertexElementsCount };
+    return MeshData{ streams.GetStreams(), std::move(indices), verticesCount, vertexElementsCount * sizeof(float), vertexElementsCount };
 }

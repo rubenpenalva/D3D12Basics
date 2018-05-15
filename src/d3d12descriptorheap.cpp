@@ -5,7 +5,6 @@
 #include "utils.h"
 
 using namespace D3D12Basics;
-using namespace D3D12Render;
 
 namespace
 {

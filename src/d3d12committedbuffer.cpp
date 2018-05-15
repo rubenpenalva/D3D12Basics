@@ -1,6 +1,6 @@
 #include "d3d12committedbuffer.h"
 
-using namespace D3D12Render;
+using namespace D3D12Basics;
 
 // project libs
 #include "utils.h"
@@ -11,8 +11,6 @@ using namespace D3D12Render;
 
 // directx
 #include <d3d12.h>
-
-using namespace D3D12Basics;
 
 namespace
 {
@@ -243,7 +241,7 @@ namespace
     }
 }
 
-ID3D12ResourcePtr D3D12Render::D3D12CreateCommittedDepthStencil(ID3D12DevicePtr device, unsigned int width, unsigned int height, 
+ID3D12ResourcePtr D3D12Basics::D3D12CreateCommittedDepthStencil(ID3D12DevicePtr device, unsigned int width, unsigned int height, 
                                                                 DXGI_FORMAT format, const D3D12_CLEAR_VALUE* clearValue, 
                                                                 const std::wstring& debugName)
 {
@@ -257,7 +255,7 @@ ID3D12ResourcePtr D3D12Render::D3D12CreateCommittedDepthStencil(ID3D12DevicePtr 
     return resource;
 }
 
-ID3D12ResourcePtr D3D12Render::D3D12CreateCommittedBuffer(const D3D12GpuUploadContext& uploadContext,
+ID3D12ResourcePtr D3D12Basics::D3D12CreateCommittedBuffer(const D3D12GpuUploadContext& uploadContext,
                                                          const void* data, size_t dataSizeBytes,
                                                          const std::wstring& resourceName)
 {
@@ -269,7 +267,7 @@ ID3D12ResourcePtr D3D12Render::D3D12CreateCommittedBuffer(const D3D12GpuUploadCo
     return UploadInternal(uploadContext, subresources, resourceDesc, resourceName, CopyType::Buffer);
 }
 
-ID3D12ResourcePtr D3D12Render::D3D12CreateCommittedBuffer(const D3D12GpuUploadContext& uploadContext,
+ID3D12ResourcePtr D3D12Basics::D3D12CreateCommittedBuffer(const D3D12GpuUploadContext& uploadContext,
                                                           const std::vector<D3D12_SUBRESOURCE_DATA>& subresources, 
                                                           const D3D12_RESOURCE_DESC& desc,
                                                           const std::wstring& resourceName)

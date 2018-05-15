@@ -96,13 +96,14 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\d3d12basicsengine.cpp" />
     <ClCompile Include="src\d3d12committedbuffer.cpp" />
     <ClCompile Include="src\d3d12descriptorheap.cpp" />
     <ClCompile Include="src\d3d12gpu.cpp" />
-    <ClCompile Include="src\d3d12backendrender.cpp" />
     <ClCompile Include="src\d3d12gpu_sync.cpp" />
     <ClCompile Include="src\d3d12imgui.cpp" />
     <ClCompile Include="src\d3d12material.cpp" />
+    <ClCompile Include="src\d3d12scenerender.cpp" />
     <ClCompile Include="src\d3d12swapchain.cpp" />
     <ClCompile Include="src\d3d12utils.cpp" />
     <ClCompile Include="src\main.cpp" />
@@ -119,13 +120,14 @@
     <ClInclude Include="src\d3d12descriptorheap.h" />
     <ClInclude Include="src\d3d12fwd.h" />
     <ClInclude Include="src\d3d12gpu.h" />
-    <ClInclude Include="src\d3d12backendrender.h" />
     <ClInclude Include="src\d3d12gpu_sync.h" />
     <ClInclude Include="src\d3d12imgui.h" />
     <ClInclude Include="src\d3d12material.h" />
+    <ClInclude Include="src\d3d12scenerender.h" />
     <ClInclude Include="src\d3d12swapchain.h" />
     <ClInclude Include="src\d3d12utils.h" />
     <ClInclude Include="src\meshgenerator.h" />
+    <ClInclude Include="src\d3d12basicsengine.h" />
     <ClInclude Include="src\scene.h" />
     <ClInclude Include="src\utils.h" />
     <ClInclude Include="thirdparty\imgui\imconfig.h" />

@@ -82,6 +82,8 @@ D3D12BasicsEngine::~D3D12BasicsEngine()
 
 void D3D12BasicsEngine::BeginFrame()
 {
+    m_beginToEndDeltaTime = m_beginToEndTimer.ElapsedTime();
+
     m_beginToEndTimer.Mark();
 
     m_deltaTime = m_endToEndTimer.ElapsedTime();
@@ -212,19 +214,14 @@ void D3D12BasicsEngine::ShowFrameStats()
                                          ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
                                          ImGuiWindowFlags_NoNav;
 
-    if (ImGui::Begin("Example: Fixed Overlay", nullptr, windowFlags))
-    {
-        ImGui::Text("Simple overlay\nin the corner of the screen.\n(right-click to change position)");
-        ImGui::Separator();
-        ImGui::Text("Mouse Position: (%.1f,%.1f)", ImGui::GetIO().MousePos.x, ImGui::GetIO().MousePos.y);
-        if (ImGui::BeginPopupContextWindow())
-        {
-            if (ImGui::MenuItem("Top-left", NULL, corner == 0)) corner = 0;
-            if (ImGui::MenuItem("Top-right", NULL, corner == 1)) corner = 1;
-            if (ImGui::MenuItem("Bottom-left", NULL, corner == 2)) corner = 2;
-            if (ImGui::MenuItem("Bottom-right", NULL, corner == 3)) corner = 3;
-            ImGui::EndPopup();
-        }
-        ImGui::End();
-    }
+    auto frameStats = m_gpu.GetFrameStats();
+
+    ImGui::Begin("Example: Fixed Overlay", nullptr, windowFlags);
+    ImGui::Text("CPU: begin to end %.3f ms", m_beginToEndDeltaTime * 1000.0f);
+    ImGui::Text("CPU: end to end %.3f ms", m_deltaTime * 1000.0f);
+    ImGui::Text("CPU: present %.3f ms", frameStats.m_presentTime * 1000.0f);
+    ImGui::Text("CPU: waitfor present %.3f ms", frameStats.m_waitForPresentTime * 1000.0f);
+    ImGui::Text("CPU: waitfor fence %.3f ms", frameStats.m_waitForFenceTime * 1000.0f);
+    ImGui::Text("CPU: frame time %.3f ms", frameStats.m_frameTime * 1000.0f);
+    ImGui::End();
 }

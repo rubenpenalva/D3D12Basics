@@ -403,7 +403,6 @@ void D3D12Gpu::FinishFrame()
         m_swapChain->WaitForPresent();
     }
     g_gpuViewMarkerPostWaitFrame.Mark();
-    m_frameTime.Mark();
 
     // Note: we can have x frames in flight and y backbuffers
     m_currentBackbufferIndex = m_swapChain->GetCurrentBackBufferIndex();
@@ -413,10 +412,13 @@ void D3D12Gpu::FinishFrame()
     m_gpuDescriptorRingBuffer->NextDescriptorStack();
     m_gpuDescriptorRingBuffer->ClearCurrentStack();
 
-    
     // TODO destroy retired buffers depending on if the frames they were bound are
     // still in flight.
     DestroyRetiredAllocations();
+
+    m_frameTime.Mark();
+
+    UpdateFrameStats();
 }
 
 void D3D12Gpu::WaitAll()
@@ -669,4 +671,12 @@ void D3D12Gpu::DestroyRetiredAllocations()
         else
             ++it;
     }
+}
+
+void D3D12Gpu::UpdateFrameStats()
+{
+    m_frameStats.m_presentTime = m_swapChain->GetPresentTime();
+    m_frameStats.m_waitForPresentTime = m_swapChain->GetWaitForPresentTime();
+    m_frameStats.m_waitForFenceTime = m_gpuSync->GetWaitForFenceTime();
+    m_frameStats.m_frameTime = m_frameTime.ElapsedTime();
 }

@@ -169,13 +169,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
         {
             d3d12Engine.BeginFrame();
 
-            ImGui::Begin("About Dear ImGui");
-            ImGui::Text("Dear ImGui, %s", ImGui::GetVersion());
-            ImGui::Separator();
-            ImGui::Text("By Omar Cornut and all dear imgui contributors.");
-            ImGui::Text("Dear ImGui is licensed under the MIT License, see LICENSE for more information.");
-            ImGui::End();
-
             d3d12Engine.Update(UpdateScene);
 
             d3d12Engine.EndFrame();

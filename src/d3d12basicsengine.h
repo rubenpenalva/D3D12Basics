@@ -64,6 +64,7 @@ namespace D3D12Basics
         bool m_quit;
         float m_totalTime;
         float m_deltaTime;
+        float m_beginToEndDeltaTime;
 
         D3D12ImGuiPtr m_imgui;
 

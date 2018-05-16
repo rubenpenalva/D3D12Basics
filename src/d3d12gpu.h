@@ -22,6 +22,14 @@ namespace D3D12Basics
 {
     using DisplayModes = std::vector<DXGI_MODE_DESC1>;
 
+    struct FrameStats
+    {
+        float m_presentTime;
+        float m_waitForPresentTime;
+        float m_waitForFenceTime;
+        float m_frameTime;
+    };
+
     // TODO store pointers instead of values. Less map accesses>!!!!
     struct D3D12GpuMemoryView
     {
@@ -133,6 +141,9 @@ namespace D3D12Basics
 
         void OnResize(const D3D12Basics::Resolution& resolution);
 
+        // Others
+        const FrameStats& GetFrameStats() const { return m_frameStats; }
+
     private:
         struct StaticMemoryAlloc
         {
@@ -187,6 +198,8 @@ namespace D3D12Basics
         std::vector<D3D12GpuMemoryHandle>                               m_retiredAllocations;
         D3D12BufferAllocatorPtr                                         m_dynamicMemoryAllocator;
 
+        FrameStats m_frameStats;
+
         DisplayModes EnumerateDisplayModes(DXGI_FORMAT format);
 
         DXGI_MODE_DESC1 FindClosestDisplayModeMatch(DXGI_FORMAT format, const D3D12Basics::Resolution& resolution);
@@ -212,5 +225,7 @@ namespace D3D12Basics
                             ID3D12GraphicsCommandListPtr cmdList);
 
         void DestroyRetiredAllocations();
+
+        void UpdateFrameStats();
     };
 }

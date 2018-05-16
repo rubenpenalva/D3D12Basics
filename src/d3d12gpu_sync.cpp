@@ -36,6 +36,7 @@ bool D3D12GpuSynchronizer::Wait()
 {
     bool hasWaitedForFence = false;
     m_completedFramesCount = 0;
+    m_waitTime = 0;
 
     SignalWork();
 

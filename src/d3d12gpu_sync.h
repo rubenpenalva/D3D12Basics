@@ -25,6 +25,8 @@ namespace D3D12Basics
 
         uint64_t GetNextFrameId() const { return m_nextFenceValue; }
 
+        float GetWaitForFenceTime() const { return m_waitTime; }
+
     private:
         ID3D12CommandQueuePtr m_cmdQueue;
 

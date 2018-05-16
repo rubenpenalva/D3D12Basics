@@ -72,5 +72,7 @@ namespace D3D12Basics
         void ProcessUserEvents();
 
         void LoadSceneData(const std::wstring& dataWorkingPath);
+
+        void ShowFrameStats();
     };
 }

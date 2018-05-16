@@ -100,7 +100,8 @@ std::vector<D3D12GpuRenderTask> D3D12ImGui::EndFrame()
         for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
         {
             const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
-            const D3D12_RECT scissorRect = { (LONG)pcmd->ClipRect.x, (LONG)pcmd->ClipRect.y, (LONG)pcmd->ClipRect.z, (LONG)pcmd->ClipRect.w };
+            const D3D12_RECT scissorRect = { (LONG)pcmd->ClipRect.x, (LONG)pcmd->ClipRect.y, 
+                                             (LONG)pcmd->ClipRect.z, (LONG)pcmd->ClipRect.w };
 
             D3D12GpuRenderTask renderTask = commonRenderTask;
             renderTask.m_scissorRect = scissorRect;
@@ -267,6 +268,7 @@ void D3D12ImGui::CreateVertexBuffer(ImDrawData* drawData)
     }
 }
 
+
 void D3D12ImGui::CreateIndexBuffer(ImDrawData* drawData)
 {
     const auto indicesCount = drawData->TotalIdxCount;
@@ -286,15 +288,15 @@ void D3D12ImGui::CreateIndexBuffer(ImDrawData* drawData)
 
 void D3D12ImGui::UpdateBuffers(ImDrawData* drawData)
 {
-    int vertexBufferOffset = 0;
-    int indexBufferOffset = 0;
+    int vertexBufferOffsetBytes = 0;
+    int indexBufferOffsetBytes = 0;
     for (int i = 0; i < drawData->CmdListsCount; ++i )
     {
         const ImDrawList* cmdList = drawData->CmdLists[i];
-        m_gpu.UpdateMemory(m_vertexBuffer, cmdList->VtxBuffer.Data, cmdList->VtxBuffer.Size * sizeof(ImDrawVert), vertexBufferOffset);
-        m_gpu.UpdateMemory(m_indexBuffer, cmdList->IdxBuffer.Data, cmdList->IdxBuffer.Size * sizeof(ImDrawIdx), indexBufferOffset);
+        m_gpu.UpdateMemory(m_vertexBuffer, cmdList->VtxBuffer.Data, cmdList->VtxBuffer.Size * sizeof(ImDrawVert), vertexBufferOffsetBytes);
+        m_gpu.UpdateMemory(m_indexBuffer, cmdList->IdxBuffer.Data, cmdList->IdxBuffer.Size * sizeof(ImDrawIdx), indexBufferOffsetBytes);
 
-        vertexBufferOffset += cmdList->VtxBuffer.Size;
-        indexBufferOffset += cmdList->IdxBuffer.Size;
+        vertexBufferOffsetBytes += cmdList->VtxBuffer.Size * sizeof(ImDrawVert);
+        indexBufferOffsetBytes += cmdList->IdxBuffer.Size * sizeof(ImDrawIdx);
     }
 }

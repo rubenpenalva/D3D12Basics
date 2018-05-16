@@ -13,8 +13,9 @@
 
 using namespace D3D12Basics;
 
+#define DONT_LOAD_SCENE (0)
 #define LOAD_ONLY_PLANE (0)
-#define LOAD_SPONZA (1 && !LOAD_ONLY_PLANE)
+#define LOAD_SPONZA (1 && !LOAD_ONLY_PLANE && !DONT_LOAD_SCENE)
 
 namespace
 {
@@ -63,9 +64,10 @@ namespace
 
     Scene CreateScene()
     {
+        Scene scene;
+#if !DONT_LOAD_SCENE
         std::vector<Model> models(g_modelsCount);
         size_t modelId = 0;
-
         // Plane
         {
             D3D12Basics::Matrix44 localToWorld = D3D12Basics::Matrix44::CreateScale(10.0f) * D3D12Basics::Matrix44::CreateRotationX(D3D12Basics::M_PI_2);
@@ -102,19 +104,18 @@ namespace
 
             models[g_cubesModelStartID + i] = Model{ converter.str().c_str(), Model::Type::Cube, modelId++, localToWorld, cubeMaterial};
         }
-#endif
-        Scene scene;
+#endif // LOAD_ONLY_PLANE
 #if LOAD_SPONZA
         scene.m_sceneFile = g_sponzaModel;
 #endif
         scene.m_models = std::move(models);
-
+#endif // DONT_LOAD_SCENE
         return scene;
     }
 
     void UpdateScene(Scene& scene, float totalTime)
     {
-#if !LOAD_ONLY_PLANE
+#if !DONT_LOAD_SCENE && !LOAD_ONLY_PLANE
         // Spheres
         for (size_t i = 0; i < g_spheresCount; ++i)
         {

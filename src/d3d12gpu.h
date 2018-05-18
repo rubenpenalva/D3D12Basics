@@ -28,6 +28,7 @@ namespace D3D12Basics
         float m_waitForPresentTime;
         float m_waitForFenceTime;
         float m_frameTime;
+        float m_cmdListTime;
     };
 
     // TODO store pointers instead of values. Less map accesses>!!!!
@@ -167,6 +168,7 @@ namespace D3D12Basics
         ID3D12DevicePtr m_device;
 
         ID3D12CommandQueuePtr                       m_graphicsCmdQueue;
+        UINT64                                      m_cmdQueueTimestampFrequency;
         ID3D12GraphicsCommandListPtr                m_cmdLists[m_framesInFlight];
         ID3D12CommandAllocatorPtr                   m_cmdAllocators[m_framesInFlight];
         D3D12GpuSynchronizerPtr                     m_gpuSync;
@@ -198,7 +200,9 @@ namespace D3D12Basics
         std::vector<D3D12GpuMemoryHandle>                               m_retiredAllocations;
         D3D12BufferAllocatorPtr                                         m_dynamicMemoryAllocator;
 
-        FrameStats m_frameStats;
+        FrameStats                              m_frameStats;
+        Microsoft::WRL::ComPtr<ID3D12QueryHeap> m_timestampQueryHeap;
+        ID3D12ResourcePtr                       m_timestampBuffer;
 
         DisplayModes EnumerateDisplayModes(DXGI_FORMAT format);
 
@@ -227,5 +231,13 @@ namespace D3D12Basics
         void DestroyRetiredAllocations();
 
         void UpdateFrameStats();
+
+        void CreateFrameTimestampInfrastructure();
+
+        void BeginFrameTimestamp(ID3D12GraphicsCommandListPtr cmdList);
+
+        void EndFrameTimestamp(ID3D12GraphicsCommandListPtr cmdList);
+
+        void UpdateFrameTimestamp();
     };
 }

@@ -223,5 +223,6 @@ void D3D12BasicsEngine::ShowFrameStats()
     ImGui::Text("CPU: waitfor present %.3f ms", frameStats.m_waitForPresentTime * 1000.0f);
     ImGui::Text("CPU: waitfor fence %.3f ms", frameStats.m_waitForFenceTime * 1000.0f);
     ImGui::Text("CPU: frame time %.3f ms", frameStats.m_frameTime * 1000.0f);
+    ImGui::Text("GPU: cmdlist time %.3f ms", frameStats.m_cmdListTime * 1000.0f);
     ImGui::End();
 }

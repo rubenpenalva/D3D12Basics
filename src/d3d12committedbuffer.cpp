@@ -241,6 +241,24 @@ namespace
     }
 }
 
+ID3D12ResourcePtr D3D12Basics::D3D12CreateCommittedReadBackBuffer(ID3D12DevicePtr device, size_t sizeBytes)
+{
+    D3D12_HEAP_PROPERTIES resourceHeapProps;
+    resourceHeapProps.Type = D3D12_HEAP_TYPE_READBACK;
+    resourceHeapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    resourceHeapProps.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    resourceHeapProps.CreationNodeMask = 1;
+    resourceHeapProps.VisibleNodeMask = 1;
+
+    D3D12_RESOURCE_DESC resourceDesc = CreateBufferDesc(sizeBytes);
+
+    ID3D12ResourcePtr resource;
+    AssertIfFailed(device->CreateCommittedResource(&resourceHeapProps, D3D12_HEAP_FLAG_NONE, &resourceDesc, D3D12_RESOURCE_STATE_COPY_DEST,
+                                                   nullptr, IID_PPV_ARGS(&resource)));
+
+    return resource;
+}
+
 ID3D12ResourcePtr D3D12Basics::D3D12CreateCommittedDepthStencil(ID3D12DevicePtr device, unsigned int width, unsigned int height, 
                                                                 DXGI_FORMAT format, const D3D12_CLEAR_VALUE* clearValue, 
                                                                 const std::wstring& debugName)

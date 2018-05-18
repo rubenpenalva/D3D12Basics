@@ -63,6 +63,8 @@ D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_currentBackbufferI
 
     CreateDescriptorHeaps();
 
+    CreateFrameTimestampInfrastructure();
+
     m_dynamicMemoryAllocator = std::make_unique<D3D12BufferAllocator>(m_device, g_64kb);
     assert(m_dynamicMemoryAllocator);
 
@@ -242,6 +244,8 @@ void D3D12Gpu::ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderT
     AssertIfFailed(cmdAllocator->Reset());
     AssertIfFailed(cmdList->Reset(cmdAllocator.Get(), nullptr));
 
+    BeginFrameTimestamp(cmdList);
+
     cmdList->ResourceBarrier(1, &m_swapChain->Transition(m_currentBackbufferIndex, D3D12SwapChain::Present_To_RenderTarget));
 
     // Execute the graphics commands
@@ -366,6 +370,9 @@ void D3D12Gpu::ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderT
     }
 
     cmdList->ResourceBarrier(1, &m_swapChain->Transition(m_currentBackbufferIndex, D3D12SwapChain::RenderTarget_To_Present));
+
+    EndFrameTimestamp(cmdList);
+
     AssertIfFailed(cmdList->Close());
 
     // Execute the command list.
@@ -495,6 +502,8 @@ void D3D12Gpu::CreateCommandInfrastructure()
     D3D12_COMMAND_QUEUE_DESC queueDesc{};
     AssertIfFailed(m_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&m_graphicsCmdQueue)));
     assert(m_graphicsCmdQueue);
+
+    AssertIfFailed(m_graphicsCmdQueue->GetTimestampFrequency(&m_cmdQueueTimestampFrequency));
 
     for (unsigned int i = 0; i < D3D12Gpu::m_framesInFlight; ++i)
     {
@@ -679,4 +688,56 @@ void D3D12Gpu::UpdateFrameStats()
     m_frameStats.m_waitForPresentTime = m_swapChain->GetWaitForPresentTime();
     m_frameStats.m_waitForFenceTime = m_gpuSync->GetWaitForFenceTime();
     m_frameStats.m_frameTime = m_frameTime.ElapsedTime();
+
+    UpdateFrameTimestamp();
+}
+
+void D3D12Gpu::CreateFrameTimestampInfrastructure()
+{
+    D3D12_QUERY_HEAP_DESC queryHeapDesc;
+    queryHeapDesc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
+    queryHeapDesc.Count = 2 * m_framesInFlight; // one at the beginning of the cmd list and another one at the end per frame.
+    queryHeapDesc.NodeMask = 0;
+
+    AssertIfFailed(m_device->CreateQueryHeap(&queryHeapDesc, IID_PPV_ARGS(&m_timestampQueryHeap)));
+
+    m_timestampBuffer = D3D12CreateCommittedReadBackBuffer(m_device, queryHeapDesc.Count * sizeof(uint64_t));
+    assert(m_timestampBuffer);
+}
+
+void D3D12Gpu::BeginFrameTimestamp(ID3D12GraphicsCommandListPtr cmdList)
+{
+    const UINT timestampQueryHeapIndex = 2 * m_currentFrameIndex;
+    cmdList->EndQuery(m_timestampQueryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, timestampQueryHeapIndex);
+}
+
+void D3D12Gpu::EndFrameTimestamp(ID3D12GraphicsCommandListPtr cmdList)
+{
+    const UINT timestampQueryHeapIndex = 2 * m_currentFrameIndex;
+
+    cmdList->EndQuery(m_timestampQueryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, timestampQueryHeapIndex + 1);
+    cmdList->ResolveQueryData(m_timestampQueryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, timestampQueryHeapIndex, 
+                              2, m_timestampBuffer.Get(), timestampQueryHeapIndex * sizeof(uint64_t));
+}
+
+void D3D12Gpu::UpdateFrameTimestamp()
+{
+    D3D12_RANGE readRange = {};
+    readRange.Begin = 2 * m_currentFrameIndex * sizeof(uint64_t);
+    readRange.End = readRange.Begin + 2 * sizeof(uint64_t);
+
+    void* pData = nullptr;
+    AssertIfFailed(m_timestampBuffer->Map(0, &readRange, &pData));
+
+    const uint64_t* pTimestamps = reinterpret_cast<uint64_t*>(static_cast<uint8_t*>(pData) + readRange.Begin);
+    const uint64_t timeStampDelta = pTimestamps[1] - pTimestamps[0];
+
+    // Unmap with an empty range (written range).
+    D3D12_RANGE emptyRange = {};
+    emptyRange.Begin = emptyRange.End = 0;
+    m_timestampBuffer->Unmap(0, &emptyRange);
+
+    // Calculate the GPU execution time in milliseconds.
+    const float gpuTimeS = (timeStampDelta / static_cast<float>(m_cmdQueueTimestampFrequency));
+    m_frameStats.m_cmdListTime = gpuTimeS;
 }

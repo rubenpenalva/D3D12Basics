@@ -36,6 +36,8 @@ namespace D3D12Basics
         ID3D12GraphicsCommandListPtr    m_cmdList;
     };
 
+    ID3D12ResourcePtr D3D12CreateCommittedReadBackBuffer(ID3D12DevicePtr device, size_t sizeBytes);
+
     ID3D12ResourcePtr D3D12CreateCommittedDepthStencil(ID3D12DevicePtr device, unsigned int width, unsigned int height, DXGI_FORMAT format,
                                                        const D3D12_CLEAR_VALUE* clearValue, const std::wstring& debugName);
 

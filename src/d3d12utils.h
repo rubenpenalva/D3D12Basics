@@ -9,14 +9,16 @@
 
 namespace D3D12Basics
 {
+    ID3DBlobPtr D3D12CompileBlob(const char* src, const char* target, const char* mainName,
+                                 unsigned int flags = 0);
+
     D3D12_RASTERIZER_DESC CreateDefaultRasterizerState();
+    D3D12_RASTERIZER_DESC CreateRasterizerState_NoDepthClip();
 
     // TODO: is there a more elegant way of constructing a D3D12_BLEND_DESC object?
     D3D12_BLEND_DESC CreateDefaultBlendState();
 
     D3D12_BLEND_DESC CreateAlphaBlendState();
-
-    ID3DBlobPtr CompileShader(const char* src, const char* mainName, const char* shaderModel, unsigned int compileFlags);
 
     D3D12_DESCRIPTOR_RANGE1 CreateDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE rangeType, unsigned int descriptorsCount);
 
@@ -32,4 +34,6 @@ namespace D3D12Basics
     D3D12_STATIC_SAMPLER_DESC CreateStaticLinearSamplerDesc();
 
     void OutputDebugBlobErrorMsg(ID3DBlobPtr errorMsg);
+
+    D3D12_RESOURCE_DESC CreateTexture2DDesc(unsigned int width, unsigned int height, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags);
 }

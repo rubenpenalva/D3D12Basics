@@ -18,9 +18,10 @@ D3D12SwapChain::D3D12SwapChain(HWND hwnd, DXGI_FORMAT format,
                                IDXGIFactory4Ptr factory, ID3D12DevicePtr device,
                                ID3D12CommandQueuePtr commandQueue,
                                bool waitForPresentEnabled)  :   m_device(device),
-                                                                m_descriptorHeap(device, D3D12Gpu::m_backBuffersCount),
+                                                                m_descriptorPool(device, D3D12Gpu::m_backBuffersCount),
                                                                 m_resolution(resolution),
-                                                                m_waitForPresentEnabled(waitForPresentEnabled)
+                                                                m_waitForPresentEnabled(waitForPresentEnabled),
+                                                                m_presentTimer(10), m_waitForPresentTimer(10)
 {
     assert(factory);
     assert(device);
@@ -81,7 +82,7 @@ void D3D12SwapChain::WaitForPresent()
 {
     m_waitForPresentTimer.Mark();
 
-    AssertIfFailed(WaitForSingleObject(m_frameLatencyWaitableObject, INFINITE));
+    AssertIfFailed(WaitForSingleObject(m_frameLatencyWaitableObject, INFINITE), WAIT_FAILED);
 
     m_waitForPresentTimer.Mark();
 }
@@ -99,21 +100,16 @@ void D3D12SwapChain::ToggleFullScreen()
     m_resolution = { swapChainDesc.Width, swapChainDesc.Height };
 }
 
-unsigned int D3D12SwapChain::GetCurrentBackBufferIndex() const
-{ 
-    return m_swapChain->GetCurrentBackBufferIndex(); 
+D3D12_RESOURCE_BARRIER& D3D12SwapChain::Transition(TransitionType transitionType)
+{
+    const auto currentBackBufferIndex = m_swapChain->GetCurrentBackBufferIndex();
+    return m_transitions[transitionType][currentBackBufferIndex];
 }
 
-D3D12_RESOURCE_BARRIER& D3D12SwapChain::Transition(unsigned int backBufferIndex, TransitionType transitionType)
+const D3D12_CPU_DESCRIPTOR_HANDLE& D3D12SwapChain::RTV() const
 {
-    assert(backBufferIndex < D3D12Gpu::m_backBuffersCount);
-
-    return m_transitions[transitionType][backBufferIndex];
-}
-
-D3D12_CPU_DESCRIPTOR_HANDLE D3D12SwapChain::RTV(unsigned int backBufferIndex)
-{
-    return m_backbuffersRTVHandles[backBufferIndex]->m_cpuHandle;
+    const auto currentBackBufferIndex = m_swapChain->GetCurrentBackBufferIndex();
+    return m_backbuffersRTVHandles[currentBackBufferIndex]->m_cpuHandle;
 }
 
 void D3D12SwapChain::Resize(const DXGI_MODE_DESC1& mode)
@@ -144,7 +140,8 @@ void D3D12SwapChain::CreateBackBuffers()
         converter << L"Back buffer " << i;
         m_backbufferResources[i]->SetName(converter.str().c_str());
 
-        m_backbuffersRTVHandles[i] = m_descriptorHeap.CreateRTV(m_backbufferResources[i].Get(), m_backbuffersRTVHandles[i]);
+        m_backbuffersRTVHandles[i] = m_descriptorPool.CreateRTV(m_backbufferResources[i].Get(), m_backbuffersRTVHandles[i]);
+        assert(m_backbuffersRTVHandles[i]);
 
         // Create the transitions
         m_transitions[Present_To_RenderTarget][i].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -169,7 +166,8 @@ void D3D12SwapChain::UpdateBackBuffers()
         converter << L"Back buffer " << i;
         m_backbufferResources[i]->SetName(converter.str().c_str());
 
-        m_backbuffersRTVHandles[i] = m_descriptorHeap.CreateRTV(m_backbufferResources[i].Get(), m_backbuffersRTVHandles[i]);
+        m_backbuffersRTVHandles[i] = m_descriptorPool.CreateRTV(m_backbufferResources[i].Get(), m_backbuffersRTVHandles[i]);
+        assert(m_backbuffersRTVHandles[i]);
 
         // Update backbuffer resources
         m_transitions[Present_To_RenderTarget][i].Transition.pResource = m_backbufferResources[i].Get();

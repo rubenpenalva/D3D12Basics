@@ -4,11 +4,12 @@
 #include "utils.h"
 #include "d3d12basicsfwd.h"
 #include "d3d12descriptorheap.h"
-#include "d3d12committedbuffer.h"
+#include "d3d12committedresources.h"
 
 // c++ includes
 #include <vector>
 #include <list>
+#include <array>
 
 // windows includes
 #include "d3d12fwd.h"
@@ -22,6 +23,13 @@ namespace D3D12Basics
 {
     using DisplayModes = std::vector<DXGI_MODE_DESC1>;
 
+    enum TransitionType
+    {
+        Present_To_RenderTarget,
+        RenderTarget_To_Present,
+        TransitionType_COUNT
+    };
+
     struct FrameStats
     {
         float m_presentTime;
@@ -31,11 +39,36 @@ namespace D3D12Basics
         float m_cmdListTime;
     };
 
-    // TODO store pointers instead of values. Less map accesses>!!!!
-    struct D3D12GpuMemoryView
+    struct D3D12GpuHandle
     {
-        D3D12GpuMemoryHandle                        m_memHandle;
-        std::vector<D3D12DescriptorHeapHandlePtr>   m_descriptors;
+        using HandleType = size_t;
+        static const HandleType m_invalidId = std::numeric_limits<HandleType>::max();
+        static const HandleType m_nullId = std::numeric_limits<HandleType>::max() - 1;
+        static bool IsValid(HandleType id) { return id != m_invalidId; }
+        static bool IsNull(HandleType id) { return id == m_nullId; }
+
+        HandleType m_id = m_invalidId;
+        bool IsValid() const { return m_id != m_invalidId; }
+        bool IsNull() const { return m_id == m_nullId; }
+        void Reset() { m_id = m_invalidId; }
+    };
+
+    struct D3D12GpuMemoryHandle : public D3D12GpuHandle {};
+    struct D3D12GpuViewHandle : public D3D12GpuHandle {};
+
+    struct GpuTexture
+    {
+        D3D12GpuMemoryHandle    m_memHandle;
+
+        D3D12GpuViewHandle      m_srv;
+        D3D12GpuViewHandle      m_dsv;
+    };
+
+    struct Buffer
+    {
+        D3D12GpuMemoryHandle    m_memHandle;
+
+        D3D12GpuViewHandle      m_cbv;
     };
 
     struct D3D1232BitConstants
@@ -50,33 +83,14 @@ namespace D3D12Basics
     };
     struct D3D12DescriptorTable
     {
-        size_t                          m_bindingSlot;
-        std::vector<D3D12GpuMemoryView> m_views;
+        size_t                              m_bindingSlot;
+        std::vector<D3D12GpuViewHandle>     m_views;
     };
     struct D3D12Bindings
     {
         std::vector<D3D1232BitConstants>        m_32BitConstants;
         std::vector<D3D12ConstantBufferView>    m_constantBufferViews;
         std::vector<D3D12DescriptorTable>       m_descriptorTables;
-    };
-
-    struct D3D12GpuRenderTask
-    {
-        ID3D12PipelineStatePtr  m_pipelineState;
-        ID3D12RootSignaturePtr  m_rootSignature;
-        D3D12Bindings           m_bindings;
-        D3D12_VIEWPORT          m_viewport;
-        RECT                    m_scissorRect;
-        D3D12GpuMemoryHandle    m_vertexBufferId;
-        D3D12GpuMemoryHandle    m_indexBufferId;
-        size_t                  m_vertexBufferSizeBytes;
-        size_t                  m_vertexSizeBytes;
-        size_t                  m_vertexOffset;
-        size_t                  m_indexBufferSizeBytes;
-        size_t                  m_indexCountPerInstance;
-        size_t                  m_indexOffset;
-        bool                    m_clear;
-        float                   m_clearColor[4];
     };
 
     // Creates a d3d12 device bound to the main adapter and the main output
@@ -99,7 +113,7 @@ namespace D3D12Basics
         ~D3D12Gpu();
 
         // Features support
-        unsigned int GetFormatPlaneCount(DXGI_FORMAT format);
+        unsigned int GetFormatPlaneCount(DXGI_FORMAT format) const;
 
         // GPU and output display support
         const D3D12Basics::Resolution& GetSafestResolutionSupported() const { return m_safestResolution; }
@@ -108,54 +122,114 @@ namespace D3D12Basics
 
         const D3D12Basics::Resolution& GetCurrentResolution() const;
 
+        uint64_t GetCurrentFrameId() const { return m_currentFrame; }
+
+        bool IsFrameFinished(uint64_t frameId);
+
         // GPU memory handling
         D3D12GpuMemoryHandle AllocateDynamicMemory(size_t  sizeBytes, const std::wstring& debugName);
 
-        D3D12GpuMemoryHandle AllocateStaticMemory(const void* data, size_t  sizeBytes, const std::wstring& debugName);
+        D3D12GpuMemoryHandle AllocateStaticMemory(const void* data, size_t  sizeBytes, 
+                                                  const std::wstring& debugName);
 
-        D3D12GpuMemoryHandle AllocateStaticMemory(const std::vector<D3D12_SUBRESOURCE_DATA>& subresources, const D3D12_RESOURCE_DESC& desc,
+        D3D12GpuMemoryHandle AllocateStaticMemory(const std::vector<D3D12_SUBRESOURCE_DATA>& subresources,
+                                                  const D3D12_RESOURCE_DESC& desc,
+                                                  const std::wstring& debugName);
+
+        D3D12GpuMemoryHandle AllocateStaticMemory(const D3D12_RESOURCE_DESC& desc, 
+                                                  D3D12_RESOURCE_STATES initialState,
+                                                  const D3D12_CLEAR_VALUE* clearValue, 
                                                   const std::wstring& debugName);
 
         // TODO can be done better than void*? maybe uint64_t or one of the pointer types?
-        void UpdateMemory(D3D12GpuMemoryHandle memHandle, const void* data, size_t sizeBytes, size_t offsetBytes = 0);
+        void UpdateMemory(D3D12GpuMemoryHandle memHandle, const void* data, size_t sizeBytes, 
+                            size_t offsetBytes = 0);
 
         void FreeMemory(D3D12GpuMemoryHandle memHandle);
 
         // Views handling
-        D3D12GpuMemoryView CreateConstantBufferView(D3D12GpuMemoryHandle memHandle);
+        D3D12GpuViewHandle CreateConstantBufferView(D3D12GpuMemoryHandle memHandle);
 
-        D3D12GpuMemoryView CreateTextureView(D3D12GpuMemoryHandle memHandle, const D3D12_RESOURCE_DESC& desc);
+        D3D12GpuViewHandle CreateTextureView(D3D12GpuMemoryHandle memHandle, const D3D12_RESOURCE_DESC& desc);
 
-        // GPU Execution
-        void ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderTasks);
-        void BeginFrame();
-        void FinishFrame();
+        D3D12GpuViewHandle CreateRenderTargetView(D3D12GpuMemoryHandle memHandle, const D3D12_RESOURCE_DESC& desc);
+
+        D3D12GpuViewHandle CreateDepthStencilView(D3D12GpuMemoryHandle memHandle, DXGI_FORMAT format);
+
+        D3D12GpuViewHandle CreateNULLTextureView(const D3D12_RESOURCE_DESC& desc);
+
+        // TODO what about destroying the views?
+
+        // Swapchain
+        // TODO rename it to Barrier better?
+        D3D12_RESOURCE_BARRIER& SwapChainTransition(TransitionType transitionType);
+        const D3D12_CPU_DESCRIPTOR_HANDLE& SwapChainBackBufferViewHandle() const;
+
+        // Execution
+        ID3D12GraphicsCommandListPtr StartCurrentCmdList();
+        void EndCurrentCmdList();
+		void ExecuteCurrentCmdList();
+        void PresentFrame();
         void WaitAll();
 
-        // GPU Others
+        // Pipeline state
         // TODO think about how to expose this unifying the pipeline state
         ID3D12RootSignaturePtr CreateRootSignature(ID3DBlobPtr signature, const std::wstring& name);
         ID3D12PipelineStatePtr CreatePSO(const D3D12_GRAPHICS_PIPELINE_STATE_DESC& psoDesc, const std::wstring& name);
 
         // Callbacks
         void OnToggleFullScreen();
-
         void OnResize(const D3D12Basics::Resolution& resolution);
 
-        // Others
+        // Utils
         const FrameStats& GetFrameStats() const { return m_frameStats; }
+        
+        // Others
+        // NOTE not sure about these ones here. Exposing too much detail? 
+        //      move them to other classes ie, an extended cmd list class?
+        void SetBindings(ID3D12GraphicsCommandListPtr cmdList, const D3D12Bindings& bindings);
+        void SetVertexBuffer(ID3D12GraphicsCommandListPtr cmdList, D3D12GpuMemoryHandle memHandle,
+                             size_t vertexBufferSizeBytes, size_t vertexSizeBytes);
+        void SetIndexBuffer(ID3D12GraphicsCommandListPtr cmdList, D3D12GpuMemoryHandle memHandle,
+                            size_t indexBufferSizeBytes);
+        D3D12_CPU_DESCRIPTOR_HANDLE GetViewCPUHandle(D3D12GpuViewHandle gpuViewHandle) const;
+        ID3D12Resource* GetResource(D3D12GpuMemoryHandle memHandle);
 
     private:
+        using DescriptorHandlesPtrs = std::array<D3D12DescriptorAllocation*, m_framesInFlight>;
+
+        struct D3D12GpuMemoryView
+        {
+            D3D12GpuMemoryView() = default;
+
+            D3D12GpuMemoryView(D3D12GpuMemoryHandle handle,
+                               DescriptorHandlesPtrs&& descriptors) :   m_memHandle(handle),
+                                                                        m_frameDescriptors(std::move(descriptors))
+            {
+            }
+
+            D3D12GpuMemoryHandle    m_memHandle;
+            DescriptorHandlesPtrs   m_frameDescriptors;
+        };
+        using D3D12GpuMemoryViewPtr = std::unique_ptr<D3D12GpuMemoryView>;
+
         struct StaticMemoryAlloc
         {
-            uint64_t                                    m_frameId;
-            ID3D12ResourcePtr                           m_resource;
-            size_t                                      m_size;
+            uint64_t            m_frameId;
         };
+        struct StaticBufferAlloc : StaticMemoryAlloc
+        {
+            D3D12CommittedBuffer m_committedBuffer;
+        };
+        struct StaticTextureAlloc : StaticMemoryAlloc
+        {
+            ID3D12ResourcePtr   m_resource;
+        };
+        // TODO allocate the memory on demand instead of pre allocating the maximum needed
         struct DynamicMemoryAlloc
         {
-            uint64_t                                    m_frameId[m_framesInFlight] = { 0,0 };
-            D3D12BufferAllocation                       m_allocation[m_framesInFlight];
+            uint64_t                        m_frameId[m_framesInFlight] = { 0 };
+            D3D12DynamicBufferAllocation    m_allocation[m_framesInFlight];
         };
 
         // dxgi data
@@ -172,7 +246,6 @@ namespace D3D12Basics
         ID3D12GraphicsCommandListPtr                m_cmdLists[m_framesInFlight];
         ID3D12CommandAllocatorPtr                   m_cmdAllocators[m_framesInFlight];
         D3D12GpuSynchronizerPtr                     m_gpuSync;
-        unsigned int                                m_currentBackbufferIndex;
         unsigned int                                m_currentFrameIndex;
         uint64_t                                    m_currentFrame;
         D3D12Basics::Timer                          m_frameTime;
@@ -181,24 +254,25 @@ namespace D3D12Basics
         bool                        m_isWaitableForPresentEnabled;
         D3D12SwapChainPtr           m_swapChain;
 
-        // Depth stencil management
-        D3D12DSVDescriptorHeapPtr       m_dsvDescHeap;
-        ID3D12ResourcePtr               m_depthBufferResource;
-        D3D12DescriptorHeapHandlePtr    m_depthBufferDescHandle;
-
-        // Descriptors management (from system memory to local vid mem)
-        D3D12CPUDescriptorBufferPtr         m_cpuSRV_CBVDescHeap;       //system memory
+        // Descriptor
+        D3D12DSVDescriptorPoolPtr           m_dsvDescPool;              // system memory
+        D3D12CBV_SRV_UAVDescriptorBufferPtr m_cpuSRV_CBVDescHeap;       // system memory
+        D3D12RTVDescriptorBufferPtr         m_cpuRTVDescHeap;           // system memory
         D3D12GPUDescriptorRingBufferPtr     m_gpuDescriptorRingBuffer;  // vidmem
 
         // Gpu memory management
         // TODO unordered_map is suboptimal. Use a multiindirection vector based as in a packedarray/slot map
         // http://bitsquid.blogspot.ca/2011/09/managing-decoupling-part-4-id-lookup.html
         // http://seanmiddleditch.com/data-structures-for-game-developers-the-slot-map/
-        uint64_t                                                        m_nextMemoryHandle;
-        std::unordered_map<D3D12GpuMemoryHandle, StaticMemoryAlloc>     m_staticMemoryAllocations;
-        std::unordered_map<D3D12GpuMemoryHandle, DynamicMemoryAlloc>    m_dynamicMemoryAllocations;
-        std::vector<D3D12GpuMemoryHandle>                               m_retiredAllocations;
-        D3D12BufferAllocatorPtr                                         m_dynamicMemoryAllocator;
+        D3D12GpuHandle::HandleType                                          m_nextHandleId;
+        std::unordered_map<D3D12GpuHandle::HandleType, StaticBufferAlloc>   m_staticBufferMemoryAllocations;
+        std::unordered_map<D3D12GpuHandle::HandleType, StaticTextureAlloc>  m_staticTextureMemoryAllocations;
+        std::unordered_map<D3D12GpuHandle::HandleType, DynamicMemoryAlloc>  m_dynamicMemoryAllocations;
+        std::vector<D3D12GpuMemoryHandle>                                   m_retiredAllocations;
+        D3D12DynamicBufferAllocatorPtr                                      m_dynamicMemoryAllocator;
+        D3D12CommittedResourceAllocatorPtr                                  m_committedResourceAllocator;
+
+        std::vector<D3D12GpuMemoryViewPtr>  m_memoryViews;
 
         FrameStats                              m_frameStats;
         Microsoft::WRL::ComPtr<ID3D12QueryHeap> m_timestampQueryHeap;
@@ -216,17 +290,9 @@ namespace D3D12Basics
 
         void CreateDescriptorHeaps();
 
-        void CreateDepthBuffer();
-
         void CheckFeatureSupport();
 
         D3D12_GPU_VIRTUAL_ADDRESS GetBufferVA(D3D12GpuMemoryHandle memHandle);
-
-        void SetVertexBuffer(D3D12GpuMemoryHandle memHandle, size_t vertexBufferSizeBytes, size_t vertexSizeBytes,
-                             ID3D12GraphicsCommandListPtr cmdList);
-
-        void SetIndexBuffer(D3D12GpuMemoryHandle memHandle, size_t indexBufferSizeBytes,
-                            ID3D12GraphicsCommandListPtr cmdList);
 
         void DestroyRetiredAllocations();
 
@@ -239,5 +305,7 @@ namespace D3D12Basics
         void EndFrameTimestamp(ID3D12GraphicsCommandListPtr cmdList);
 
         void UpdateFrameTimestamp();
+
+        D3D12GpuViewHandle CreateView(D3D12GpuMemoryHandle memHandle, DescriptorHandlesPtrs&& descriptors);
     };
 }

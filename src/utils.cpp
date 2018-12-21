@@ -6,6 +6,8 @@
 // C++ includes
 #include <string>
 #include <iostream>
+#include <numeric>
+#include <fstream>
 
 using namespace D3D12Basics;
 
@@ -200,12 +202,25 @@ void CustomWindow::CreateCustomWindow()
                           nullptr, nullptr, wc.hInstance, this);
     assert(m_hwnd);
 
+    SetWindowPos(m_hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_DRAWFRAME | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
     ShowWindow(m_hwnd, SW_SHOW);
 }
 
-Timer::Timer() : m_elapsedTime(0.0f), m_totalTime(0.0f)
+Timer::Timer(int samplesCount) : m_elapsedTimes(samplesCount, 0.0f)
 {
+    assert(samplesCount > 0);
+
+    Reset();
+}
+
+void Timer::Reset()
+{
+    std::fill(m_elapsedTimes.begin(), m_elapsedTimes.end(), 0.0f);
+    
+    m_currentIndex = 0;
+
     m_mark = std::chrono::high_resolution_clock::now();
+    m_start = std::chrono::high_resolution_clock::now();
 }
 
 void Timer::Mark()
@@ -213,8 +228,28 @@ void Timer::Mark()
     const auto lastMark = m_mark;
     m_mark = std::chrono::high_resolution_clock::now();
 
-    m_elapsedTime = std::chrono::duration<float>(m_mark - lastMark).count();
-    m_totalTime += m_elapsedTime;
+    m_elapsedTimes[m_currentIndex] = std::chrono::duration<float>(m_mark - lastMark).count();
+}
+
+float Timer::ElapsedTime()
+{
+    size_t oldIndex = m_currentIndex;
+
+    m_currentIndex = (m_currentIndex + 1) % m_elapsedTimes.size();
+
+    return m_elapsedTimes[oldIndex];
+}
+
+float Timer::ElapsedAvgTime()
+{
+    m_currentIndex = (m_currentIndex + 1) % m_elapsedTimes.size();
+    return std::accumulate(m_elapsedTimes.begin(), m_elapsedTimes.end(), 0.0f) / static_cast<float>(m_elapsedTimes.size());
+}
+
+float Timer::TotalTime() const
+{
+    const auto now = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration<float>(now - m_start).count();
 }
 
 // https://knarkowicz.wordpress.com/2013/05/25/simple-gpuview-custom-event-markers/
@@ -275,7 +310,24 @@ void D3D12Basics::AssertIfFailed(HRESULT hr)
     assert(SUCCEEDED(hr));
 }
 
-Float3 D3D12Basics::SphericalToCartersian(float longitude, float latitude, float altitude)
+void D3D12Basics::AssertIfFailed(BOOL b)
+{
+#if NDEBUG
+    b;
+#endif
+    assert(b);
+}
+
+void D3D12Basics::AssertIfFailed(DWORD d, DWORD failValue)
+{
+#if NDEBUG
+    d;
+    failValue;
+#endif
+    assert(d != failValue);
+}
+
+Float3 D3D12Basics::SphericalToCartersian(float longitude /* theta */, float latitude /* phi */, float altitude)
 {
     const float sinLat = sinf(latitude);
     const float sinLon = sinf(longitude);
@@ -287,6 +339,36 @@ Float3 D3D12Basics::SphericalToCartersian(float longitude, float latitude, float
     cartesianCoordinates.x = sinLat * cosLon;
     cartesianCoordinates.y = cosLat;
     cartesianCoordinates.z = sinLat * sinLon;
+    return cartesianCoordinates * altitude;
+}
+
+Float3 D3D12Basics::DDLonSphericalToCartesian(float longitude /* theta */, float latitude /* phi */, float altitude)
+{
+    const float sinLat = sinf(latitude);
+    const float sinLon = sinf(longitude);
+
+    const float cosLat = cosf(latitude);
+    const float cosLon = cosf(longitude);
+
+    Float3 cartesianCoordinates;
+    cartesianCoordinates.x = sinLat * -sinLon;
+    cartesianCoordinates.y = 0.0f;
+    cartesianCoordinates.z = sinLat * cosLon;
+    return cartesianCoordinates * altitude;
+}
+
+Float3 D3D12Basics::DDLatSphericalToCartesian(float longitude /* theta */, float latitude /* phi */, float altitude)
+{
+    const float sinLat = sinf(latitude);
+    const float sinLon = sinf(longitude);
+
+    const float cosLat = cosf(latitude);
+    const float cosLon = cosf(longitude);
+
+    Float3 cartesianCoordinates;
+    cartesianCoordinates.x = cosLat * cosLon;
+    cartesianCoordinates.y = -sinLat;
+    cartesianCoordinates.z = cosLat * sinLon;
     return cartesianCoordinates * altitude;
 }
 
@@ -327,4 +409,21 @@ bool D3D12Basics::IsPowerOf2(size_t value)
 bool D3D12Basics::IsAlignedToPowerof2(size_t value, size_t alignmentPower2)
 {
     return (value & (alignmentPower2 - 1)) == 0;
+}
+
+// TODO check that it actually does a copy elission optimization
+std::vector<char> D3D12Basics::ReadFullFile(const std::wstring& fileName, bool readAsBinary)
+{
+    int mode = readAsBinary ? std::ios::binary : 0;
+    std::fstream file(fileName.c_str(), std::ios::in | mode);
+    assert(file.is_open());
+    const auto fileStart = file.tellg();
+    file.ignore(std::numeric_limits<std::streamsize>::max());
+    const auto fileSize = file.gcount();
+    file.seekg(fileStart);
+    std::vector<char> buffer(readAsBinary? fileSize : fileSize + 1);
+    file.read(&buffer[0], fileSize);
+    if (!readAsBinary)
+        buffer[fileSize] = '\0';
+    return buffer;
 }

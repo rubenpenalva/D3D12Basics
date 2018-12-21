@@ -11,3 +11,5 @@ packages.config
 src/d3d12pipelinestate\.h
 
 imgui\.ini
+src/api_sketch.h
+docs/notes.txt

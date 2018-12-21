@@ -35,6 +35,7 @@ namespace D3D12Basics
 
     using Float2    = DirectX::SimpleMath::Vector2;
     using Float3    = DirectX::SimpleMath::Vector3;
+    using Float4    = DirectX::SimpleMath::Vector4;
     using Matrix44  = DirectX::SimpleMath::Matrix;
 
     // NOTE: https://www.gnu.org/software/libc/manual/html_node/Mathematical-Constants.html
@@ -50,7 +51,7 @@ namespace D3D12Basics
     {
         bool m_uv0;
         bool m_normal;
-        bool m_tangent;
+        bool m_tangent_bitangent;
     };
 
     struct VertexStream
@@ -156,21 +157,26 @@ namespace D3D12Basics
     class Timer
     {
     public:
-        Timer();
+        Timer(int samplesCount = 1);
+
+        void Reset();
 
         void Mark();
 
         // Elapsed time between two marks
-        float ElapsedTime() const { return m_elapsedTime; }
+        float ElapsedTime();
 
-        // Total time from the timer construction to the last mark
-        float TotalTime() const { return m_totalTime; }
+        float ElapsedAvgTime();
+
+        // Total time from the timer construction to now
+        float TotalTime() const;
 
     private:
+        std::chrono::high_resolution_clock::time_point m_start;
         std::chrono::high_resolution_clock::time_point m_mark;
 
-        float m_elapsedTime;
-        float m_totalTime;
+        size_t              m_currentIndex;
+        std::vector<float>  m_elapsedTimes;
     };
 
     class GpuViewMarker
@@ -232,10 +238,14 @@ namespace D3D12Basics
     };
 
     void AssertIfFailed(HRESULT hr);
+    void AssertIfFailed(BOOL b);
+    void AssertIfFailed(DWORD d, DWORD failValue);
 
     // parallels = latitude = altitude = phi 
     // meridians = longitude = azimuth = theta
-    Float3 SphericalToCartersian(float longitude, float latitude, float altitude = 1.0f);
+    Float3 SphericalToCartersian(float longitude /* theta */, float latitude /* phi */, float altitude = 1.0f);
+    Float3 DDLonSphericalToCartesian(float longitude /* theta */, float latitude /* phi */, float altitude = 1.0f);
+    Float3 DDLatSphericalToCartesian(float longitude /* theta */, float latitude /* phi */, float altitude = 1.0f);
 
     std::string ConvertFromUTF16ToUTF8(const std::wstring& str);
 
@@ -247,4 +257,6 @@ namespace D3D12Basics
     bool IsPowerOf2(size_t value);
 
     bool IsAlignedToPowerof2(size_t value, size_t alignmentPower2);
+
+    std::vector<char> ReadFullFile(const std::wstring& fileName, bool readAsBinary = false);
 }

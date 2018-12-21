@@ -15,7 +15,7 @@
     <ProjectGuid>{63C9EDD2-8257-469C-B95C-E485C158EA58}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>D3D12Basics_vs2017</RootNamespace>
-    <WindowsTargetPlatformVersion>10.0.16299.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
     <ProjectName>D3D12Basics_vs2017</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -36,6 +36,7 @@
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
   <ImportGroup Label="Shared">
+    <Import Project="packages\WinPixEventRuntime.1.0.180612001\build\WinPixEventRuntime.targets" Condition="Exists('packages\WinPixEventRuntime.1.0.180612001\build\WinPixEventRuntime.targets')" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -97,15 +98,16 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\d3d12basicsengine.cpp" />
-    <ClCompile Include="src\d3d12committedbuffer.cpp" />
+    <ClCompile Include="src\d3d12committedresources.cpp" />
     <ClCompile Include="src\d3d12descriptorheap.cpp" />
     <ClCompile Include="src\d3d12gpu.cpp" />
+    <ClCompile Include="src\d3d12pipelinestate.cpp" />
     <ClCompile Include="src\d3d12gpu_sync.cpp" />
     <ClCompile Include="src\d3d12imgui.cpp" />
-    <ClCompile Include="src\d3d12material.cpp" />
     <ClCompile Include="src\d3d12scenerender.cpp" />
     <ClCompile Include="src\d3d12swapchain.cpp" />
     <ClCompile Include="src\d3d12utils.cpp" />
+    <ClCompile Include="src\filemonitor.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\meshgenerator.cpp" />
     <ClCompile Include="src\scene.cpp" />
@@ -116,16 +118,17 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\d3d12basicsfwd.h" />
-    <ClInclude Include="src\d3d12committedbuffer.h" />
+    <ClInclude Include="src\d3d12committedresources.h" />
     <ClInclude Include="src\d3d12descriptorheap.h" />
     <ClInclude Include="src\d3d12fwd.h" />
     <ClInclude Include="src\d3d12gpu.h" />
+    <ClInclude Include="src\d3d12pipelinestate.h" />
     <ClInclude Include="src\d3d12gpu_sync.h" />
     <ClInclude Include="src\d3d12imgui.h" />
-    <ClInclude Include="src\d3d12material.h" />
     <ClInclude Include="src\d3d12scenerender.h" />
     <ClInclude Include="src\d3d12swapchain.h" />
     <ClInclude Include="src\d3d12utils.h" />
+    <ClInclude Include="src\filemonitor.h" />
     <ClInclude Include="src\meshgenerator.h" />
     <ClInclude Include="src\d3d12basicsengine.h" />
     <ClInclude Include="src\scene.h" />
@@ -134,5 +137,14 @@
     <ClInclude Include="thirdparty\imgui\imgui.h" />
     <ClInclude Include="thirdparty\imgui\imgui_internal.h" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('packages\WinPixEventRuntime.1.0.180612001\build\WinPixEventRuntime.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\WinPixEventRuntime.1.0.180612001\build\WinPixEventRuntime.targets'))" />
+  </Target>
 </Project>

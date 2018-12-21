@@ -2,7 +2,7 @@
 
 using namespace D3D12Basics;
 
-MeshData D3D12Basics::CreatePlane(const VertexDesc& vertexDesc)
+MeshData D3D12Basics::CreatePlane(const VertexDesc& vertexDesc, const Float4& uvScaleOffset)
 {
     std::vector<uint16_t> indices = { 0, 1, 2, 0, 2, 3 };
     const size_t verticesCount = 4;
@@ -23,10 +23,10 @@ MeshData D3D12Basics::CreatePlane(const VertexDesc& vertexDesc)
         const size_t uvElementsCount = 2;
         streams.AddStream(uvElementsCount, 
         {
-            0.0f, 1.0f,
-            0.0f, 0.0f,
-            1.0f, 0.0f,
-            1.0f, 1.0f
+            0.0f * uvScaleOffset.x + uvScaleOffset.z, 1.0f * uvScaleOffset.y + uvScaleOffset.w,
+            0.0f * uvScaleOffset.x + uvScaleOffset.z, 0.0f * uvScaleOffset.y + uvScaleOffset.w,
+            1.0f * uvScaleOffset.x + uvScaleOffset.z, 0.0f * uvScaleOffset.y + uvScaleOffset.w,
+            1.0f * uvScaleOffset.x + uvScaleOffset.z, 1.0f * uvScaleOffset.y + uvScaleOffset.w
         });
     }
 
@@ -42,7 +42,7 @@ MeshData D3D12Basics::CreatePlane(const VertexDesc& vertexDesc)
         });
     }
 
-    if (vertexDesc.m_tangent)
+    if (vertexDesc.m_tangent_bitangent)
     {
         const size_t tangentsElementsCount = 3;
         streams.AddStream(tangentsElementsCount,
@@ -51,6 +51,14 @@ MeshData D3D12Basics::CreatePlane(const VertexDesc& vertexDesc)
             1.0f, 0.0f, 0.0f,
             1.0f, 0.0f, 0.0f,
             1.0f, 0.0f, 0.0f
+        });
+        const size_t bitangentsElementsCount = 3;
+        streams.AddStream(bitangentsElementsCount,
+        {
+            0.0f, 0.0f, 1.0f,
+            0.0f, 0.0f, 1.0f,
+            0.0f, 0.0f, 1.0f,
+            0.0f, 0.0f, 1.0f
         });
     }
     const auto vertexElementsCount = streams.VertexElementsCount();
@@ -62,9 +70,11 @@ MeshData D3D12Basics::CreatePlane(const VertexDesc& vertexDesc)
 // Review of ways of creating a mesh sphere by @caosdoar
 // TODO fix uv issues
 // TODO optimization proposed by @caosdoar: cache the angles to avoid unnecessary calculations
-// TODO use vertexDesc
-MeshData D3D12Basics::CreateSphere(const VertexDesc& /*vertexDesc*/, unsigned int parallelsCount, unsigned int meridiansCount)
+// TODO templatize this function depending on its configuration
+MeshData D3D12Basics::CreateSphere(const VertexDesc& vertexDesc, const Float4& uvScaleOffset, 
+                                   unsigned int parallelsCount, unsigned int meridiansCount)
 {
+    // TODO tangents generation not supported yet
     assert(parallelsCount > 1 && meridiansCount > 3);
 
     // Note this adds another meridian that will be used to fix the uv mapping of the
@@ -76,10 +86,29 @@ MeshData D3D12Basics::CreateSphere(const VertexDesc& /*vertexDesc*/, unsigned in
     const unsigned int indicesPerTri = 3;
     const unsigned int indicesCount = indicesPerTri * meridiansCount * (2 * (parallelsCount - 1) + polesCount);
 
-    size_t positionElementsCount = 3;
+    const size_t positionElementsCount = 3;
     std::vector<float> positions((parallelsCount * meridiansCount + polesCount) * positionElementsCount);
+    std::vector<float> uvs;
     const size_t uvElementsCount = 2;
-    std::vector<float> uvs((parallelsCount * meridiansCount + polesCount) * uvElementsCount);
+    if (vertexDesc.m_uv0)
+    {
+        uvs.resize((parallelsCount * meridiansCount + polesCount) * uvElementsCount);
+    }
+    const size_t normalsElementsCount = 3;
+    std::vector<float> normals;
+    if (vertexDesc.m_normal)
+    {
+        normals.resize(positions.size());
+    }
+    const size_t tangentElementsCount = 3;
+    const size_t bitangentElementsCount = 3;
+    std::vector<float> tangents;
+    std::vector<float> bitangents;
+    if (vertexDesc.m_tangent_bitangent)
+    {
+        tangents.resize((parallelsCount * meridiansCount + polesCount) * tangentElementsCount);
+        bitangents.resize((parallelsCount * meridiansCount + polesCount) * bitangentElementsCount);
+    }
     std::vector<uint16_t> indices(indicesCount);
 
     // parallels = latitude = altitude = phi 
@@ -92,6 +121,9 @@ MeshData D3D12Basics::CreateSphere(const VertexDesc& /*vertexDesc*/, unsigned in
     size_t currentPrimitive = 0;
     const uint16_t parallelVerticesCount = static_cast<uint16_t>(meridiansCount);
 
+    const Float2 uvScale = Float2{ uvScaleOffset.x, uvScaleOffset.y };
+    const Float2 uvOffset = Float2{ uvScaleOffset.z, uvScaleOffset.w };
+
     for (unsigned int j = 0; j < parallelsCount; ++j)
     {
         // Build rings vertices
@@ -103,12 +135,36 @@ MeshData D3D12Basics::CreateSphere(const VertexDesc& /*vertexDesc*/, unsigned in
             auto position = SphericalToCartersian(longitude, latitude) * Float3(0.5f, 0.5f, 0.5f);
             memcpy(&positions[currentVertexIndex * positionElementsCount], 
                    &position, sizeof(Float3));
-            
+
             // NOTE: this mapping has horrendous distortions on the poles
-            auto uv = i == meridiansCount - 1?  Float2(1.0f, latitude * M_RCP_PI) : 
-                                                Float2(longitude * M_RCP_2PI, latitude * M_RCP_PI);
-            memcpy(&uvs[currentVertexIndex * uvElementsCount],
-                   &uv, sizeof(Float2));
+            if (vertexDesc.m_uv0)
+            {
+                auto uv = i == meridiansCount - 1 ? Float2(1.0f, latitude * M_RCP_PI) :
+                                                    Float2(longitude * M_RCP_2PI, latitude * M_RCP_PI);
+                uv *= uvScale;
+                uv += uvOffset;
+                memcpy(&uvs[currentVertexIndex * uvElementsCount],
+                        &uv, sizeof(Float2));
+            }
+
+            if (vertexDesc.m_normal)
+            {
+                auto normal = position;
+                normal.Normalize();
+                memcpy(&normals[currentVertexIndex * positionElementsCount], &normal, sizeof(Float3));
+            }
+
+            if (vertexDesc.m_tangent_bitangent)
+            {
+                auto tangent = DDLonSphericalToCartesian(longitude, latitude) * Float3(0.5f, 0.5f, 0.5f);
+                tangent.Normalize();
+                memcpy(&tangents[currentVertexIndex * tangentElementsCount],
+                        &tangent, sizeof(Float3));
+                auto bitangent = DDLatSphericalToCartesian(longitude, latitude) * Float3(0.5f, 0.5f, 0.5f);
+                bitangent.Normalize();
+                memcpy(&bitangents[currentVertexIndex * bitangentElementsCount],
+                        &bitangent, sizeof(Float3));
+            }
 
             // Build rings indices
             if (j < parallelsCount - 1)
@@ -130,13 +186,35 @@ MeshData D3D12Basics::CreateSphere(const VertexDesc& /*vertexDesc*/, unsigned in
     // Build poles
     auto position = Float3(0.0f, 0.5f, 0.0f);
     memcpy(&positions[(verticesCount - 2) * positionElementsCount], &position, sizeof(Float3));
-    auto uv = Float2(0.0f, 0.0f);
-    memcpy(&uvs[(verticesCount - 2) * uvElementsCount], &uv, sizeof(Float2));
     position = Float3(0.0f, -0.5f, 0.0f);
     memcpy(&positions[(verticesCount - 1) * positionElementsCount], &position, sizeof(Float3));
-    uv = Float2(0.0f, 1.0f);
-    memcpy(&uvs[(verticesCount - 1) * uvElementsCount], &uv, sizeof(Float2));
-
+    if (vertexDesc.m_uv0)
+    {
+        auto uv = Float2(0.0f, 0.0f);
+        memcpy(&uvs[(verticesCount - 2) * uvElementsCount], &uv, sizeof(Float2));
+        uv = Float2(0.0f, 1.0f);
+        uv *= uvScale;
+        uv += uvOffset;
+        memcpy(&uvs[(verticesCount - 1) * uvElementsCount], &uv, sizeof(Float2));
+    }
+    if (vertexDesc.m_normal)
+    {
+        auto normal = Float3(0.0f, 1.0f, 0.0f);
+        memcpy(&normals[(verticesCount - 2) * normalsElementsCount], &normal, sizeof(Float3));
+        normal = Float3(0.0f, -1.0f, 0.0f);
+        memcpy(&normals[(verticesCount - 1) * normalsElementsCount], &normal, sizeof(Float3));
+    }
+    if (vertexDesc.m_tangent_bitangent)
+    {
+        auto tangent = Float3(1.0f, 0.0f, 0.0f);
+        memcpy(&tangents[(verticesCount - 2) * tangentElementsCount], &tangent, sizeof(Float3));
+        tangent = Float3(-1.0f, 0.0f, 0.0f);
+        memcpy(&tangents[(verticesCount - 1) * tangentElementsCount], &tangent, sizeof(Float3));
+        auto bitangent = Float3(0.0f, 0.0f, 1.0f);
+        memcpy(&bitangents[(verticesCount - 2) * bitangentElementsCount], &bitangent, sizeof(Float3));
+        bitangent = Float3(0.0f, 0.0f, -1.0f);
+        memcpy(&bitangents[(verticesCount - 1) * bitangentElementsCount], &bitangent, sizeof(Float3));
+    }
     for (uint16_t i = 0; i < meridiansCount; ++i)
     {
        indices[currentPrimitive++] = static_cast<uint16_t>(verticesCount - 2);
@@ -154,13 +232,22 @@ MeshData D3D12Basics::CreateSphere(const VertexDesc& /*vertexDesc*/, unsigned in
     
     VertexStreams streams;
     streams.AddStream(positionElementsCount, std::move(positions));
-    streams.AddStream(uvElementsCount, std::move(uvs));
+    if (vertexDesc.m_uv0)
+        streams.AddStream(uvElementsCount, std::move(uvs));
+    if (vertexDesc.m_normal)
+        streams.AddStream(normalsElementsCount, std::move(normals));
+    if (vertexDesc.m_tangent_bitangent)
+    {
+        streams.AddStream(tangentElementsCount, std::move(tangents));
+        streams.AddStream(bitangentElementsCount, std::move(bitangents));
+    }
     const auto vertexElementsCount = streams.VertexElementsCount();
 
     return MeshData{ streams.GetStreams(), std::move(indices), verticesCount, vertexElementsCount * sizeof(float), vertexElementsCount };
 }
 
-MeshData D3D12Basics::CreateCube(const VertexDesc& vertexDesc, Cube_TexCoord_MappingType /*texcoordType*/)
+MeshData D3D12Basics::CreateCube(const VertexDesc& vertexDesc, const Float4& uvScaleOffset, 
+                                    Cube_TexCoord_MappingType /*texcoordType*/)
 {
     std::vector<uint16_t> indices =
     {
@@ -177,7 +264,6 @@ MeshData D3D12Basics::CreateCube(const VertexDesc& vertexDesc, Cube_TexCoord_Map
     const size_t positionElementsCount = 3;
     streams.AddStream(positionElementsCount,
     {
-        // Positions
         // Back
         -0.5f, -0.5f, -0.5f,
         -0.5f, 0.5f, -0.5f,
@@ -220,49 +306,169 @@ MeshData D3D12Basics::CreateCube(const VertexDesc& vertexDesc, Cube_TexCoord_Map
         const size_t uvElementsCount = 2;
         streams.AddStream(uvElementsCount,
         {
-            // UVs
             // Back
-            0.0f, 1.0f,
-            0.0f, 0.0f,
-            1.0f, 0.0f,
-            1.0f, 1.0f,
+            0.0f * uvScaleOffset.x + uvScaleOffset.z, 1.0f * uvScaleOffset.y + uvScaleOffset.w,
+            0.0f * uvScaleOffset.x + uvScaleOffset.z, 0.0f * uvScaleOffset.y + uvScaleOffset.w,
+            1.0f * uvScaleOffset.x + uvScaleOffset.z, 0.0f * uvScaleOffset.y + uvScaleOffset.w,
+            1.0f * uvScaleOffset.x + uvScaleOffset.z, 1.0f * uvScaleOffset.y + uvScaleOffset.w,
 
             //Front
-            0.0f, 1.0f,
-            0.0f, 0.0f,
-            1.0f, 0.0f,
-            1.0f, 1.0f,
+            0.0f * uvScaleOffset.x + uvScaleOffset.z, 1.0f * uvScaleOffset.y + uvScaleOffset.w,
+            0.0f * uvScaleOffset.x + uvScaleOffset.z, 0.0f * uvScaleOffset.y + uvScaleOffset.w,
+            1.0f * uvScaleOffset.x + uvScaleOffset.z, 0.0f * uvScaleOffset.y + uvScaleOffset.w,
+            1.0f * uvScaleOffset.x + uvScaleOffset.z, 1.0f * uvScaleOffset.y + uvScaleOffset.w,
 
             //Left
-            0.0f, 1.0f,
-            0.0f, 0.0f,
-            1.0f, 0.0f,
-            1.0f, 1.0f,
+            0.0f * uvScaleOffset.x + uvScaleOffset.z, 1.0f * uvScaleOffset.y + uvScaleOffset.w,
+            0.0f * uvScaleOffset.x + uvScaleOffset.z, 0.0f * uvScaleOffset.y + uvScaleOffset.w,
+            1.0f * uvScaleOffset.x + uvScaleOffset.z, 0.0f * uvScaleOffset.y + uvScaleOffset.w,
+            1.0f * uvScaleOffset.x + uvScaleOffset.z, 1.0f * uvScaleOffset.y + uvScaleOffset.w,
 
             //Right
-            0.0f, 1.0f,
-            0.0f, 0.0f,
-            1.0f, 0.0f,
-            1.0f, 1.0f,
+            0.0f * uvScaleOffset.x + uvScaleOffset.z, 1.0f * uvScaleOffset.y + uvScaleOffset.w,
+            0.0f * uvScaleOffset.x + uvScaleOffset.z, 0.0f * uvScaleOffset.y + uvScaleOffset.w,
+            1.0f * uvScaleOffset.x + uvScaleOffset.z, 0.0f * uvScaleOffset.y + uvScaleOffset.w,
+            1.0f * uvScaleOffset.x + uvScaleOffset.z, 1.0f * uvScaleOffset.y + uvScaleOffset.w,
 
             //Bottom
-            0.0f, 1.0f,
-            0.0f, 0.0f,
-            1.0f, 0.0f,
-            1.0f, 1.0f,
+            0.0f * uvScaleOffset.x + uvScaleOffset.z, 1.0f * uvScaleOffset.y + uvScaleOffset.w,
+            0.0f * uvScaleOffset.x + uvScaleOffset.z, 0.0f * uvScaleOffset.y + uvScaleOffset.w,
+            1.0f * uvScaleOffset.x + uvScaleOffset.z, 0.0f * uvScaleOffset.y + uvScaleOffset.w,
+            1.0f * uvScaleOffset.x + uvScaleOffset.z, 1.0f * uvScaleOffset.y + uvScaleOffset.w,
 
-            //Top
-            0.0f, 1.0f,
-            0.0f, 0.0f,
-            1.0f, 0.0f,
-            1.0f, 1.0f,
+            //Top 
+            0.0f * uvScaleOffset.x + uvScaleOffset.z, 1.0f * uvScaleOffset.y + uvScaleOffset.w,
+            0.0f * uvScaleOffset.x + uvScaleOffset.z, 0.0f * uvScaleOffset.y + uvScaleOffset.w,
+            1.0f * uvScaleOffset.x + uvScaleOffset.z, 0.0f * uvScaleOffset.y + uvScaleOffset.w,
+            1.0f * uvScaleOffset.x + uvScaleOffset.z, 1.0f * uvScaleOffset.y + uvScaleOffset.w,
         });
     }
 
-    // TODO normals
+    if (vertexDesc.m_normal)
+    {
+        const size_t normalElementCount = 3;
+        streams.AddStream(normalElementCount,
+        {
+                // Back
+                0.0f, 0.0f, 1.0f,
+                0.0f, 0.0f, 1.0f,
+                0.0f, 0.0f, 1.0f,
+                0.0f, 0.0f, 1.0f,
 
-    // TODO tangents
+                // Front
+                0.0f, 0.0f, -1.0f,
+                0.0f, 0.0f, -1.0f,
+                0.0f, 0.0f, -1.0f,
+                0.0f, 0.0f, -1.0f,
 
+                // Left
+                -1.0f, 0.0f, 0.0f,
+                -1.0f, 0.0f, 0.0f,
+                -1.0f, 0.0f, 0.0f,
+                -1.0f, 0.0f, 0.0f,
+
+                // Right
+                1.0f, 0.0f, 0.0f,
+                1.0f, 0.0f, 0.0f,
+                1.0f, 0.0f, 0.0f,
+                1.0f, 0.0f, 0.0f,
+
+                //Bottom
+                0.0f, -1.0f, 0.0f,
+                0.0f, -1.0f, 0.0f,
+                0.0f, -1.0f, 0.0f,
+                0.0f, -1.0f, 0.0f,
+
+                //Top
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+        });
+    }
+
+    if (vertexDesc.m_tangent_bitangent)
+    {
+        const size_t tangentElementCount = 3;
+        streams.AddStream(tangentElementCount,
+        {
+                // Back
+                -1.0f, 0.0f, 0.0f,
+                -1.0f, 0.0f, 0.0f,
+                -1.0f, 0.0f, 0.0f,
+                -1.0f, 0.0f, 0.0f,
+
+                // Front
+                1.0f, 0.0f, 0.0f,
+                1.0f, 0.0f, 0.0f,
+                1.0f, 0.0f, 0.0f,
+                1.0f, 0.0f, 0.0f,
+
+                // Left
+                0.0f, 0.0f, -1.0f,
+                0.0f, 0.0f, -1.0f,
+                0.0f, 0.0f, -1.0f,
+                0.0f, 0.0f, -1.0f,
+
+                // Right
+                0.0f, 0.0f, 1.0f,
+                0.0f, 0.0f, 1.0f,
+                0.0f, 0.0f, 1.0f,
+                0.0f, 0.0f, 1.0f,
+
+                //Bottom
+                1.0f, 0.0f, 0.0f,
+                1.0f, 0.0f, 0.0f,
+                1.0f, 0.0f, 0.0f,
+                1.0f, 0.0f, 0.0f,
+
+                //Top
+                1.0f, 0.0f, 0.0f,
+                1.0f, 0.0f, 0.0f,
+                1.0f, 0.0f, 0.0f,
+                1.0f, 0.0f, 0.0f,
+        });
+
+        const size_t bitangentElementCount = 3;
+        streams.AddStream(bitangentElementCount,
+            {
+                // Back
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+
+                // Front
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+
+                // Left
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+
+                // Right
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+
+                //Bottom
+                0.0f, 0.0f, -1.0f,
+                0.0f, 0.0f, -1.0f,
+                0.0f, 0.0f, -1.0f,
+                0.0f, 0.0f, -1.0f,
+
+                //Top
+                0.0f, 0.0f, 1.0f,
+                0.0f, 0.0f, 1.0f,
+                0.0f, 0.0f, 1.0f,
+                0.0f, 0.0f, 1.0f,
+            });
+    }
     const auto vertexElementsCount = streams.VertexElementsCount();
 
     return MeshData{ streams.GetStreams(), std::move(indices), verticesCount, vertexElementsCount * sizeof(float), vertexElementsCount };

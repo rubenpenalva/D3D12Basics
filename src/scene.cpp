@@ -13,8 +13,6 @@
 
 using namespace D3D12Basics;
 
-const Float3 Material::m_diffuseColor = { 1.0f, 0.0f, 1.0f };
-
 namespace
 {
     std::wstring ExtractAssimpTextureFile(aiMaterial* material, aiTextureType type, const std::wstring& dataWorkingPath)
@@ -48,26 +46,31 @@ namespace
         return resourceDesc;
     }
 
-    TextureData LoadSTBLoadableImage(const std::wstring& textureFileName)
+    TextureData LoadSTBLoadableImage(const std::wstring& textureFileName, bool is16bit)
     {
-        std::fstream file(textureFileName.c_str(), std::ios::in | std::ios::binary);
-        assert(file.is_open());
-        const auto fileStart = file.tellg();
-        file.ignore(std::numeric_limits<std::streamsize>::max());
-        const auto fileSize = file.gcount();
-        file.seekg(fileStart);
-        std::vector<char> buffer(fileSize);
-        file.read(&buffer[0], fileSize);
+        auto buffer = ReadFullFile(textureFileName, true);
 
         const stbi_uc* bufferPtr = reinterpret_cast<const stbi_uc*>(&buffer[0]);
-        const int bufferLength = static_cast<int>(fileSize);
+        const int bufferLength = static_cast<int>(buffer.size());
         int textureChannelsCount;
         const int requestedChannelsCount = 4;
         int textureWidth = 0;
         int textureHeight = 0;
-        stbi_uc* stbiBuffer = stbi_load_from_memory(bufferPtr, bufferLength, &textureWidth,
-                                                    &textureHeight, &textureChannelsCount,
-                                                    requestedChannelsCount);
+
+        void* stbiBuffer = nullptr;
+        if (is16bit)
+        {
+            stbiBuffer = stbi_load_16_from_memory(bufferPtr, bufferLength, &textureWidth,
+                                                  &textureHeight, &textureChannelsCount,
+                                                  requestedChannelsCount);
+        }
+        else
+        {
+            stbiBuffer = stbi_load_from_memory(bufferPtr, bufferLength, &textureWidth,
+                                               &textureHeight, &textureChannelsCount,
+                                                requestedChannelsCount);
+        }
+
         const auto textureRowSizeBytes = textureWidth * requestedChannelsCount;
         const auto textureDataSizeBytes = textureRowSizeBytes * textureHeight;
         // Copy the raw data to be able to free it later without using stbi_image_free
@@ -99,35 +102,46 @@ namespace
     }
 }
 
-Camera::Camera() 
+EntityTransform::EntityTransform(ProjectionType projectionType)
 {
+    // NOTE this should not be harcoded here but good enough for this project
+    if (projectionType == EntityTransform::ProjectionType::Perspective)
+    {
+        const float nearPlane = 0.1f;
+        const float farPlane = 1000.0f;
+
+        const float fov = M_PI_2 - M_PI_8;
+        const float aspectRatio = 1.6f;
+        m_localToClip = Matrix44::CreatePerspectiveFieldOfViewLH(fov, aspectRatio, nearPlane, farPlane);
+    }
+    else
+    {
+        const float nearPlane = -800.0f;
+        const float farPlane = 800.0f;
+        const float width = 150.0f;
+        const float height = 150.0f;
+        m_localToClip = Matrix44::CreateOrthographicLH(width, height, nearPlane, farPlane);
+    }
     const Float3 position{};
     const Float3 target{ 0.0f, 0.0f, 1.0f };
-    const float fov = M_PI_2 - M_PI_8;
-    const float aspectRatio = 1.6f;
-    const float nearPlane = 0.1f;
-    const float farPlane = 1000.0f;
     const Float3 up = Float3::UnitY;
-
-    m_cameraToClip = Matrix44::CreatePerspectiveFieldOfViewLH(fov, aspectRatio, nearPlane, farPlane);
-
     TranslateLookingAt(position, target, up);
 }
 
-void Camera::TranslateLookingAt(const Float3& position, const Float3& target, const Float3& up)
+void EntityTransform::TranslateLookingAt(const Float3& position, const Float3& target, const Float3& up)
 {
-    m_worldToCamera = Matrix44::CreateLookAtLH(position, target, up);
-    
-    UpdateCameraToWorld(position);
+    m_worldToLocal = Matrix44::CreateLookAtLH(position, target, up);
+ 
+    UpdateLocalToWorld(position);
 
     m_position = position;
-    m_forward = -m_cameraToWorld.Forward();
+    m_forward = -m_localToWorld.Forward();
 }
 
-void Camera::UpdateCameraToWorld(const Float3& position)
+void EntityTransform::UpdateLocalToWorld(const Float3& position)
 {
-    m_cameraToWorld = m_worldToCamera.Transpose();
-    m_cameraToWorld.Translation(position);
+    m_localToWorld = m_worldToLocal.Transpose();
+    m_localToWorld.Translation(position);
 }
 
 SceneLoader::SceneLoader(const std::wstring& sceneFile, Scene& scene, const std::wstring& dataWorkingPath) : m_outScene(scene)
@@ -137,11 +151,11 @@ SceneLoader::SceneLoader(const std::wstring& sceneFile, Scene& scene, const std:
 
     // TODO flattening the hierarchy of nodes for now
     m_assImporter.SetPropertyInteger(AI_CONFIG_PP_SLM_VERTEX_LIMIT, 0x0000ffff);
-    const int importFlags = aiProcess_PreTransformVertices | aiProcess_Triangulate | aiProcess_GenNormals | 
-                            aiProcess_ConvertToLeftHanded | aiProcess_SplitLargeMeshes;
+    const int importFlags = aiProcess_PreTransformVertices | aiProcess_Triangulate |
+                            aiProcess_CalcTangentSpace |  aiProcess_ConvertToLeftHanded | aiProcess_SplitLargeMeshes;
     auto assimpScene = m_assImporter.ReadFile(ConvertFromUTF16ToUTF8(sceneFile), importFlags);
     assert(assimpScene);
-    
+ 
     m_assimpModelIdStart = scene.m_models.empty() ? 0 : static_cast<unsigned int>(scene.m_models.back().m_id) + 1;
 
     for (unsigned int i = 0; i < assimpScene->mNumMeshes; ++i)
@@ -152,12 +166,16 @@ SceneLoader::SceneLoader(const std::wstring& sceneFile, Scene& scene, const std:
         model.m_name = ConvertFromUTF8ToUTF16(mesh->mName.C_Str());
         model.m_type = Model::Type::MeshFile;
         model.m_transform = D3D12Basics::Matrix44::Identity;
+        model.m_normalTransform = D3D12Basics::Matrix44::Identity;
         model.m_id = m_assimpModelIdStart + i;
+        model.m_uvScaleOffset = Float4{ 1.0f, 1.0f, 0.0f, 0.0f };
 
         auto material = assimpScene->mMaterials[mesh->mMaterialIndex];
         model.m_material.m_diffuseTexture = ExtractAssimpTextureFile(material, aiTextureType_DIFFUSE, dataWorkingPath);
         model.m_material.m_specularTexture = ExtractAssimpTextureFile(material, aiTextureType_SPECULAR, dataWorkingPath);
         model.m_material.m_normalsTexture = ExtractAssimpTextureFile(material, aiTextureType_NORMALS, dataWorkingPath);
+        model.m_material.m_shadowReceiver = true;
+        model.m_material.m_shadowCaster = true;
 
         m_outScene.m_models.push_back(std::move(model));
     }
@@ -170,7 +188,8 @@ TextureData SceneLoader::LoadTextureData(const std::wstring& textureFile)
         return LoadDDSImage(textureFile);
     }
 
-    return LoadSTBLoadableImage(textureFile);
+    const bool isHDRTexture = textureFile.find(L".hdr") != std::wstring::npos;
+    return LoadSTBLoadableImage(textureFile, isHDRTexture);
 }
 
 MeshData SceneLoader::LoadMesh(size_t modelId)
@@ -185,7 +204,8 @@ MeshData SceneLoader::LoadMesh(size_t modelId)
     assert(assimpScene->mNumMeshes > assimpMeshId);
 
     auto* model = assimpScene->mMeshes[assimpMeshId];
-    assert(model->HasPositions() && model->HasTextureCoords(0));
+    assert(model->HasPositions() && model->HasTextureCoords(0) && model->HasNormals() && 
+           model->HasTangentsAndBitangents());
     assert(model->mNumVertices <= MeshData::m_maxVertexCount);
 
     // Copy the indices
@@ -210,20 +230,34 @@ MeshData SceneLoader::LoadMesh(size_t modelId)
         memcpy(&uvs[i * uvElementsCount], &model->mTextureCoords[0][i], sizeof(Float2));
     }
 
+    const size_t normalsElementsCount = 3;
+    std::vector<float> normals(model->mNumVertices * normalsElementsCount);
+    memcpy(&normals[0], model->mNormals, sizeof(aiVector3D) * model->mNumVertices);
+
+    const size_t tangentElementsCount = 3;
+    std::vector<float> tangents(model->mNumVertices * tangentElementsCount);
+    memcpy(&tangents[0], model->mTangents, sizeof(aiVector3D) * model->mNumVertices);
+
+    const size_t bitangentElementsCount = 3;
+    std::vector<float> bitangents(model->mNumVertices * bitangentElementsCount);
+    memcpy(&bitangents[0], model->mBitangents, sizeof(aiVector3D) * model->mNumVertices);
+
     VertexStreams streams;
     streams.AddStream(positionElementsCount, std::move(positions));
     streams.AddStream(uvElementsCount, std::move(uvs));
+    streams.AddStream(normalsElementsCount, std::move(normals));
+    streams.AddStream(tangentElementsCount, std::move(tangents));
+    streams.AddStream(bitangentElementsCount, std::move(bitangents));
     const auto vertexElementsCount = streams.VertexElementsCount();
 
     return MeshData{ streams.GetStreams(), std::move(indices), model->mNumVertices, vertexElementsCount * sizeof(float), vertexElementsCount };
 }
 
-
 CameraController::CameraController(InputController& inputController) : m_inputController(inputController)
 {
 }
 
-void CameraController::Update(Camera& camera, float deltaTime, float totalTime)
+void CameraController::Update(EntityTransform& camera, float deltaTime, float totalTime)
 {
     ProcessInput();
 
@@ -345,7 +379,7 @@ void CameraController::ProcessInput()
     }
 }
 
-void CameraController::UpdateCamera(Camera& camera, float deltaTime, float totalTime)
+void CameraController::UpdateCamera(EntityTransform& camera, float deltaTime, float totalTime)
 {
     if (m_cameraState.m_manualMovement)
     {
@@ -353,18 +387,19 @@ void CameraController::UpdateCamera(Camera& camera, float deltaTime, float total
 
         if (m_cameraState.m_speedModifier != 0.0f)
         {
-            cameraPos += Float3::TransformNormal(m_cameraState.m_direction, camera.CameraToWorld()) *
-                deltaTime * m_cameraState.m_speedModifier *
-                m_cameraState.m_maxSpeed;
+            cameraPos += Float3::TransformNormal(m_cameraState.m_direction, 
+                                                 camera.LocalToWorld()) *
+                                                 deltaTime * m_cameraState.m_speedModifier *
+                                                 m_cameraState.m_maxSpeed;
         }
 
         Float3 cameraTarget = cameraPos + camera.Forward();
 
         if (m_cameraState.m_speedLookModifier != 0.0f)
         {
-            cameraTarget += Float3::TransformNormal(m_cameraState.m_target, camera.CameraToWorld()) *
-                deltaTime * m_cameraState.m_speedLookModifier *
-                m_cameraState.m_maxLookSpeed;
+            cameraTarget += Float3::TransformNormal(m_cameraState.m_target, camera.LocalToWorld()) *
+                                                    deltaTime * m_cameraState.m_speedLookModifier *
+                                                    m_cameraState.m_maxLookSpeed;
         }
 
         camera.TranslateLookingAt(cameraPos, cameraTarget);
@@ -376,7 +411,7 @@ void CameraController::UpdateCamera(Camera& camera, float deltaTime, float total
 
         const float longitude = 2.f * (1.0f / D3D12Basics::M_2PI) * totalTime;
         const float latitude = D3D12Basics::M_PI_4 + D3D12Basics::M_PI_8;
-        const float altitude = 5.0f;
+        const float altitude = 25.0f;
         cameraPos = D3D12Basics::SphericalToCartersian(longitude, latitude, altitude);
 
         camera.TranslateLookingAt(cameraPos, cameraTarget);
@@ -385,7 +420,6 @@ void CameraController::UpdateCamera(Camera& camera, float deltaTime, float total
 
 AppController::AppController(const InputController& inputController) : m_inputController(inputController)
 {
-
 }
 
 void AppController::Update(CustomWindow& customWindow, bool& quit)

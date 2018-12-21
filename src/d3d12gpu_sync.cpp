@@ -83,7 +83,8 @@ void D3D12GpuSynchronizer::WaitForFence(UINT64 fenceValue)
 {
     Timer timer;
     AssertIfFailed(m_fence->SetEventOnCompletion(fenceValue, m_event));
-    WaitForSingleObject(m_event, INFINITE);
+    AssertIfFailed(WaitForSingleObject(m_event, INFINITE), WAIT_FAILED);
+
     timer.Mark();
     m_waitTime = timer.ElapsedTime();
 }

@@ -2,9 +2,10 @@
 
 // project includes
 #include "utils.h"
+#include "d3d12utils.h"
 #include "d3d12descriptorheap.h"
 #include "d3d12swapchain.h"
-#include "d3d12committedbuffer.h"
+#include "d3d12committedresources.h"
 #include "d3d12gpu_sync.h"
 
 // c++ includes
@@ -32,26 +33,71 @@ namespace
 
     const auto g_swapChainFormat = DXGI_FORMAT::DXGI_FORMAT_R8G8B8A8_UNORM;
 
-    D3D12GpuMemoryHandle EncodeGpuMemoryHandle(uint64_t handleId, bool isDynamic)
+    enum ResourceType
     {
-        return handleId | (static_cast<uint64_t>(isDynamic) << 63);
+        Texture = 0,
+        Buffer
+    };
+
+    D3D12GpuMemoryHandle EncodeGpuMemoryHandle(D3D12GpuHandle::HandleType handle, bool isDynamic, ResourceType resourceType)
+    {
+        assert(!D3D12GpuHandle::IsNull(handle) && D3D12GpuHandle::IsValid(handle));
+
+        // This checks that the isDynamic and isResourceType bits are not used, which it also means the handle
+        // is not using those two last bits
+        D3D12GpuHandle::HandleType mask = static_cast<D3D12GpuHandle::HandleType>(3) << 
+                                          (std::numeric_limits<D3D12GpuHandle::HandleType>::digits - 2);
+        assert((handle & mask) == 0);
+
+        const auto dynamicBitEnabled = static_cast<D3D12GpuHandle::HandleType>(isDynamic);
+        const auto resourceTypeBitEnabled = static_cast<D3D12GpuHandle::HandleType>(resourceType);
+        return { handle |
+                (dynamicBitEnabled << (std::numeric_limits<D3D12GpuHandle::HandleType>::digits - 1)) |
+                (resourceTypeBitEnabled << (std::numeric_limits<D3D12GpuHandle::HandleType>::digits - 2)) };
     }
 
-    uint64_t DecodeGpuMemoryHandle_ID(D3D12GpuMemoryHandle memHandle)
+    D3D12GpuHandle::HandleType DecodeGpuMemoryHandle_ID(D3D12GpuMemoryHandle memHandle)
     {
-        return memHandle & 0x7fffffffffffffff;
+        assert(memHandle.IsValid() && !memHandle.IsNull());
+
+        constexpr auto bitsToShift = static_cast<uint64_t>(std::numeric_limits<D3D12GpuHandle::HandleType>::digits - 2);
+
+        const D3D12GpuHandle::HandleType msbEnabled = ~(static_cast<D3D12GpuHandle::HandleType>(3) << bitsToShift);
+        return memHandle.m_id & msbEnabled;
     }
 
     bool DecodeGpuMemoryHandle_IsDynamic(D3D12GpuMemoryHandle memHandle)
     {
-        return memHandle >> 63;
+        assert(memHandle.IsValid() && !memHandle.IsNull());
+
+        return memHandle.m_id >> (std::numeric_limits<D3D12GpuHandle::HandleType>::digits - 1);
+    }
+
+    ResourceType DecodeGpuMemoryHandle_ResourceType(D3D12GpuMemoryHandle memHandle)
+    {
+        assert(memHandle.IsValid() && !memHandle.IsNull());
+
+        D3D12GpuHandle::HandleType rawResourceType = (memHandle.m_id >> (std::numeric_limits<D3D12GpuHandle::HandleType>::digits - 2)) &
+                                                     ~(static_cast<D3D12GpuHandle::HandleType>(1) << (std::numeric_limits<D3D12GpuHandle::HandleType>::digits - 1));
+        return static_cast<ResourceType>(rawResourceType);
+    }
+
+    DXGI_MODE_DESC1 CreateDefaultDisplayMode()
+    {
+        DXGI_MODE_DESC1 displayMode{ 0 };
+
+        displayMode.Format  = DXGI_FORMAT_R8G8B8A8_UNORM;
+        displayMode.Height  = 480;
+        displayMode.Width   = 640;
+
+        return displayMode;
     }
 }
 
-D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_currentBackbufferIndex(0), m_currentFrameIndex(0), 
+D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_currentFrameIndex(0), 
                                                             m_isWaitableForPresentEnabled(isWaitableForPresentEnabled),
-                                                            m_depthBufferDescHandle(nullptr), m_nextMemoryHandle(0),
-                                                            m_currentFrame(0)
+                                                            m_nextHandleId(0), m_currentFrame(0),
+                                                            m_frameTime(10), m_frameWaitTime(10)
 {
     auto adapter = CreateDXGIInfrastructure();
     assert(adapter);
@@ -59,14 +105,17 @@ D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_currentBackbufferI
     CreateDevice(adapter);
     CheckFeatureSupport();
 
+    m_dynamicMemoryAllocator = std::make_unique<D3D12DynamicBufferAllocator>(m_device, g_64kb);
+    assert(m_dynamicMemoryAllocator);
+
     CreateCommandInfrastructure();
+
+    m_committedResourceAllocator = std::make_unique<D3D12CommittedResourceAllocator>(m_device, m_graphicsCmdQueue);
+    assert(m_committedResourceAllocator);
 
     CreateDescriptorHeaps();
 
     CreateFrameTimestampInfrastructure();
-
-    m_dynamicMemoryAllocator = std::make_unique<D3D12BufferAllocator>(m_device, g_64kb);
-    assert(m_dynamicMemoryAllocator);
 
     m_gpuSync = std::make_unique<D3D12GpuSynchronizer>(m_device, m_graphicsCmdQueue, m_framesInFlight);
 }
@@ -76,7 +125,7 @@ D3D12Gpu::~D3D12Gpu()
     m_gpuSync->WaitAll();
 }
 
-unsigned int D3D12Gpu::GetFormatPlaneCount(DXGI_FORMAT format)
+unsigned int D3D12Gpu::GetFormatPlaneCount(DXGI_FORMAT format) const
 {
     D3D12_FEATURE_DATA_FORMAT_INFO formatInfo = { format };
     return FAILED(m_device->CheckFeatureSupport(D3D12_FEATURE_FORMAT_INFO, &formatInfo, sizeof(formatInfo))) ? 0 : formatInfo.PlaneCount;
@@ -89,13 +138,16 @@ void D3D12Gpu::SetOutputWindow(HWND hwnd)
                                                    m_factory, m_device, m_graphicsCmdQueue,
                                                    m_isWaitableForPresentEnabled);
     assert(m_swapChain);
-
-    CreateDepthBuffer();
 }
 
 const Resolution& D3D12Gpu::GetCurrentResolution() const 
 { 
     return m_swapChain->GetCurrentResolution(); 
+}
+
+bool D3D12Gpu::IsFrameFinished(uint64_t frameId)
+{
+    return m_gpuSync->GetLastRetiredFrameId() >= frameId;
 }
 
 // TODO think about how to use the debugname of a dynamic resource
@@ -108,58 +160,64 @@ D3D12GpuMemoryHandle D3D12Gpu::AllocateDynamicMemory(size_t sizeBytes, const std
 
     for (unsigned int i = 0; i < m_framesInFlight; ++i)
     {
-        // TODO does forcing the alignment to the one for constant buffers makes sense?
-        allocation.m_allocation[i] = m_dynamicMemoryAllocator->Allocate(sizeBytes, g_constantBufferReadAlignment);
-        assert(D3D12Basics::IsAlignedToPowerof2(allocation.m_allocation[i].m_gpuPtr, g_constantBufferReadAlignment));
+        allocation.m_allocation[i] = m_dynamicMemoryAllocator->Allocate(sizeBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
+        assert(D3D12Basics::IsAlignedToPowerof2(allocation.m_allocation[i].m_gpuPtr, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT));
         allocation.m_frameId[i] = m_currentFrame;
     }
 
-    auto encodedHandle = EncodeGpuMemoryHandle(m_nextMemoryHandle++, true);
-    m_dynamicMemoryAllocations[encodedHandle] = std::move(allocation);
+    m_dynamicMemoryAllocations[m_nextHandleId] = std::move(allocation);
 
-    return encodedHandle;
+    return EncodeGpuMemoryHandle(m_nextHandleId++, true, ResourceType::Buffer);
 }
 
-D3D12GpuMemoryHandle D3D12Gpu::AllocateStaticMemory(const void* data, size_t  sizeBytes, const std::wstring& debugName)
+D3D12GpuMemoryHandle D3D12Gpu::AllocateStaticMemory(const void* data, size_t sizeBytes, const std::wstring& debugName)
 {
-    D3D12GpuUploadContext uploadContext{ m_device, m_cmdAllocators[m_currentFrameIndex], m_graphicsCmdQueue, m_cmdLists[m_currentFrameIndex] };
+    D3D12CommittedResourceAllocator::Context context { m_cmdAllocators[m_currentFrameIndex], m_cmdLists[m_currentFrameIndex] };
+    auto committedBuffer = m_committedResourceAllocator->AllocateBuffer(context, data, sizeBytes, 
+                                                                        D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT,
+                                                                        debugName);
 
-    ID3D12ResourcePtr resource = D3D12Basics::D3D12CreateCommittedBuffer(uploadContext, data, sizeBytes, debugName);
-    assert(resource);
+    m_staticBufferMemoryAllocations[m_nextHandleId] = StaticBufferAlloc{ m_currentFrame, committedBuffer };
 
-    auto encodedHandle = EncodeGpuMemoryHandle(m_nextMemoryHandle++, false);
-    m_staticMemoryAllocations[encodedHandle] = StaticMemoryAlloc{ m_currentFrame, resource, sizeBytes };
-
-    return encodedHandle;
+    return EncodeGpuMemoryHandle(m_nextHandleId++, false, ResourceType::Buffer);
 }
 
-D3D12GpuMemoryHandle D3D12Gpu::AllocateStaticMemory(const std::vector<D3D12_SUBRESOURCE_DATA>& subresources, const D3D12_RESOURCE_DESC& desc,
+D3D12GpuMemoryHandle D3D12Gpu::AllocateStaticMemory(const std::vector<D3D12_SUBRESOURCE_DATA>& subresources, 
+                                                    const D3D12_RESOURCE_DESC& desc,
                                                     const std::wstring& debugName)
 {
-    D3D12GpuUploadContext uploadContext{ m_device, m_cmdAllocators[m_currentFrameIndex], m_graphicsCmdQueue, m_cmdLists[m_currentFrameIndex] };
-
-    ID3D12ResourcePtr resource = D3D12Basics::D3D12CreateCommittedBuffer(uploadContext, subresources, desc, debugName);
+    D3D12CommittedResourceAllocator::Context context{ m_cmdAllocators[m_currentFrameIndex], m_cmdLists[m_currentFrameIndex] };
+    auto resource = m_committedResourceAllocator->AllocateTexture(context, subresources, desc, debugName);
     assert(resource);
 
-    // TODO this only works for 1d and 2d textures
-    size_t sizeBytes = 0;
-    for (auto& subResourceData : subresources)
-        sizeBytes += subResourceData.SlicePitch;
+    m_staticTextureMemoryAllocations[m_nextHandleId] = StaticTextureAlloc{ m_currentFrame, resource };
 
-    auto encodedHandle = EncodeGpuMemoryHandle(m_nextMemoryHandle++, false);
-    m_staticMemoryAllocations[encodedHandle] = StaticMemoryAlloc{ m_currentFrame, resource, sizeBytes };
+    return EncodeGpuMemoryHandle(m_nextHandleId++, false, ResourceType::Texture);
+}
 
-    return encodedHandle;
+D3D12GpuMemoryHandle D3D12Gpu::AllocateStaticMemory(const D3D12_RESOURCE_DESC& desc, D3D12_RESOURCE_STATES initialState, 
+                                                    const D3D12_CLEAR_VALUE* clearValue, const std::wstring& debugName)
+{
+    ID3D12ResourcePtr resource = CreateResourceHeap(m_device, desc, ResourceHeapType::DefaultHeap, initialState, clearValue);
+    assert(resource);
+    resource->SetName(debugName.c_str());
+
+    m_staticTextureMemoryAllocations[m_nextHandleId] = StaticTextureAlloc{ m_currentFrame, resource };
+
+    return EncodeGpuMemoryHandle(m_nextHandleId++, false, ResourceType::Texture);
 }
 
 void D3D12Gpu::UpdateMemory(D3D12GpuMemoryHandle memHandle, const void* data, size_t sizeBytes, size_t offsetBytes)
 {
-    assert(DecodeGpuMemoryHandle_IsDynamic(memHandle));
+    assert(memHandle.IsValid());
     assert(data);
     assert(sizeBytes > 0);
-    assert(m_dynamicMemoryAllocations.count(memHandle) == 1);
+    assert(DecodeGpuMemoryHandle_IsDynamic(memHandle));
 
-    auto& memoryAlloc = m_dynamicMemoryAllocations[memHandle];
+    auto decodedHandle = DecodeGpuMemoryHandle_ID(memHandle);
+    assert(m_dynamicMemoryAllocations.count(decodedHandle) == 1);
+
+    auto& memoryAlloc = m_dynamicMemoryAllocations[decodedHandle];
     assert(memoryAlloc.m_allocation[m_currentFrameIndex].m_cpuPtr);
 
     memcpy(memoryAlloc.m_allocation[m_currentFrameIndex].m_cpuPtr + offsetBytes, data, sizeBytes);
@@ -169,52 +227,62 @@ void D3D12Gpu::UpdateMemory(D3D12GpuMemoryHandle memHandle, const void* data, si
 
 void D3D12Gpu::FreeMemory(D3D12GpuMemoryHandle memHandle)
 {
+    assert(memHandle.IsValid());
+
     m_retiredAllocations.push_back(memHandle);
 }
 
-D3D12GpuMemoryView D3D12Gpu::CreateConstantBufferView(D3D12GpuMemoryHandle memHandle)
+D3D12GpuViewHandle D3D12Gpu::CreateConstantBufferView(D3D12GpuMemoryHandle memHandle)
 {
-    D3D12GpuMemoryView view;
-    view.m_memHandle = memHandle;
+    assert(memHandle.IsValid());
+    auto decodedHandle = DecodeGpuMemoryHandle_ID(memHandle);
 
+    DescriptorHandlesPtrs descriptors;
     if (DecodeGpuMemoryHandle_IsDynamic(memHandle))
     {
-        view.m_descriptors.resize(m_framesInFlight);
-        assert(m_dynamicMemoryAllocations.count(memHandle) == 1);
-        auto& memoryAlloc = m_dynamicMemoryAllocations[memHandle];
+        // Create a descriptor per frames in flight pointing each to the corresponding
+        // memory of that buffer in that frame
+        assert(m_dynamicMemoryAllocations.count(decodedHandle) == 1);
+        auto& memoryAlloc = m_dynamicMemoryAllocations[decodedHandle];
 
         for (unsigned int i = 0; i < m_framesInFlight; ++i)
         {
             D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
             cbvDesc.BufferLocation = memoryAlloc.m_allocation[i].m_gpuPtr;
             cbvDesc.SizeInBytes = static_cast<UINT>(memoryAlloc.m_allocation[i].m_size);
-            D3D12DescriptorHeapHandlePtr cbvHandle = m_cpuSRV_CBVDescHeap->CreateCBV(cbvDesc);
+            D3D12DescriptorAllocation* cbvHandle = m_cpuSRV_CBVDescHeap->CreateCBV(cbvDesc);
+            assert(cbvHandle);
 
-            view.m_descriptors[i] = cbvHandle;
+            descriptors[i] = cbvHandle;
         }
     }
-    else 
+    else
     {
-        assert(m_staticMemoryAllocations.count(memHandle) == 1);
-        auto& memoryAlloc = m_staticMemoryAllocations[memHandle];
+        assert(DecodeGpuMemoryHandle_ResourceType(memHandle) == ResourceType::Buffer);
+
+        assert(m_staticBufferMemoryAllocations.count(decodedHandle) == 1);
+        auto& memoryAlloc = m_staticBufferMemoryAllocations[decodedHandle];
 
         D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
-        cbvDesc.BufferLocation = memoryAlloc.m_resource->GetGPUVirtualAddress();
-        cbvDesc.SizeInBytes = static_cast<UINT>(memoryAlloc.m_size);
-        D3D12DescriptorHeapHandlePtr cbvHandle = m_cpuSRV_CBVDescHeap->CreateCBV(cbvDesc);
-
-        view.m_descriptors.push_back(cbvHandle);
+        cbvDesc.BufferLocation = memoryAlloc.m_committedBuffer.m_resource->GetGPUVirtualAddress();
+        cbvDesc.SizeInBytes = static_cast<UINT>(memoryAlloc.m_committedBuffer.m_alignedSize);
+        descriptors[0] = m_cpuSRV_CBVDescHeap->CreateCBV(cbvDesc);
+        assert(descriptors[0]);
     }
 
-    return view;
+    return CreateView(memHandle, std::move(descriptors));
 }
 
-D3D12GpuMemoryView D3D12Gpu::CreateTextureView(D3D12GpuMemoryHandle memHandle, const D3D12_RESOURCE_DESC& desc)
+D3D12GpuViewHandle D3D12Gpu::CreateTextureView(D3D12GpuMemoryHandle memHandle, const D3D12_RESOURCE_DESC& desc)
 {
+    assert(memHandle.IsValid());
+
     // TODO not supported yet
     assert(!DecodeGpuMemoryHandle_IsDynamic(memHandle));
+    assert(DecodeGpuMemoryHandle_ResourceType(memHandle) == ResourceType::Texture);
 
-    assert(m_staticMemoryAllocations.count(memHandle));
+    auto decodedHandle = DecodeGpuMemoryHandle_ID(memHandle);
+    assert(m_staticTextureMemoryAllocations.count(decodedHandle) == 1);
 
     // TODO only 2d textures with limited props supported
     D3D12_SHADER_RESOURCE_VIEW_DESC viewDesc;
@@ -226,18 +294,100 @@ D3D12GpuMemoryView D3D12Gpu::CreateTextureView(D3D12GpuMemoryHandle memHandle, c
     viewDesc.Texture2D.PlaneSlice = 0;
     viewDesc.Texture2D.ResourceMinLODClamp = 0.0f;
 
-    auto& memoryAllocation = m_staticMemoryAllocations[memHandle];
-    D3D12DescriptorHeapHandlePtr descriptorHandle = m_cpuSRV_CBVDescHeap->CreateSRV(memoryAllocation.m_resource.Get(), viewDesc);
-
-    return D3D12GpuMemoryView{ memHandle, { descriptorHandle } };
+    DescriptorHandlesPtrs descriptors;
+    auto& memoryAllocation = m_staticTextureMemoryAllocations[decodedHandle];
+    descriptors[0] = m_cpuSRV_CBVDescHeap->CreateSRV(memoryAllocation.m_resource.Get(), viewDesc);
+    assert(descriptors[0]);
+    
+    return CreateView(memHandle, std::move(descriptors));
 }
 
-void D3D12Gpu::ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderTasks)
+D3D12GpuViewHandle D3D12Gpu::CreateRenderTargetView(D3D12GpuMemoryHandle memHandle, 
+                                                    const D3D12_RESOURCE_DESC& desc)
 {
-    assert(renderTasks.size() > 0);
+    assert(memHandle.IsValid());
 
-    assert(m_swapChain->GetCurrentBackBufferIndex() == m_currentBackbufferIndex);
+    // TODO not supported yet
+    assert(!DecodeGpuMemoryHandle_IsDynamic(memHandle));
+    assert(DecodeGpuMemoryHandle_ResourceType(memHandle) == ResourceType::Texture);
 
+    auto decodedHandle = DecodeGpuMemoryHandle_ID(memHandle);
+    assert(m_staticTextureMemoryAllocations.count(decodedHandle) == 1);
+
+    // TODO only 2d textures with limited props supported
+    D3D12_SHADER_RESOURCE_VIEW_DESC viewDesc;
+    viewDesc.Format = desc.Format;
+    viewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    viewDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    viewDesc.Texture2D.MostDetailedMip = 0;
+    viewDesc.Texture2D.MipLevels = desc.MipLevels;
+    viewDesc.Texture2D.PlaneSlice = 0;
+    viewDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+
+    DescriptorHandlesPtrs descriptors;
+    auto& memoryAllocation = m_staticTextureMemoryAllocations[decodedHandle];
+    descriptors[0] = m_cpuRTVDescHeap->CreateRTV(memoryAllocation.m_resource.Get());
+    assert(descriptors[0]);
+
+    return CreateView(memHandle, std::move(descriptors));
+}
+
+D3D12GpuViewHandle D3D12Gpu::CreateDepthStencilView(D3D12GpuMemoryHandle memHandle, DXGI_FORMAT format)
+{
+    assert(memHandle.IsValid());
+
+    // TODO not supported yet
+    assert(!DecodeGpuMemoryHandle_IsDynamic(memHandle));
+    assert(DecodeGpuMemoryHandle_ResourceType(memHandle) == ResourceType::Texture);
+
+    auto decodedHandle = DecodeGpuMemoryHandle_ID(memHandle);
+    assert(m_staticTextureMemoryAllocations.count(decodedHandle) == 1);
+
+    D3D12_DEPTH_STENCIL_VIEW_DESC desc;
+    desc.Format             = format;
+    desc.ViewDimension      = D3D12_DSV_DIMENSION_TEXTURE2D;
+    desc.Flags              = D3D12_DSV_FLAG_NONE;
+    desc.Texture2D.MipSlice = 0;
+
+    DescriptorHandlesPtrs descriptors;
+    auto& memoryAllocation = m_staticTextureMemoryAllocations[decodedHandle];
+    descriptors[0] = m_dsvDescPool->CreateDSV(memoryAllocation.m_resource.Get(), desc, nullptr);
+    assert(descriptors[0]);
+
+    return CreateView(memHandle, std::move(descriptors));
+}
+
+D3D12GpuViewHandle D3D12Gpu::CreateNULLTextureView(const D3D12_RESOURCE_DESC& desc)
+{
+    // TODO only 2d textures with limited props supported
+    D3D12_SHADER_RESOURCE_VIEW_DESC viewDesc;
+    viewDesc.Format = desc.Format;
+    viewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    viewDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    viewDesc.Texture2D.MostDetailedMip = 0;
+    viewDesc.Texture2D.MipLevels = desc.MipLevels;
+    viewDesc.Texture2D.PlaneSlice = 0;
+    viewDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+
+    DescriptorHandlesPtrs descriptors;
+    descriptors[0] = m_cpuSRV_CBVDescHeap->CreateSRV(nullptr, viewDesc);
+    assert(descriptors[0]);
+
+    return CreateView(D3D12GpuMemoryHandle{ D3D12GpuHandle::m_nullId }, std::move(descriptors));
+}
+
+D3D12_RESOURCE_BARRIER& D3D12Gpu::SwapChainTransition(TransitionType transitionType)
+{
+    return m_swapChain->Transition(transitionType);
+}
+
+const D3D12_CPU_DESCRIPTOR_HANDLE& D3D12Gpu::SwapChainBackBufferViewHandle() const
+{
+    return m_swapChain->RTV();
+}
+
+ID3D12GraphicsCommandListPtr D3D12Gpu::StartCurrentCmdList()
+{
     auto cmdList = m_cmdLists[m_currentFrameIndex];
     auto cmdAllocator = m_cmdAllocators[m_currentFrameIndex];
 
@@ -246,155 +396,34 @@ void D3D12Gpu::ExecuteRenderTasks(const std::vector<D3D12GpuRenderTask>& renderT
 
     BeginFrameTimestamp(cmdList);
 
-    cmdList->ResourceBarrier(1, &m_swapChain->Transition(m_currentBackbufferIndex, D3D12SwapChain::Present_To_RenderTarget));
-
-    // Execute the graphics commands
-    // All render tasks have the same render target, depth buffer and clear value
-    auto backbufferRT = m_swapChain->RTV(m_currentBackbufferIndex);
-    D3D12_CPU_DESCRIPTOR_HANDLE& depthStencilDescriptor = m_depthBufferDescHandle->m_cpuHandle;
-    cmdList->OMSetRenderTargets(1, &backbufferRT, FALSE, &depthStencilDescriptor); 
-
     ID3D12DescriptorHeap* ppHeaps[] = { m_gpuDescriptorRingBuffer->GetDescriptorHeap().Get() };
     cmdList->SetDescriptorHeaps(1, ppHeaps);
 
-    cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    return cmdList;
+}
 
-    D3D12_VIEWPORT  boundViewport {};
-    RECT            boundScissorRect {};
-
-    ID3D12PipelineState* currentPipelineState = nullptr;
-    ID3D12RootSignature* currentRootSignature = nullptr;
-    for (const auto& renderTask : renderTasks)
-    {
-        if (renderTask.m_clear)
-        {
-            cmdList->ClearRenderTargetView(backbufferRT, renderTask.m_clearColor, 0, nullptr);
-            cmdList->ClearDepthStencilView(m_depthBufferDescHandle->m_cpuHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0x0, 0, nullptr);
-            continue;
-        }
-
-        auto pipelineState = renderTask.m_pipelineState.Get();
-        if (currentPipelineState != pipelineState)
-        {
-            cmdList->SetPipelineState(pipelineState);
-            currentPipelineState = pipelineState;
-        }
-
-        auto rootSignature = renderTask.m_rootSignature.Get();
-        if (currentRootSignature != rootSignature)
-        {
-            cmdList->SetGraphicsRootSignature(rootSignature);
-            currentRootSignature = rootSignature;
-        }
-
-        // Set bindings
-        for (auto& constants : renderTask.m_bindings.m_32BitConstants)
-        {
-            cmdList->SetGraphicsRoot32BitConstants(static_cast<UINT>(constants.m_bindingSlot),
-                                                   static_cast<UINT>(constants.m_data.size()),
-                                                   &constants.m_data[0], 0);
-        }
-
-        for (auto& cbv : renderTask.m_bindings.m_constantBufferViews)
-        {
-            D3D12_GPU_VIRTUAL_ADDRESS memoryVA {};
-            if (DecodeGpuMemoryHandle_IsDynamic(cbv.m_memoryHandle))
-            {
-                assert(m_dynamicMemoryAllocations.count(cbv.m_memoryHandle) == 1);
-                memoryVA = m_dynamicMemoryAllocations[cbv.m_memoryHandle].m_allocation[m_currentFrameIndex].m_gpuPtr;
-                m_dynamicMemoryAllocations[cbv.m_memoryHandle].m_frameId[m_currentFrameIndex] = m_currentFrame;
-            }
-            else
-            {
-                assert(m_staticMemoryAllocations.count(cbv.m_memoryHandle) == 1);
-                memoryVA = m_staticMemoryAllocations[cbv.m_memoryHandle].m_resource->GetGPUVirtualAddress();
-                m_staticMemoryAllocations[cbv.m_memoryHandle].m_frameId = m_currentFrame;
-            }
-
-            cmdList->SetGraphicsRootConstantBufferView(static_cast<UINT>(cbv.m_bindingSlot), memoryVA);
-        }
-
-        for (auto& cpuDescriptorTable : renderTask.m_bindings.m_descriptorTables)
-        {
-            D3D12_GPU_DESCRIPTOR_HANDLE descriptorTableHandle = m_gpuDescriptorRingBuffer->CurrentDescriptor();
-
-            for (auto& view : cpuDescriptorTable.m_views)
-            {
-                D3D12_CPU_DESCRIPTOR_HANDLE descriptorHandle{};
-                if (DecodeGpuMemoryHandle_IsDynamic(view.m_memHandle))
-                {
-                    assert(view.m_descriptors.size() == m_framesInFlight);
-                    assert(m_dynamicMemoryAllocations.count(view.m_memHandle) == 1);
-                    DynamicMemoryAlloc& dynamicAllocation = m_dynamicMemoryAllocations[view.m_memHandle];
-                    dynamicAllocation.m_frameId[m_currentFrameIndex] = m_currentFrame;
-
-                    descriptorHandle = view.m_descriptors[m_currentFrameIndex]->m_cpuHandle;
-                }
-                else
-                {
-                    assert(view.m_descriptors.size() == 1);
-                    descriptorHandle = view.m_descriptors[0]->m_cpuHandle;
-                    m_staticMemoryAllocations[view.m_memHandle].m_frameId = m_currentFrame;
-                }
-
-                m_gpuDescriptorRingBuffer->CopyToCurrentDescriptor(1, descriptorHandle);
-                m_gpuDescriptorRingBuffer->NextCurrentStackDescriptor();
-            }
-
-            cmdList->SetGraphicsRootDescriptorTable(static_cast<UINT>(cpuDescriptorTable.m_bindingSlot), descriptorTableHandle);
-        }
-
-        if (boundViewport.Height != renderTask.m_viewport.Height || boundViewport.MaxDepth != renderTask.m_viewport.MaxDepth ||
-            boundViewport.MinDepth != renderTask.m_viewport.MinDepth || boundViewport.TopLeftX != renderTask.m_viewport.TopLeftX || 
-            boundViewport.TopLeftY != renderTask.m_viewport.TopLeftY || boundViewport.Width != renderTask.m_viewport.Width)
-        {
-            cmdList->RSSetViewports(1, &renderTask.m_viewport);
-            boundViewport = renderTask.m_viewport;
-        }
-
-        if (boundScissorRect.bottom != renderTask.m_scissorRect.bottom || boundScissorRect.left != renderTask.m_scissorRect.left ||
-            boundScissorRect.right != renderTask.m_scissorRect.right || boundScissorRect.top != renderTask.m_scissorRect.top)
-        {
-            cmdList->RSSetScissorRects(1, &renderTask.m_scissorRect);
-            boundScissorRect = renderTask.m_scissorRect;
-        }
-
-        // NOTE creating the vb and ib views on the fly shouldn't be a performance issue
-        SetVertexBuffer(renderTask.m_vertexBufferId, renderTask.m_vertexBufferSizeBytes, renderTask.m_vertexSizeBytes, cmdList);
-
-        SetIndexBuffer(renderTask.m_indexBufferId, renderTask.m_indexBufferSizeBytes, cmdList);
-
-        cmdList->DrawIndexedInstanced(static_cast<UINT>(renderTask.m_indexCountPerInstance), 1, 
-                                      static_cast<UINT>(renderTask.m_indexOffset), 
-                                      static_cast<UINT>(renderTask.m_vertexOffset), 0);
-    }
-
-    cmdList->ResourceBarrier(1, &m_swapChain->Transition(m_currentBackbufferIndex, D3D12SwapChain::RenderTarget_To_Present));
-
+void D3D12Gpu::EndCurrentCmdList()
+{
+    auto cmdList = m_cmdLists[m_currentFrameIndex];
     EndFrameTimestamp(cmdList);
 
     AssertIfFailed(cmdList->Close());
+}
+
+void D3D12Gpu::ExecuteCurrentCmdList()
+{
+    auto cmdList = m_cmdLists[m_currentFrameIndex];
 
     // Execute the command list.
     ID3D12CommandList* ppCommandLists[] = { cmdList.Get() };
-    m_graphicsCmdQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+    m_graphicsCmdQueue->ExecuteCommandLists(1, ppCommandLists);
 }
 
-void D3D12Gpu::BeginFrame()
+void D3D12Gpu::PresentFrame()
 {
-    // TODO gather frame stats
-}
-
-void D3D12Gpu::FinishFrame()
-{
-    // TODO gather frame stats
-
     g_gpuViewMarkerPrePresentFrame.Mark();
     m_swapChain->Present(m_vsync);
     g_gpuViewMarkerPostPresentFrame.Mark();
-
-    // TODO frame statistics
-    //const float presentTime = m_swapChain->GetPresentTime();
 
     g_gpuViewMarkerPreWaitFrame.Mark();
 
@@ -412,12 +441,11 @@ void D3D12Gpu::FinishFrame()
     g_gpuViewMarkerPostWaitFrame.Mark();
 
     // Note: we can have x frames in flight and y backbuffers
-    m_currentBackbufferIndex = m_swapChain->GetCurrentBackBufferIndex();
     m_currentFrameIndex = (m_currentFrameIndex + 1) % m_framesInFlight;
     m_currentFrame = m_gpuSync->GetNextFrameId();
 
-    m_gpuDescriptorRingBuffer->NextDescriptorStack();
-    m_gpuDescriptorRingBuffer->ClearCurrentStack();
+    m_gpuDescriptorRingBuffer->NextStack();
+    m_gpuDescriptorRingBuffer->ClearStack();
 
     // TODO destroy retired buffers depending on if the frames they were bound are
     // still in flight.
@@ -435,8 +463,12 @@ void D3D12Gpu::WaitAll()
 
 ID3D12RootSignaturePtr D3D12Gpu::CreateRootSignature(ID3DBlobPtr signature, const std::wstring& name)
 {
+    assert(signature);
+
     ID3D12RootSignaturePtr rootSignature;
-    AssertIfFailed(m_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&rootSignature)));
+    if (FAILED(m_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&rootSignature))))
+        return nullptr;
+
     rootSignature->SetName(name.c_str());
 
     return rootSignature;
@@ -445,7 +477,9 @@ ID3D12RootSignaturePtr D3D12Gpu::CreateRootSignature(ID3DBlobPtr signature, cons
 ID3D12PipelineStatePtr D3D12Gpu::CreatePSO(const D3D12_GRAPHICS_PIPELINE_STATE_DESC& psoDesc, const std::wstring& name)
 {
     ID3D12PipelineStatePtr pso;
-    AssertIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pso)));
+    if (FAILED(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pso))))
+        return nullptr;
+
     pso->SetName(name.c_str());
 
     return pso;
@@ -466,16 +500,168 @@ void D3D12Gpu::OnResize(const Resolution& resolution)
 
     const auto& swapChainDisplayMode = FindClosestDisplayModeMatch(g_swapChainFormat, resolution);
     m_swapChain->Resize(swapChainDisplayMode);
+}
 
-    m_currentBackbufferIndex = m_swapChain->GetCurrentBackBufferIndex();
+void D3D12Gpu::SetBindings(ID3D12GraphicsCommandListPtr cmdList, const D3D12Bindings& bindings)
+{
+    for (auto& constants : bindings.m_32BitConstants)
+    {
+        cmdList->SetGraphicsRoot32BitConstants(static_cast<UINT>(constants.m_bindingSlot),
+                                               static_cast<UINT>(constants.m_data.size()),
+                                               &constants.m_data[0], 0);
+    }
 
-    CreateDepthBuffer();
+    for (auto& cbv : bindings.m_constantBufferViews)
+    {
+        auto decodedHandle = DecodeGpuMemoryHandle_ID(cbv.m_memoryHandle);
+        D3D12_GPU_VIRTUAL_ADDRESS memoryVA{};
+        if (DecodeGpuMemoryHandle_IsDynamic(cbv.m_memoryHandle))
+        {
+            assert(m_dynamicMemoryAllocations.count(decodedHandle) == 1);
+            memoryVA = m_dynamicMemoryAllocations[decodedHandle].m_allocation[m_currentFrameIndex].m_gpuPtr;
+            m_dynamicMemoryAllocations[decodedHandle].m_frameId[m_currentFrameIndex] = m_currentFrame;
+        }
+        else
+        {
+            assert(DecodeGpuMemoryHandle_ResourceType(cbv.m_memoryHandle) == ResourceType::Texture);
+
+            assert(m_staticBufferMemoryAllocations.count(decodedHandle) == 1);
+            memoryVA = m_staticBufferMemoryAllocations[decodedHandle].m_committedBuffer.m_resource->GetGPUVirtualAddress();
+            m_staticBufferMemoryAllocations[decodedHandle].m_frameId = m_currentFrame;
+        }
+
+        cmdList->SetGraphicsRootConstantBufferView(static_cast<UINT>(cbv.m_bindingSlot), memoryVA);
+    }
+
+    for (auto& cpuDescriptorTable : bindings.m_descriptorTables)
+    {
+        D3D12_GPU_DESCRIPTOR_HANDLE descriptorTableHandle = m_gpuDescriptorRingBuffer->CurrentDescriptor();
+
+        for (auto viewHandle : cpuDescriptorTable.m_views)
+        {
+            assert(viewHandle.IsValid());
+            assert(viewHandle.m_id < m_memoryViews.size());
+            auto& view = m_memoryViews[viewHandle.m_id];
+            assert(view);
+
+            auto decodedHandle = DecodeGpuMemoryHandle_ID(view->m_memHandle);
+            D3D12_CPU_DESCRIPTOR_HANDLE descriptorHandle{};
+            if (DecodeGpuMemoryHandle_IsDynamic(view->m_memHandle))
+            {
+                assert(m_dynamicMemoryAllocations.count(decodedHandle) == 1);
+                DynamicMemoryAlloc& dynamicAllocation = m_dynamicMemoryAllocations[decodedHandle];
+                dynamicAllocation.m_frameId[m_currentFrameIndex] = m_currentFrame;
+
+                descriptorHandle = view->m_frameDescriptors[m_currentFrameIndex]->m_cpuHandle;
+            }
+            else
+            {
+                descriptorHandle = view->m_frameDescriptors[0]->m_cpuHandle;
+
+                if (!view->m_memHandle.IsNull())
+                {
+                    const auto resourceType = DecodeGpuMemoryHandle_ResourceType(view->m_memHandle);
+                    if (resourceType == ResourceType::Texture)
+                    {
+                        assert(m_staticTextureMemoryAllocations.count(decodedHandle) == 1);
+                        m_staticTextureMemoryAllocations[decodedHandle].m_frameId = m_currentFrame;
+                    }
+                    else
+                    {
+                        assert(m_staticBufferMemoryAllocations.count(decodedHandle) == 1);
+                        m_staticBufferMemoryAllocations[decodedHandle].m_frameId = m_currentFrame;
+                    }
+                }
+            }
+
+            m_gpuDescriptorRingBuffer->CopyToDescriptor(1, descriptorHandle);
+            m_gpuDescriptorRingBuffer->NextDescriptor();
+        }
+
+        cmdList->SetGraphicsRootDescriptorTable(static_cast<UINT>(cpuDescriptorTable.m_bindingSlot), 
+                                                descriptorTableHandle);
+    }
+}
+
+void D3D12Gpu::SetVertexBuffer(ID3D12GraphicsCommandListPtr cmdList, D3D12GpuMemoryHandle memHandle,
+                               size_t vertexBufferSizeBytes, size_t vertexSizeBytes)
+{
+    assert(memHandle.IsValid());
+
+    D3D12_VERTEX_BUFFER_VIEW vertexBufferView
+    {
+        GetBufferVA(memHandle),
+        static_cast<UINT>(vertexBufferSizeBytes),
+        static_cast<UINT>(vertexSizeBytes)
+    };
+    cmdList->IASetVertexBuffers(0, 1, &vertexBufferView);
+}
+
+void D3D12Gpu::SetIndexBuffer(ID3D12GraphicsCommandListPtr cmdList, D3D12GpuMemoryHandle memHandle,
+                              size_t indexBufferSizeBytes)
+{
+    assert(memHandle.IsValid());
+
+    D3D12_INDEX_BUFFER_VIEW indexBufferView
+    {
+        GetBufferVA(memHandle),
+        static_cast<UINT>(indexBufferSizeBytes), DXGI_FORMAT_R16_UINT
+    };
+    cmdList->IASetIndexBuffer(&indexBufferView);
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE D3D12Gpu::GetViewCPUHandle(D3D12GpuViewHandle gpuViewHandle) const
+{
+    assert(gpuViewHandle.IsValid());
+    assert(gpuViewHandle.m_id < m_memoryViews.size());
+
+    auto& memoryView = m_memoryViews[gpuViewHandle.m_id];
+    assert(memoryView);
+
+    const bool isDynamic = DecodeGpuMemoryHandle_IsDynamic(memoryView->m_memHandle);
+
+	return memoryView->m_frameDescriptors[isDynamic ? m_currentFrameIndex : 0]->m_cpuHandle;
+}
+
+ID3D12Resource* D3D12Gpu::GetResource(D3D12GpuMemoryHandle memHandle)
+{
+    assert(memHandle.IsValid());
+
+    // NOTE not supported yet
+    assert(!DecodeGpuMemoryHandle_IsDynamic(memHandle));
+    auto decodedHandle = DecodeGpuMemoryHandle_ID(memHandle);
+    ID3D12ResourcePtr resource = nullptr;
+    const auto resourceType = DecodeGpuMemoryHandle_ResourceType(memHandle);
+    if (resourceType == ResourceType::Texture)
+    {
+        assert(m_staticTextureMemoryAllocations.count(decodedHandle) == 1);
+        resource = m_staticTextureMemoryAllocations[decodedHandle].m_resource;
+        assert(resource);
+    }
+    else
+    {
+        assert(m_staticBufferMemoryAllocations.count(decodedHandle) == 1);
+        resource = m_staticBufferMemoryAllocations[decodedHandle].m_committedBuffer.m_resource;
+        assert(resource);
+    }
+
+    return resource.Get();
 }
 
 DisplayModes D3D12Gpu::EnumerateDisplayModes(DXGI_FORMAT format)
 {
     unsigned int displayModesCount = 0;
-    AssertIfFailed(m_output1->GetDisplayModeList1(format, 0, &displayModesCount, nullptr));
+    auto result = m_output1->GetDisplayModeList1(format, 0, &displayModesCount, nullptr);
+    // GetDisplayModeList doesn't work with a remote desktop connection
+    // Find the safest resolution possible
+    if (result == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE)
+    {
+        DisplayModes displayModes{ 1 };
+        displayModes[0] = CreateDefaultDisplayMode();
+
+        return displayModes;
+    }
+    AssertIfFailed(result);
 
     DisplayModes displayModes{ displayModesCount };
     AssertIfFailed(m_output1->GetDisplayModeList1(format, 0, &displayModesCount, &displayModes[0]));
@@ -492,7 +678,14 @@ DXGI_MODE_DESC1 D3D12Gpu::FindClosestDisplayModeMatch(DXGI_FORMAT format, const 
     modeToMatch.Height = resolution.m_height;
     DXGI_MODE_DESC1 closestMatch;
 
-    AssertIfFailed(m_output1->FindClosestMatchingMode1(&modeToMatch, &closestMatch, m_device.Get()));
+    auto result = m_output1->FindClosestMatchingMode1(&modeToMatch, &closestMatch, m_device.Get());
+    // FindClosestMatchingMode1 doesn't work with a remote desktop connection
+    // Find the safest resolution possible
+    if (result == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE)
+    {
+        closestMatch = CreateDefaultDisplayMode();
+    }
+    else AssertIfFailed(result);
 
     return closestMatch;
 }
@@ -515,7 +708,8 @@ void D3D12Gpu::CreateCommandInfrastructure()
             m_cmdAllocators[i]->SetName(converter.str().c_str());
         }
 
-        AssertIfFailed(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_cmdAllocators[i].Get(), nullptr, IID_PPV_ARGS(&m_cmdLists[i])));
+        AssertIfFailed(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_cmdAllocators[i].Get(), 
+                                                   nullptr, IID_PPV_ARGS(&m_cmdLists[i])));
         assert(m_cmdLists[i]);
         AssertIfFailed(m_cmdLists[i]->Close());
 
@@ -565,35 +759,18 @@ IDXGIAdapterPtr D3D12Gpu::CreateDXGIInfrastructure()
 
 void D3D12Gpu::CreateDescriptorHeaps()
 {
-    m_dsvDescHeap = std::make_unique<D3D12DSVDescriptorHeap>(m_device, 1);
-    assert(m_dsvDescHeap);
+	const uint32_t maxDescriptors = 1024;
+    m_dsvDescPool = std::make_unique<D3D12DSVDescriptorPool>(m_device, maxDescriptors);
+    assert(m_dsvDescPool);
 
-    const uint32_t maxDescriptors = 1024;
-    m_cpuSRV_CBVDescHeap = std::make_unique<D3D12CPUDescriptorBuffer>(m_device, maxDescriptors);
+    m_cpuSRV_CBVDescHeap = std::make_unique<D3D12CBV_SRV_UAVDescriptorBuffer>(m_device, maxDescriptors);
     assert(m_cpuSRV_CBVDescHeap);
+
+    m_cpuRTVDescHeap = std::make_unique<D3D12RTVDescriptorBuffer>(m_device, maxDescriptors);
+    assert(m_cpuRTVDescHeap);
 
     m_gpuDescriptorRingBuffer = std::make_unique<D3D12GPUDescriptorRingBuffer>(m_device, std::max(m_framesInFlight, m_backBuffersCount), maxDescriptors);
     assert(m_gpuDescriptorRingBuffer);
-}
-
-void D3D12Gpu::CreateDepthBuffer()
-{
-    const auto& resolution = m_swapChain->GetCurrentResolution();
-
-    D3D12_CLEAR_VALUE optimizedClearValue;
-    optimizedClearValue.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
-    optimizedClearValue.DepthStencil = { 1.0f, 0x0 };
-
-    m_depthBufferResource = D3D12CreateCommittedDepthStencil(m_device, resolution.m_width, resolution.m_height,
-                                                            optimizedClearValue.Format, &optimizedClearValue, 
-                                                            L"Depth buffer");
-
-    D3D12_DEPTH_STENCIL_VIEW_DESC desc;
-    desc.Format             = optimizedClearValue.Format;
-    desc.ViewDimension      = D3D12_DSV_DIMENSION_TEXTURE2D;
-    desc.Flags              = D3D12_DSV_FLAG_NONE;
-    desc.Texture2D.MipSlice = 0;
-    m_depthBufferDescHandle = m_dsvDescHeap->CreateDSV(m_depthBufferResource, desc, m_depthBufferDescHandle);
 }
 
 void D3D12Gpu::CheckFeatureSupport()
@@ -606,42 +783,38 @@ void D3D12Gpu::CheckFeatureSupport()
 
 D3D12_GPU_VIRTUAL_ADDRESS D3D12Gpu::GetBufferVA(D3D12GpuMemoryHandle memHandle)
 {
+    assert(memHandle.IsValid());
+    const auto decodedHandle = DecodeGpuMemoryHandle_ID(memHandle);
+
     if (DecodeGpuMemoryHandle_IsDynamic(memHandle))
     {
-        assert(m_dynamicMemoryAllocations.count(memHandle));
-        auto& memoryAllocation = m_dynamicMemoryAllocations[memHandle];
+        assert(m_dynamicMemoryAllocations.count(decodedHandle) == 1);
+        auto& memoryAllocation = m_dynamicMemoryAllocations[decodedHandle];
         assert(memoryAllocation.m_allocation[m_currentFrameIndex].m_gpuPtr);
         // NOTE: record the frame when the function got called
-        // TODO: assuming GetBufferVA means binding to the pipeline isnt the best way
+        // NOTE: assuming GetBufferVA means binding to the pipeline isnt the best way
         // to handle this.
         memoryAllocation.m_frameId[m_currentFrameIndex] = m_gpuSync->GetNextFrameId();
         return memoryAllocation.m_allocation[m_currentFrameIndex].m_gpuPtr;
     }
 
-    assert(m_staticMemoryAllocations.count(memHandle));
-    return m_staticMemoryAllocations[memHandle].m_resource->GetGPUVirtualAddress();
-}
-
-void D3D12Gpu::SetVertexBuffer(D3D12GpuMemoryHandle memHandle, size_t vertexBufferSizeBytes, size_t vertexSizeBytes,
-                               ID3D12GraphicsCommandListPtr cmdList)
-{
-    D3D12_VERTEX_BUFFER_VIEW vertexBufferView
+    const auto resourceType = DecodeGpuMemoryHandle_ResourceType(memHandle);
+    ID3D12ResourcePtr resource = nullptr;
+    if (resourceType == ResourceType::Texture)
     {
-        GetBufferVA(memHandle),
-        static_cast<UINT>(vertexBufferSizeBytes),
-        static_cast<UINT>(vertexSizeBytes)
-    };
-    cmdList->IASetVertexBuffers(0, 1, &vertexBufferView);
-}
-
-void D3D12Gpu::SetIndexBuffer(D3D12GpuMemoryHandle memHandle, size_t indexBufferSizeBytes, ID3D12GraphicsCommandListPtr cmdList)
-{
-    D3D12_INDEX_BUFFER_VIEW indexBufferView
+        assert(decodedHandle < m_staticTextureMemoryAllocations.size());
+        assert(m_staticTextureMemoryAllocations.count(decodedHandle) == 1);
+        resource = m_staticTextureMemoryAllocations[decodedHandle].m_resource;
+        assert(resource);
+    }
+    else
     {
-        GetBufferVA(memHandle),
-        static_cast<UINT>(indexBufferSizeBytes), DXGI_FORMAT_R16_UINT
-    };
-    cmdList->IASetIndexBuffer(&indexBufferView);
+        assert(m_staticBufferMemoryAllocations.count(decodedHandle) == 1);
+        resource = m_staticBufferMemoryAllocations[decodedHandle].m_committedBuffer.m_resource;
+        assert(resource);
+    }
+
+    return resource->GetGPUVirtualAddress();
 }
 
 void D3D12Gpu::DestroyRetiredAllocations()
@@ -651,11 +824,14 @@ void D3D12Gpu::DestroyRetiredAllocations()
     {
         auto& memAllocation = *it;
 
+        // TODO free descriptors as well?
         bool completelyRetired = true;
+        auto decodedHandle = DecodeGpuMemoryHandle_ID(memAllocation);
+
         if (DecodeGpuMemoryHandle_IsDynamic(memAllocation))
         {
-            assert(m_dynamicMemoryAllocations.count(memAllocation) == 1);
-            auto& dynamicMemoryAllocation = m_dynamicMemoryAllocations[memAllocation];
+            assert(m_dynamicMemoryAllocations.count(decodedHandle) == 1);
+            auto& dynamicMemoryAllocation = m_dynamicMemoryAllocations[decodedHandle];
             for (auto i = 0; i < m_framesInFlight; ++i)
                 completelyRetired &= dynamicMemoryAllocation.m_frameId[i] <= lastRetiredFrameId;
 
@@ -665,14 +841,31 @@ void D3D12Gpu::DestroyRetiredAllocations()
                     m_dynamicMemoryAllocator->Deallocate(dynamicMemoryAllocation.m_allocation[i]);
             }
 
-            m_dynamicMemoryAllocations.erase(memAllocation);
+            // TODO is it worth it to remove it?
+             m_dynamicMemoryAllocations.erase(memAllocation.m_id);
         }
         else
         {
-            assert(m_staticMemoryAllocations.count(memAllocation) == 1);
-            completelyRetired &= m_staticMemoryAllocations[memAllocation].m_frameId <= lastRetiredFrameId;
-            if (completelyRetired)
-                m_staticMemoryAllocations.erase(memAllocation);
+            const auto resourceType = DecodeGpuMemoryHandle_ResourceType(memAllocation);
+            ID3D12ResourcePtr resource = nullptr;
+            if (resourceType == ResourceType::Texture)
+            {
+                assert(m_staticTextureMemoryAllocations.count(decodedHandle) == 1);
+                const auto frameId = m_staticTextureMemoryAllocations[decodedHandle].m_frameId;
+                completelyRetired = frameId <= lastRetiredFrameId;
+                // TODO is it worth it to remove it?
+                if (completelyRetired)
+                    m_staticBufferMemoryAllocations.erase(memAllocation.m_id);
+            }
+            else 
+            {
+                assert(m_staticBufferMemoryAllocations.count(decodedHandle) == 1);
+                const auto frameId = m_staticBufferMemoryAllocations[decodedHandle].m_frameId;
+                completelyRetired = frameId <= lastRetiredFrameId;
+                // TODO is it worth it to remove it?
+                if (completelyRetired)
+                    m_staticBufferMemoryAllocations.erase(memAllocation.m_id);
+            }
         }
 
         if (completelyRetired)
@@ -701,7 +894,13 @@ void D3D12Gpu::CreateFrameTimestampInfrastructure()
 
     AssertIfFailed(m_device->CreateQueryHeap(&queryHeapDesc, IID_PPV_ARGS(&m_timestampQueryHeap)));
 
-    m_timestampBuffer = D3D12CreateCommittedReadBackBuffer(m_device, queryHeapDesc.Count * sizeof(uint64_t));
+    
+    // NOTE: ResolveQueryData requires an alignment of 8 when using the offset
+    // https://docs.microsoft.com/en-us/windows/desktop/api/d3d12/nf-d3d12-id3d12graphicscommandlist-resolvequerydata
+    const size_t alignment = 8;
+    const std::wstring debugName = L"Time stamp buffer - Query";
+    m_timestampBuffer = m_committedResourceAllocator->AllocateReadBackBuffer(queryHeapDesc.Count * sizeof(uint64_t), alignment,
+                                                                             debugName).m_resource;
     assert(m_timestampBuffer);
 }
 
@@ -740,4 +939,15 @@ void D3D12Gpu::UpdateFrameTimestamp()
     // Calculate the GPU execution time in milliseconds.
     const float gpuTimeS = (timeStampDelta / static_cast<float>(m_cmdQueueTimestampFrequency));
     m_frameStats.m_cmdListTime = gpuTimeS;
+}
+
+D3D12GpuViewHandle D3D12Gpu::CreateView(D3D12GpuMemoryHandle memHandle, DescriptorHandlesPtrs&& descriptors)
+{
+    D3D12GpuMemoryViewPtr view = std::make_unique<D3D12GpuMemoryView>(memHandle, std::move(descriptors));
+    assert(view);
+
+    D3D12GpuViewHandle viewHandle{ m_memoryViews.size() };
+    m_memoryViews.push_back(std::move(view));
+
+    return viewHandle;
 }

@@ -2,55 +2,41 @@
 
 // c++ includes
 #include <cassert>
+#include <sstream>
+#include <filesystem>
+#include <iostream>
 
 // project includes
 #include "meshgenerator.h"
 #include "d3d12scenerender.h"
 #include "d3d12imgui.h"
+#include "d3d12utils.h"
 
 // thirdparty libraries include
 #include "imgui/imgui.h"
 
 using namespace D3D12Basics;
 
+#define ENABLE_IMGUI (1)
+
 namespace 
 {
-    static const float g_defaultClearColor[4] = { 0.0f, 0.2f, 0.4f, 1.0f };
-
-    void UpdateRendertasksResolution(std::vector<D3D12GpuRenderTask>& renderTasks, const Resolution& resolution)
-    {
-        D3D12_VIEWPORT viewport =
-        {
-            0.0f, 0.0f,
-            static_cast<float>(resolution.m_width),
-            static_cast<float>(resolution.m_height),
-            D3D12_MIN_DEPTH, D3D12_MAX_DEPTH
-        };
-
-        RECT scissorRect =
-        {
-            0L, 0L,
-            static_cast<long>(resolution.m_width),
-            static_cast<long>(resolution.m_height)
-        };
-
-        for (auto& renderTask : renderTasks)
-        {
-            renderTask.m_viewport = viewport;
-            renderTask.m_scissorRect = scissorRect;
-        }
-    }
+    static const float g_showSceneLoadedUITime = 5.0f;
 }
 
-D3D12BasicsEngine::D3D12BasicsEngine(const Settings& settings, Scene&& scene)  :   m_gpu(settings.m_isWaitableForPresentEnabled),
-                                                                                   m_sceneLoadingDone(false), m_quit(false), m_scene(std::move(scene))
+D3D12BasicsEngine::D3D12BasicsEngine(const Settings& settings, 
+                                     Scene&& scene)   : m_gpu(settings.m_isWaitableForPresentEnabled),
+                                                        m_sceneLoadingDone(false), m_quit(false), 
+                                                        m_scene(std::move(scene)), 
+                                                        m_beginToEndTimer(10), m_endToEndTimer(10),
+                                                        m_fileMonitor(L"./data")
 {
     m_window = std::make_unique<CustomWindow>(m_gpu.GetSafestResolutionSupported());
     assert(m_window);
 
     m_gpu.SetOutputWindow(m_window->GetHWND());
 
-    m_sceneRender = std::make_unique<D3D12SceneRender>(m_gpu, m_scene, m_textureDataCache, m_meshDataCache);
+    m_sceneRender = std::make_unique<D3D12SceneRender>(m_gpu, m_fileMonitor, m_scene, m_textureDataCache, m_meshDataCache);
     assert(m_sceneRender);
 
     m_inputController = std::make_unique<InputController>(m_window->GetHWND());
@@ -62,7 +48,12 @@ D3D12BasicsEngine::D3D12BasicsEngine(const Settings& settings, Scene&& scene)  :
     m_appController = std::make_unique<AppController>(*m_inputController);
     assert(m_appController);
 
-    m_imgui = std::make_unique<D3D12ImGui>(m_gpu);
+#if ENABLE_IMGUI
+    m_imgui = std::make_unique<D3D12ImGui>(m_gpu, m_fileMonitor);
+    assert(m_imgui);
+#endif
+
+    CreateDepthBuffer();
 
     // NOTE: delaying load scene to the last thing to avoid concurrent issues when creating gpu memory.
     // TODO: find a proper solution for this when working on concurrent cmd lists
@@ -76,13 +67,15 @@ D3D12BasicsEngine::~D3D12BasicsEngine()
     if (m_sceneLoaderThread.joinable())
         m_sceneLoaderThread.join();
 
-    // TODO is it needed? gpu destructor already waits for all the pipeline to be done
+    // NOTE: Wait for all pending command lists to be done. This is done before
+    // any resource (ie, pipeline state) is freed so there arent any
+    // concurrency issues.
     m_gpu.WaitAll();
 }
 
 void D3D12BasicsEngine::BeginFrame()
 {
-    m_beginToEndDeltaTime = m_beginToEndTimer.ElapsedTime();
+    m_beginToEndDeltaTime = m_beginToEndTimer.ElapsedAvgTime();
 
     m_beginToEndTimer.Mark();
 
@@ -93,54 +86,45 @@ void D3D12BasicsEngine::BeginFrame()
 
     ProcessUserEvents();
 
+#if ENABLE_IMGUI
     m_imgui->BeginFrame();
+#endif
+}
 
-    if (m_sceneLoadingDone && !m_sceneRender->AreGpuResourcesLoaded())
+void D3D12BasicsEngine::RunFrame(void(*UpdateScene)(Scene& scene, float totalTime))
+{
+    if (m_sceneLoadingDone)
     {
-        m_sceneLoaderThread.join();
-        m_sceneRender->LoadGpuResources();
-    }
+        if (!m_sceneRender->AreGpuResourcesLoaded())
+        {
+            // Note This calls blocks
+            m_sceneRender->LoadGpuResources();
 
-    if (m_sceneRender->AreGpuResourcesLoaded())
-    {
+            m_sceneLoadedUITimer.Reset();
+        }
+
+        assert(m_sceneRender->AreGpuResourcesLoaded());
+
         m_sceneRender->Update();
+
+        UpdateScene(m_scene, m_totalTime);
     }
+
+#if ENABLE_IMGUI
+    ShowSceneLoadUI();
 
     ShowFrameStats();
+#endif
+
+    RenderFrame();
 }
 
 void D3D12BasicsEngine::EndFrame()
 {
-    // Prepare render tasks: clear + scene + imgui
-    {
-        std::vector<D3D12GpuRenderTask> renderTasks;
-        D3D12GpuRenderTask clearRenderTask;
-        clearRenderTask.m_clear = true;
-        memcpy(clearRenderTask.m_clearColor, g_defaultClearColor, sizeof(float) * 4);
-        renderTasks.emplace_back(std::move(clearRenderTask));
-
-        auto sceneRenderTasks = m_sceneRender->CreateRenderTasks();
-        UpdateRendertasksResolution(sceneRenderTasks, m_gpu.GetCurrentResolution());
-        renderTasks.insert(renderTasks.end(), sceneRenderTasks.begin(), sceneRenderTasks.end());
-
-        auto imguiRenderTasks = m_imgui->EndFrame();
-        renderTasks.insert(renderTasks.end(), imguiRenderTasks.begin(), imguiRenderTasks.end());
-
-        m_gpu.ExecuteRenderTasks(renderTasks);
-    }
-
-    m_gpu.FinishFrame();
+    m_gpu.PresentFrame();
 
     m_beginToEndTimer.Mark();
     m_endToEndTimer.Mark();
-}
-
-void D3D12BasicsEngine::Update(void (*Update)(Scene& scene, float totalTime))
-{
-    if (!m_sceneRender->AreGpuResourcesLoaded())
-        return;
-
-    Update(m_scene, m_totalTime);
 }
 
 void D3D12BasicsEngine::ProcessWindowEvents()
@@ -149,7 +133,10 @@ void D3D12BasicsEngine::ProcessWindowEvents()
         m_gpu.OnToggleFullScreen();
 
     if (m_window->HasResolutionChanged())
+    {
         m_gpu.OnResize(m_window->GetResolution());
+        CreateDepthBuffer();
+    }
 
     m_window->ResetWndProcEventsState();
 }
@@ -172,17 +159,23 @@ void D3D12BasicsEngine::LoadSceneData(const std::wstring& dataWorkingPath)
             if (!model.m_material.m_diffuseTexture.empty())
                 m_textureDataCache[model.m_material.m_diffuseTexture] = std::move(sceneLoader.LoadTextureData(model.m_material.m_diffuseTexture));
 
+            if (!model.m_material.m_normalsTexture.empty())
+                m_textureDataCache[model.m_material.m_normalsTexture] = std::move(sceneLoader.LoadTextureData(model.m_material.m_normalsTexture));
+
+            if (!model.m_material.m_specularTexture.empty())
+                m_textureDataCache[model.m_material.m_specularTexture] = std::move(sceneLoader.LoadTextureData(model.m_material.m_specularTexture));
+
             MeshData meshData;
             switch (model.m_type)
             {
             case Model::Type::Cube:
-                meshData = CreateCube(VertexDesc{ true, false, false });
+                meshData = CreateCube(VertexDesc{ true, true, true }, model.m_uvScaleOffset);
                 break;
             case Model::Type::Plane:
-                meshData = CreatePlane(VertexDesc{ true, false, false });
+                meshData = CreatePlane(VertexDesc{ true, true, true }, model.m_uvScaleOffset);
                 break;
             case Model::Type::Sphere:
-                meshData = CreateSphere(VertexDesc{ true, false, false }, 40, 40);
+                meshData = CreateSphere(VertexDesc{ true, true, true }, model.m_uvScaleOffset, 40, 40);
                 break;
             case Model::Type::MeshFile:
             {
@@ -200,12 +193,38 @@ void D3D12BasicsEngine::LoadSceneData(const std::wstring& dataWorkingPath)
     });
 }
 
+void D3D12BasicsEngine::ShowSceneLoadUI()
+{
+    std::string loadUIStr = "Scene loading!";
+    if (m_sceneRender->AreGpuResourcesLoaded())
+    {
+        if (m_sceneLoadedUITimer.TotalTime() > g_showSceneLoadedUITime)
+            return;
+        loadUIStr = "Scene loaded!";
+    }
+
+    const auto& resolution = m_gpu.GetCurrentResolution();
+    ImVec2 window_pos = ImVec2( resolution.m_width / 2.0f, resolution.m_height / 2.0f);
+    ImVec2 window_pos_pivot = ImVec2( 0.0f, 0.0f);
+    ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, window_pos_pivot);
+    ImGui::SetNextWindowBgAlpha(0.3f); // Transparent background
+    const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
+                                            ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+                                            ImGuiWindowFlags_NoNav;
+
+    ImGui::Begin("SceneLoadedUI", nullptr, windowFlags);
+    ImGui::Text(loadUIStr.c_str());
+    ImGui::End();
+}
+
 void D3D12BasicsEngine::ShowFrameStats()
 {
     const float DISTANCE = 10.0f;
     static int corner = 0;
-    ImVec2 window_pos = ImVec2((corner & 1) ? ImGui::GetIO().DisplaySize.x - DISTANCE : DISTANCE, 
-                               (corner & 2) ? ImGui::GetIO().DisplaySize.y - DISTANCE : DISTANCE);
+    const auto& resolution = m_gpu.GetCurrentResolution();
+    ImVec2 window_pos = ImVec2((corner & 1) ? resolution.m_width - DISTANCE : DISTANCE,
+                               (corner & 2) ? resolution.m_height - DISTANCE : DISTANCE);
     ImVec2 window_pos_pivot = ImVec2((corner & 1) ? 1.0f : 0.0f, (corner & 2) ? 1.0f : 0.0f);
     ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, window_pos_pivot);
     ImGui::SetNextWindowBgAlpha(0.3f); // Transparent background
@@ -225,4 +244,63 @@ void D3D12BasicsEngine::ShowFrameStats()
     ImGui::Text("CPU: frame time %.3f ms", frameStats.m_frameTime * 1000.0f);
     ImGui::Text("GPU: cmdlist time %.3f ms", frameStats.m_cmdListTime * 1000.0f);
     ImGui::End();
+}
+
+void D3D12BasicsEngine::RenderFrame()
+{
+#if ENABLE_IMGUI
+    ImGui::Render();
+#endif
+    auto cmdList = m_gpu.StartCurrentCmdList();
+
+    auto presentToRT = m_gpu.SwapChainTransition(Present_To_RenderTarget);
+    cmdList->ResourceBarrier(1, &presentToRT);
+
+    const auto& depthBufferViewHandle = m_gpu.GetViewCPUHandle(m_depthBuffer.m_dsv);
+    const auto& backbufferRT = m_gpu.SwapChainBackBufferViewHandle();
+
+    // Record command lists: scene and imgui
+    {
+        m_sceneRender->RecordCmdList(cmdList, backbufferRT, depthBufferViewHandle);
+
+        // IMGUI
+#if ENABLE_IMGUI
+        m_imgui->EndFrame(cmdList);
+#endif
+    }
+
+    auto rtToPresent = m_gpu.SwapChainTransition(RenderTarget_To_Present);
+    cmdList->ResourceBarrier(1, &rtToPresent);
+
+    m_gpu.EndCurrentCmdList();
+
+    m_gpu.ExecuteCurrentCmdList();
+}
+
+void D3D12BasicsEngine::CreateDepthBuffer()
+{
+    if (m_depthBuffer.m_memHandle.IsValid())
+        m_gpu.FreeMemory(m_depthBuffer.m_memHandle);
+
+    const auto& resolution = m_gpu.GetCurrentResolution();
+
+    const D3D12_RESOURCE_DESC desc = D3D12Basics::CreateTexture2DDesc(resolution.m_width, resolution.m_height, 
+                                                                      DXGI_FORMAT_D24_UNORM_S8_UINT,
+                                                                      D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
+    const D3D12_RESOURCE_STATES initialState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+
+    D3D12_CLEAR_VALUE optimizedClearValue;
+    optimizedClearValue.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    optimizedClearValue.DepthStencil = { 1.0f, 0x0 };
+
+    std::wstringstream sstream;
+    sstream << "Depth Buffer - " << resolution.m_width << "x" << resolution.m_height;
+
+    const size_t sizeBytes = resolution.m_width * resolution.m_height * 4;
+
+    m_depthBuffer.m_memHandle = m_gpu.AllocateStaticMemory(desc, initialState, &optimizedClearValue, sstream.str());
+    assert(m_depthBuffer.m_memHandle.IsValid());
+
+    m_depthBuffer.m_dsv = m_gpu.CreateDepthStencilView(m_depthBuffer.m_memHandle, DXGI_FORMAT_D24_UNORM_S8_UINT);
+    assert(m_depthBuffer.m_dsv.IsValid());
 }

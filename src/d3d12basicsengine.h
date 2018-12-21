@@ -4,6 +4,8 @@
 #include "d3d12gpu.h"
 #include "utils.h"
 #include "scene.h"
+#include "d3d12fwd.h"
+#include "filemonitor.h"
 
 // c++ includes
 #include <atomic>
@@ -30,9 +32,8 @@ namespace D3D12Basics
 
         // After BeginFrame and before EndFrame scene mods and imgui calls
         void BeginFrame();
+        void RunFrame(void(*UpdateScene)(Scene& scene, float totalTime));
         void EndFrame();
-
-        void Update(void (*Update)(Scene& scene, float totalTime));
 
         // 
         bool HasUserRequestedToQuit() const { return m_quit; }
@@ -51,11 +52,11 @@ namespace D3D12Basics
         Scene                                           m_scene;
         std::thread                                     m_sceneLoaderThread;
         std::atomic<bool>                               m_sceneLoadingDone;
-        std::unordered_map<std::wstring, TextureData>   m_textureDataCache;
-        std::unordered_map<size_t, MeshData>            m_meshDataCache;
-        std::mutex                                      m_sceneGpuLoadingMutex;
+        TextureDataCache                                m_textureDataCache;
+        MeshDataCache                                   m_meshDataCache;
 
         D3D12SceneRenderPtr m_sceneRender;
+        GpuTexture m_depthBuffer;
 
         InputControllerPtr  m_inputController;
         CameraControllerPtr m_cameraController;
@@ -68,12 +69,22 @@ namespace D3D12Basics
 
         D3D12ImGuiPtr m_imgui;
 
+        Timer m_sceneLoadedUITimer;
+
+        FileMonitor m_fileMonitor;
+
         void ProcessWindowEvents();
 
         void ProcessUserEvents();
 
         void LoadSceneData(const std::wstring& dataWorkingPath);
 
+        void ShowSceneLoadUI();
+
         void ShowFrameStats();
+
+        void RenderFrame();
+
+        void CreateDepthBuffer();
     };
 }

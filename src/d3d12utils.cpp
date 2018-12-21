@@ -8,13 +8,36 @@
 
 using namespace D3D12Basics;
 
+D3D12Basics::ID3DBlobPtr D3D12Basics::D3D12CompileBlob(const char* src, const char* target,
+                                                       const char* mainName,
+                                                       unsigned int flags)
+{
+    ID3DBlobPtr blob;
+
+    ID3DBlobPtr errors;
+    auto result = D3DCompile(src, strlen(src), nullptr, nullptr, nullptr, mainName,
+        target, flags, 0, &blob, &errors);
+    if (FAILED(result))
+    {
+        assert(errors);
+
+        std::wstringstream converter;
+        converter << "\n" << static_cast<const char*>(errors->GetBufferPointer());
+        OutputDebugString(converter.str().c_str());
+
+        return nullptr;
+    }
+
+    return blob;
+}
+
 D3D12_RASTERIZER_DESC D3D12Basics::CreateDefaultRasterizerState()
 {
     return  D3D12_RASTERIZER_DESC 
     {
             /*FillMode*/                D3D12_FILL_MODE_SOLID,
             /*CullMode*/                D3D12_CULL_MODE_BACK,
-            /*FrontCounterClockwise*/   FALSE,
+            /*FrontCounterClockwise*/   FALSE, // NOTE isnt this a bit weird?
             /*DepthBias*/               D3D12_DEFAULT_DEPTH_BIAS,
             /*DepthBiasClamp*/          D3D12_DEFAULT_DEPTH_BIAS_CLAMP,
             /*SlopeScaledDepthBias*/    D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS,
@@ -23,6 +46,24 @@ D3D12_RASTERIZER_DESC D3D12Basics::CreateDefaultRasterizerState()
             /*AntialiasedLineEnable*/   FALSE,
             /*ForcedSampleCount*/       0,
             /*ConservativeRaster*/      D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF 
+    };
+}
+
+D3D12_RASTERIZER_DESC D3D12Basics::CreateRasterizerState_NoDepthClip()
+{
+    return  D3D12_RASTERIZER_DESC
+    {
+        /*FillMode*/                D3D12_FILL_MODE_SOLID,
+        /*CullMode*/                D3D12_CULL_MODE_BACK,
+        /*FrontCounterClockwise*/   FALSE, // NOTE isnt this a bit weird?
+        /*DepthBias*/               D3D12_DEFAULT_DEPTH_BIAS,
+        /*DepthBiasClamp*/          D3D12_DEFAULT_DEPTH_BIAS_CLAMP,
+        /*SlopeScaledDepthBias*/    D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS,
+        /*DepthClipEnable*/         FALSE,
+        /*MultisampleEnable*/       FALSE,
+        /*AntialiasedLineEnable*/   FALSE,
+        /*ForcedSampleCount*/       0,
+        /*ConservativeRaster*/      D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF
     };
 }
 
@@ -74,24 +115,6 @@ D3D12_BLEND_DESC D3D12Basics::CreateAlphaBlendState()
         blendDesc.RenderTarget[i] = rtBlendDesc;
 
     return blendDesc;
-}
-
-D3D12Basics::ID3DBlobPtr D3D12Basics::CompileShader(const char* src, const char* mainName, const char* shaderModel, unsigned int compileFlags)
-{
-    ID3DBlobPtr shader;
-#if _DEBUG
-    ID3DBlobPtr errors;
-    AssertIfFailed(D3DCompile(src, strlen(src), nullptr, nullptr, nullptr, mainName, shaderModel, compileFlags, 0, &shader, &errors));
-    if (errors)
-    {
-        std::wstringstream converter;
-        converter << static_cast<const char*>(errors->GetBufferPointer());
-        OutputDebugString(converter.str().c_str());
-    }
-#else
-    D3D12Basics::AssertIfFailed(D3DCompile(src, strlen(src), nullptr, nullptr, nullptr, mainName, shaderModel, compileFlags, 0, &shader, nullptr));
-#endif
-    return shader;
 }
 
 D3D12_DESCRIPTOR_RANGE1 D3D12Basics::CreateDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE rangeType, unsigned int descriptorsCount)
@@ -166,4 +189,22 @@ D3D12_STATIC_SAMPLER_DESC D3D12Basics::CreateStaticLinearSamplerDesc()
 void D3D12Basics::OutputDebugBlobErrorMsg(ID3DBlobPtr errorMsg)
 {
     OutputDebugStringA(static_cast<LPCSTR>(errorMsg->GetBufferPointer()));
+}
+
+D3D12_RESOURCE_DESC D3D12Basics::CreateTexture2DDesc(unsigned int width, unsigned int height,
+                                                     DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags)
+{
+    D3D12_RESOURCE_DESC resourceDesc;
+    resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    resourceDesc.Alignment = 0;
+    resourceDesc.Width = width;
+    resourceDesc.Height = height;
+    resourceDesc.DepthOrArraySize = 1;
+    resourceDesc.MipLevels = 1;
+    resourceDesc.Format = format;
+    resourceDesc.SampleDesc = { 1, 0 };
+    resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    resourceDesc.Flags = flags;
+
+    return resourceDesc;
 }

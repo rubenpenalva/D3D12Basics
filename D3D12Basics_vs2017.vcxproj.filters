@@ -1,53 +1,32 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="Source Files">
-      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
-      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
-    </Filter>
-    <Filter Include="Header Files">
-      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
-      <Extensions>h;hh;hpp;hxx;hm;inl;inc;xsd</Extensions>
-    </Filter>
-    <Filter Include="Resource Files">
-      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
-    </Filter>
     <Filter Include="Thirdparty">
       <UniqueIdentifier>{d2214ca3-a7fb-4cda-a8ac-dc84d09e38d8}</UniqueIdentifier>
     </Filter>
     <Filter Include="Thirdparty\imgui">
       <UniqueIdentifier>{2d9730f7-2425-47df-969d-19c603b77215}</UniqueIdentifier>
     </Filter>
+    <Filter Include="BasicsEngine">
+      <UniqueIdentifier>{e0fbb2fa-9a4d-4c3d-bfb2-596284095085}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="D3D12Gpu">
+      <UniqueIdentifier>{3132ebc2-52d6-49ab-a4bc-13ce432cd10c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="D3D12Gpu\headers">
+      <UniqueIdentifier>{e307bd54-3631-4188-85fe-7b5873bc9a48}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="D3D12Gpu\src">
+      <UniqueIdentifier>{7ac5b140-8f8f-43d3-a61f-3c3f3b70c11f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="BasicsEngine\headers">
+      <UniqueIdentifier>{fb26a236-4f6b-4bc4-ae4e-fdf9e1c7353a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="BasicsEngine\src">
+      <UniqueIdentifier>{d0042835-8a9a-47ae-8012-f24204ace63b}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\main.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\utils.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\d3d12descriptorheap.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\scene.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\d3d12swapchain.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\d3d12gpu.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\d3d12committedbuffer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\meshgenerator.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\d3d12material.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="thirdparty\imgui\imgui.cpp">
       <Filter>Thirdparty\imgui</Filter>
     </ClCompile>
@@ -57,53 +36,51 @@
     <ClCompile Include="thirdparty\imgui\imgui_draw.cpp">
       <Filter>Thirdparty\imgui</Filter>
     </ClCompile>
-    <ClCompile Include="src\d3d12imgui.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="src\d3d12descriptorheap.cpp">
+      <Filter>D3D12Gpu\src</Filter>
     </ClCompile>
-    <ClCompile Include="src\d3d12utils.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="src\d3d12gpu.cpp">
+      <Filter>D3D12Gpu\src</Filter>
     </ClCompile>
     <ClCompile Include="src\d3d12gpu_sync.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>D3D12Gpu\src</Filter>
     </ClCompile>
-    <ClCompile Include="src\d3d12basicsengine.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="src\d3d12swapchain.cpp">
+      <Filter>D3D12Gpu\src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\d3d12imgui.cpp">
+      <Filter>BasicsEngine\src</Filter>
     </ClCompile>
     <ClCompile Include="src\d3d12scenerender.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>BasicsEngine\src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\d3d12utils.cpp">
+      <Filter>BasicsEngine\src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\meshgenerator.cpp">
+      <Filter>BasicsEngine\src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\scene.cpp">
+      <Filter>BasicsEngine\src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\utils.cpp">
+      <Filter>BasicsEngine\src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\d3d12basicsengine.cpp">
+      <Filter>BasicsEngine\src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\filemonitor.cpp">
+      <Filter>BasicsEngine\src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\d3d12pipelinestate.cpp">
+      <Filter>D3D12Gpu\src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\d3d12committedresources.cpp">
+      <Filter>D3D12Gpu\src</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\d3d12basicsfwd.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\d3d12descriptorheap.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\d3d12fwd.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\d3d12gpu.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\d3d12swapchain.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\scene.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\utils.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\d3d12committedbuffer.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\meshgenerator.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\d3d12material.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="thirdparty\imgui\imconfig.h">
       <Filter>Thirdparty\imgui</Filter>
     </ClInclude>
@@ -113,20 +90,56 @@
     <ClInclude Include="thirdparty\imgui\imgui_internal.h">
       <Filter>Thirdparty\imgui</Filter>
     </ClInclude>
-    <ClInclude Include="src\d3d12imgui.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="src\d3d12fwd.h">
+      <Filter>D3D12Gpu\headers</Filter>
     </ClInclude>
-    <ClInclude Include="src\d3d12utils.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="src\d3d12gpu.h">
+      <Filter>D3D12Gpu\headers</Filter>
     </ClInclude>
     <ClInclude Include="src\d3d12gpu_sync.h">
-      <Filter>Header Files</Filter>
+      <Filter>D3D12Gpu\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\d3d12swapchain.h">
+      <Filter>D3D12Gpu\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\d3d12utils.h">
+      <Filter>D3D12Gpu\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\d3d12descriptorheap.h">
+      <Filter>D3D12Gpu\headers</Filter>
     </ClInclude>
     <ClInclude Include="src\d3d12basicsengine.h">
-      <Filter>Header Files</Filter>
+      <Filter>BasicsEngine\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\d3d12basicsfwd.h">
+      <Filter>BasicsEngine\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\d3d12imgui.h">
+      <Filter>BasicsEngine\headers</Filter>
     </ClInclude>
     <ClInclude Include="src\d3d12scenerender.h">
-      <Filter>Header Files</Filter>
+      <Filter>BasicsEngine\headers</Filter>
     </ClInclude>
+    <ClInclude Include="src\meshgenerator.h">
+      <Filter>BasicsEngine\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\scene.h">
+      <Filter>BasicsEngine\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\utils.h">
+      <Filter>BasicsEngine\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\filemonitor.h">
+      <Filter>BasicsEngine\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\d3d12pipelinestate.h">
+      <Filter>D3D12Gpu\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\d3d12committedresources.h">
+      <Filter>D3D12Gpu\headers</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
   </ItemGroup>
 </Project>

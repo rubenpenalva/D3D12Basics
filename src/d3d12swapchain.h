@@ -19,13 +19,6 @@ namespace D3D12Basics
     class D3D12SwapChain
     {
     public:
-        enum TransitionType
-        {
-            Present_To_RenderTarget,
-            RenderTarget_To_Present,
-            TransitionType_COUNT
-        };
-
         D3D12SwapChain(HWND hwnd, DXGI_FORMAT format, const D3D12Basics::Resolution& resolution, 
                        IDXGIFactory4Ptr factory, ID3D12DevicePtr device, 
                        ID3D12CommandQueuePtr commandQueue, bool waitForPresentEnabled = false);
@@ -39,30 +32,28 @@ namespace D3D12Basics
 
         void ToggleFullScreen();
 
-        unsigned int GetCurrentBackBufferIndex() const;
+        D3D12_RESOURCE_BARRIER& Transition(TransitionType transitionType);
 
-        D3D12_RESOURCE_BARRIER& Transition(unsigned int backBufferIndex, TransitionType transitionType);
-
-        D3D12_CPU_DESCRIPTOR_HANDLE RTV(unsigned int backBufferIndex);
+        const D3D12_CPU_DESCRIPTOR_HANDLE& RTV() const;
 
         void Resize(const DXGI_MODE_DESC1& mode);
 
         const D3D12Basics::Resolution& GetCurrentResolution() const { return m_resolution; }
 
-        float GetPresentTime() const { return m_presentTimer.ElapsedTime(); }
+        float GetPresentTime() { return m_presentTimer.ElapsedAvgTime(); }
 
-        float GetWaitForPresentTime() const { return m_waitForPresentTimer.ElapsedTime(); }
+        float GetWaitForPresentTime() { return m_waitForPresentTimer.ElapsedAvgTime(); }
 
     private:
         ID3D12DevicePtr m_device;
         
-        D3D12RTVDescriptorHeap m_descriptorHeap;
+        D3D12RTVDescriptorPool m_descriptorPool;
 
         D3D12Basics::Resolution m_resolution;
 
         IDXGISwapChain3Ptr m_swapChain;
         
-        D3D12DescriptorHeapHandlePtr m_backbuffersRTVHandles[D3D12Gpu::m_backBuffersCount];
+        D3D12DescriptorAllocation* m_backbuffersRTVHandles[D3D12Gpu::m_backBuffersCount];
 
         ID3D12ResourcePtr m_backbufferResources[D3D12Gpu::m_backBuffersCount];
 

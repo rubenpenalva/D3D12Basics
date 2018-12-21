@@ -11,6 +11,7 @@
 
 namespace D3D12Basics
 {
+    // TODO move this class to d3d12gpu.h/cpp files
     class D3D12GpuSynchronizer
     {
     public:

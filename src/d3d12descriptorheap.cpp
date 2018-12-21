@@ -8,7 +8,7 @@ using namespace D3D12Basics;
 
 namespace
 {
-    ID3D12DescriptorHeapPtr CreateDescriptorHeap(ID3D12DevicePtr d3d12Device, D3D12_DESCRIPTOR_HEAP_TYPE type, 
+    ID3D12DescriptorHeapPtr CreateDescriptorHeap(ID3D12DevicePtr d3d12Device, D3D12_DESCRIPTOR_HEAP_TYPE type,
                                                  bool isShaderVisible, unsigned int maxDescriptors)
     {
         assert(d3d12Device);
@@ -23,15 +23,61 @@ namespace
 
         ID3D12DescriptorHeapPtr descriptorHeap;
         AssertIfFailed(d3d12Device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&descriptorHeap)));
-        
+
         return descriptorHeap;
     }
+}
+
+namespace D3D12Basics
+{
+    // Stack allocator
+    // Note: fixed size
+    class D3D12DescriptorStackAllocator
+    {
+    public:
+        // Note maxDescriptors is the max number of descriptors in the heap
+        D3D12DescriptorStackAllocator(unsigned int descriptorHandleIncrementSize, ID3D12DescriptorHeap* descriptorHeap,
+            unsigned int maxDescriptors, unsigned int descriptorHeapOffset = 0);
+
+        D3D12DescriptorAllocation* Allocate();
+
+        void Clear();
+
+    private:
+        D3D12_CPU_DESCRIPTOR_HANDLE m_startCPUHandle;
+        D3D12_GPU_DESCRIPTOR_HANDLE m_startGPUHandle;
+
+        size_t m_stackTop;
+        std::vector<D3D12DescriptorAllocation> m_allocations;
+    };
+
+    // Pool allocator
+    // Note: fixed size
+    // TODO why is the pool needed anyway? destroying descriptors doesnt seem to be important
+    // therefore the stack implementation would in theory be enough.
+    class D3D12DescriptorPoolAllocator
+    {
+    public:
+        // Note maxDescriptors is the max number of descriptors in the heap
+        D3D12DescriptorPoolAllocator(unsigned int descriptorHandleIncrementSize, 
+                                     ID3D12DescriptorHeap* descriptorHeap,
+                                     unsigned int maxDescriptors, unsigned int heapStartOffset = 0);
+
+        D3D12DescriptorAllocation* Allocate();
+
+        void Free(D3D12DescriptorAllocation* allocation);
+
+    protected:
+        std::list<D3D12DescriptorAllocation*>   m_freeAllocations;
+        std::vector<D3D12DescriptorAllocation>  m_allocations;
+    };
 }
 
 D3D12DescriptorStackAllocator::D3D12DescriptorStackAllocator(unsigned int descriptorHandleIncrementSize,
                                                              ID3D12DescriptorHeap* descriptorHeap,
                                                              unsigned int maxDescriptors,
-                                                             unsigned int descriptorHeapOffset) : m_stackTop(0)
+                                                             unsigned int descriptorHeapOffset) :   m_stackTop(0), 
+                                                                                                    m_allocations(maxDescriptors)
 {
     assert(descriptorHandleIncrementSize > 0);
     assert(descriptorHeap);
@@ -48,7 +94,6 @@ D3D12DescriptorStackAllocator::D3D12DescriptorStackAllocator(unsigned int descri
     auto cpuHandle = m_startCPUHandle;
     auto gpuHandle = m_startGPUHandle;
 
-    m_allocations.resize(maxDescriptors);
     for (size_t i = 0; i < maxDescriptors; ++i)
     {
         m_allocations[i].m_cpuHandle = cpuHandle;
@@ -59,7 +104,7 @@ D3D12DescriptorStackAllocator::D3D12DescriptorStackAllocator(unsigned int descri
     }
 }
 
-D3D12DescriptorHeapAllocation* D3D12DescriptorStackAllocator::Allocate()
+D3D12DescriptorAllocation* D3D12DescriptorStackAllocator::Allocate()
 {
     assert(m_stackTop <= m_allocations.size());
 
@@ -74,7 +119,7 @@ void D3D12DescriptorStackAllocator::Clear()
     m_stackTop = 0;
 }
 
-D3D12DescriptorHeapAllocator::D3D12DescriptorHeapAllocator(unsigned int descriptorHandleIncrementSize,
+D3D12DescriptorPoolAllocator::D3D12DescriptorPoolAllocator(unsigned int descriptorHandleIncrementSize,
                                                            ID3D12DescriptorHeap* descriptorHeap,
                                                            unsigned int maxDescriptors, 
                                                            unsigned int heapStartOffset) :   m_allocations(maxDescriptors)
@@ -102,7 +147,7 @@ D3D12DescriptorHeapAllocator::D3D12DescriptorHeapAllocator(unsigned int descript
     }
 }
 
-D3D12DescriptorHeapAllocation* D3D12DescriptorHeapAllocator::Allocate()
+D3D12DescriptorAllocation* D3D12DescriptorPoolAllocator::Allocate()
 {
     if (m_freeAllocations.empty())
         return nullptr;
@@ -113,73 +158,79 @@ D3D12DescriptorHeapAllocation* D3D12DescriptorHeapAllocator::Allocate()
     return allocation;
 }
 
-void D3D12DescriptorHeapAllocator::Free(D3D12DescriptorHeapAllocation* allocation)
+void D3D12DescriptorPoolAllocator::Free(D3D12DescriptorAllocation* allocation)
 {
     m_freeAllocations.push_back(allocation);
 }
 
-D3D12DescriptorHeap::D3D12DescriptorHeap(ID3D12DevicePtr d3d12Device, D3D12_DESCRIPTOR_HEAP_TYPE type,
+D3D12DescriptorPool::D3D12DescriptorPool(ID3D12DevicePtr d3d12Device, D3D12_DESCRIPTOR_HEAP_TYPE type,
                                          bool isShaderVisible, unsigned int maxDescriptors)
 {
     m_descriptorHeap = CreateDescriptorHeap(d3d12Device, type, isShaderVisible, maxDescriptors);
 
     auto descriptorHandleIncrementSize = d3d12Device->GetDescriptorHandleIncrementSize(type);
-    m_allocator = std::make_unique<D3D12DescriptorHeapAllocator>(descriptorHandleIncrementSize, m_descriptorHeap.Get(), maxDescriptors);
+    m_allocator = std::make_unique<D3D12DescriptorPoolAllocator>(descriptorHandleIncrementSize, m_descriptorHeap.Get(), maxDescriptors);
     assert(m_allocator);
 }
 
-void D3D12DescriptorHeap::Destroy(D3D12DescriptorHeapHandlePtr handle)
+D3D12DescriptorPool::~D3D12DescriptorPool()
+{}
+
+
+void D3D12DescriptorPool::Destroy(D3D12DescriptorAllocation* handle)
 {
     m_allocator->Free(handle);
 }
 
-D3D12CBV_SV_UAVDescriptorHeap::D3D12CBV_SV_UAVDescriptorHeap(ID3D12DevicePtr d3d12Device, bool isShaderVisible, 
-                                                             unsigned int maxDescriptors) : m_d3d12Device(d3d12Device),
-                                                                                            D3D12DescriptorHeap(d3d12Device, 
-                                                                                                                D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-                                                                                                                isShaderVisible, maxDescriptors)
+D3D12CBV_SRV_UAVDescriptorPool::D3D12CBV_SRV_UAVDescriptorPool(ID3D12DevicePtr d3d12Device, 
+                                                             unsigned int maxDescriptors,
+                                                             bool isShaderVisible) : m_d3d12Device(d3d12Device),
+                                                                                     D3D12DescriptorPool(d3d12Device, 
+                                                                                                         D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+                                                                                                         isShaderVisible, maxDescriptors)
 {
     assert(m_d3d12Device);
 }
 
-D3D12DescriptorHeapHandlePtr D3D12CBV_SV_UAVDescriptorHeap::CreateCBV(const D3D12_CONSTANT_BUFFER_VIEW_DESC& desc)
+D3D12DescriptorAllocation* D3D12CBV_SRV_UAVDescriptorPool::CreateCBV(const D3D12_CONSTANT_BUFFER_VIEW_DESC& desc)
 {
-    D3D12DescriptorHeapAllocation* allocation = m_allocator->Allocate();
-    assert(allocation);
+    D3D12DescriptorAllocation* allocation = m_allocator->Allocate();
+    if (!allocation)
+        return nullptr;
 
     m_d3d12Device->CreateConstantBufferView(&desc, allocation->m_cpuHandle);
 
-    return D3D12DescriptorHeapHandlePtr{ allocation };
+    return allocation;
 }
 
-D3D12DescriptorHeapHandlePtr D3D12CBV_SV_UAVDescriptorHeap::CreateSRV(ID3D12ResourcePtr resource, const D3D12_SHADER_RESOURCE_VIEW_DESC& desc)
+D3D12DescriptorAllocation* D3D12CBV_SRV_UAVDescriptorPool::CreateSRV(ID3D12ResourcePtr resource, const D3D12_SHADER_RESOURCE_VIEW_DESC& desc)
 {
-    assert(resource);
-
-    D3D12DescriptorHeapAllocation* allocation = m_allocator->Allocate();
-    assert(allocation);
+    D3D12DescriptorAllocation* allocation = m_allocator->Allocate();
+    if (!allocation)
+        return nullptr;
 
     m_d3d12Device->CreateShaderResourceView(resource.Get(), &desc, allocation->m_cpuHandle);
 
-    return D3D12DescriptorHeapHandlePtr{ allocation };
+    return allocation;
 }
 
-D3D12RTVDescriptorHeap::D3D12RTVDescriptorHeap(ID3D12DevicePtr d3d12Device, 
+D3D12RTVDescriptorPool::D3D12RTVDescriptorPool(ID3D12DevicePtr d3d12Device,
                                                unsigned int maxDescriptors) :   m_d3d12Device(d3d12Device),
-                                                                                D3D12DescriptorHeap(d3d12Device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+                                                                                D3D12DescriptorPool(d3d12Device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
                                                                                                     false, maxDescriptors)
 {
     assert(m_d3d12Device);
 }
 
-D3D12DescriptorHeapHandlePtr D3D12RTVDescriptorHeap::CreateRTV(ID3D12ResourcePtr resource, D3D12DescriptorHeapHandlePtr handle)
+D3D12DescriptorAllocation* D3D12RTVDescriptorPool::CreateRTV(ID3D12ResourcePtr resource, D3D12DescriptorAllocation* handle)
 {
     assert(resource);
 
     if (!handle)
     {
         handle = m_allocator->Allocate();
-        assert(handle);
+        if (!handle)
+            return nullptr;
     }
 
     m_d3d12Device->CreateRenderTargetView(resource.Get(), nullptr, handle->m_cpuHandle);
@@ -187,23 +238,24 @@ D3D12DescriptorHeapHandlePtr D3D12RTVDescriptorHeap::CreateRTV(ID3D12ResourcePtr
     return handle;
 }
 
-D3D12DSVDescriptorHeap::D3D12DSVDescriptorHeap(ID3D12DevicePtr d3d12Device, 
+D3D12DSVDescriptorPool::D3D12DSVDescriptorPool(ID3D12DevicePtr d3d12Device,
                                                unsigned int maxDescriptors) :   m_d3d12Device(d3d12Device),
-                                                                                D3D12DescriptorHeap(d3d12Device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV,
+                                                                                D3D12DescriptorPool(d3d12Device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV,
                                                                                                     false, maxDescriptors)
 {
     assert(m_d3d12Device);
 }
 
-D3D12DescriptorHeapHandlePtr D3D12DSVDescriptorHeap::CreateDSV(ID3D12ResourcePtr resource, const D3D12_DEPTH_STENCIL_VIEW_DESC& desc, 
-                                                               D3D12DescriptorHeapHandlePtr handle)
+D3D12DescriptorAllocation* D3D12DSVDescriptorPool::CreateDSV(ID3D12ResourcePtr resource, const D3D12_DEPTH_STENCIL_VIEW_DESC& desc, 
+                                                               D3D12DescriptorAllocation* handle)
 {
     assert(resource);
 
     if (!handle)
     {
         handle = m_allocator->Allocate();
-        assert(handle);
+        if (!handle)
+            return nullptr;
     }
 
     m_d3d12Device->CreateDepthStencilView(resource.Get(), &desc, handle->m_cpuHandle);
@@ -233,7 +285,11 @@ D3D12GPUDescriptorRingBuffer::D3D12GPUDescriptorRingBuffer(ID3D12DevicePtr d3d12
         m_allocators.emplace_back(std::move(allocator));
     }
 
-    NextCurrentStackDescriptor();
+    NextDescriptor();
+}
+
+D3D12GPUDescriptorRingBuffer::~D3D12GPUDescriptorRingBuffer()
+{
 }
 
 D3D12_GPU_DESCRIPTOR_HANDLE D3D12GPUDescriptorRingBuffer::CurrentDescriptor() const
@@ -243,7 +299,7 @@ D3D12_GPU_DESCRIPTOR_HANDLE D3D12GPUDescriptorRingBuffer::CurrentDescriptor() co
     return m_currentAllocation->m_gpuHandle;
 }
 
-void D3D12GPUDescriptorRingBuffer::NextCurrentStackDescriptor()
+void D3D12GPUDescriptorRingBuffer::NextDescriptor()
 {
     assert(m_currentHeap < m_allocators.size());
     m_currentAllocation = m_allocators[m_currentHeap]->Allocate();
@@ -252,12 +308,12 @@ void D3D12GPUDescriptorRingBuffer::NextCurrentStackDescriptor()
     assert(m_currentAllocation);
 }
 
-void D3D12GPUDescriptorRingBuffer::NextDescriptorStack()
+void D3D12GPUDescriptorRingBuffer::NextStack()
 {
     m_currentHeap = (m_currentHeap + 1) % m_ringBufferSize;
 }
 
-void D3D12GPUDescriptorRingBuffer::CopyToCurrentDescriptor(unsigned int numDescriptors, D3D12_CPU_DESCRIPTOR_HANDLE srcDescriptorRangeStart)
+void D3D12GPUDescriptorRingBuffer::CopyToDescriptor(unsigned int numDescriptors, D3D12_CPU_DESCRIPTOR_HANDLE srcDescriptorRangeStart)
 {
     assert(m_currentAllocation);
     D3D12_CPU_DESCRIPTOR_HANDLE destDescriptorRangeStart = m_currentAllocation->m_cpuHandle;
@@ -266,62 +322,63 @@ void D3D12GPUDescriptorRingBuffer::CopyToCurrentDescriptor(unsigned int numDescr
     m_d3d12Device->CopyDescriptorsSimple(numDescriptors, destDescriptorRangeStart, srcDescriptorRangeStart, descriptorHeapsType);
 }
 
-void D3D12GPUDescriptorRingBuffer::ClearCurrentStack()
+void D3D12GPUDescriptorRingBuffer::ClearStack()
 {
     m_allocators[m_currentHeap]->Clear();
-    NextCurrentStackDescriptor();
+    NextDescriptor();
 }
 
-D3D12CPUDescriptorBuffer::D3D12CPUDescriptorBuffer(ID3D12DevicePtr d3d12Device, unsigned int initialSize) : m_d3d12Device(d3d12Device), 
-                                                                                                            m_heapSize(initialSize)
+D3D12CBV_SRV_UAVDescriptorBuffer::D3D12CBV_SRV_UAVDescriptorBuffer(ID3D12DevicePtr d3d12Device, 
+                                                                 unsigned int initialSize) : D3D12DescriptorBuffer(d3d12Device, initialSize)
 {
-    assert(m_d3d12Device);
-    assert(m_heapSize > 0);
-
-    AddHeap();
 }
 
-D3D12DescriptorHeapHandlePtr D3D12CPUDescriptorBuffer::CreateCBV(const D3D12_CONSTANT_BUFFER_VIEW_DESC& desc)
+D3D12DescriptorAllocation* D3D12CBV_SRV_UAVDescriptorBuffer::CreateCBV(const D3D12_CONSTANT_BUFFER_VIEW_DESC& desc)
 {
-    auto handle = m_descriptorHeaps.back()->CreateCBV(desc);
+    auto handle = m_descriptorPools.back()->CreateCBV(desc);
     if (!handle)
     {
-        AddHeap();
-        handle = m_descriptorHeaps.back()->CreateCBV(desc);
+        AddPool();
+        handle = m_descriptorPools.back()->CreateCBV(desc);
         assert(handle);
     }
 
     return handle;
 }
 
-D3D12DescriptorHeapHandlePtr D3D12CPUDescriptorBuffer::CreateSRV(ID3D12ResourcePtr resource, const D3D12_SHADER_RESOURCE_VIEW_DESC& desc)
+D3D12DescriptorAllocation* D3D12CBV_SRV_UAVDescriptorBuffer::CreateSRV(ID3D12ResourcePtr resource, const D3D12_SHADER_RESOURCE_VIEW_DESC& desc)
 {
-    auto handle = m_descriptorHeaps.back()->CreateSRV(resource, desc);
+    auto handle = m_descriptorPools.back()->CreateSRV(resource, desc);
     if (!handle)
     {
-        AddHeap();
-        handle = m_descriptorHeaps.back()->CreateSRV(resource, desc);
+        AddPool();
+        handle = m_descriptorPools.back()->CreateSRV(resource, desc);
         assert(handle);
     }
 
     // TODO revisit this. maybe store the descriptor heap in the handle?
-    m_handlesAllocators[handle] = m_descriptorHeaps.size() - 1;
+    m_handlesAllocators[handle] = m_descriptorPools.size() - 1;
 
     return handle;
 }
 
-void D3D12CPUDescriptorBuffer::Destroy(D3D12DescriptorHeapHandlePtr handle)
+D3D12RTVDescriptorBuffer::D3D12RTVDescriptorBuffer(ID3D12DevicePtr d3d12Device,
+                                                   unsigned int initialSize) : D3D12DescriptorBuffer(d3d12Device, initialSize)
 {
-    assert(handle);
-    assert(m_handlesAllocators.count(handle));
-
-    auto index = m_handlesAllocators[handle];
-    assert(index < m_descriptorHeaps.size());
-
-    m_descriptorHeaps[index]->Destroy(handle);
 }
 
-void D3D12CPUDescriptorBuffer::AddHeap()
+D3D12DescriptorAllocation* D3D12RTVDescriptorBuffer::CreateRTV(ID3D12ResourcePtr resource)
 {
-    m_descriptorHeaps.push_back(std::make_unique<D3D12CBV_SV_UAVDescriptorHeap>(m_d3d12Device, false, m_heapSize));
+    auto handle = m_descriptorPools.back()->CreateRTV(resource);
+    if (!handle)
+    {
+        AddPool();
+        handle = m_descriptorPools.back()->CreateRTV(resource);
+        assert(handle);
+    }
+
+    // TODO revisit this. maybe store the descriptor heap in the handle?
+    m_handlesAllocators[handle] = m_descriptorPools.size() - 1;
+
+    return handle;
 }

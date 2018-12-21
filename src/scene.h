@@ -12,43 +12,61 @@
 
 namespace D3D12Basics
 {
-    class Camera
+    class EntityTransform
     {
     public:
+        enum class ProjectionType
+        {
+            Orthographic,
+            Perspective
+        };
         // NOTE Operating on a LH coordinate system
         // NOTE fov is in radians
-        Camera();
+        EntityTransform(ProjectionType projectionType = ProjectionType::Perspective);
 
         void TranslateLookingAt(const Float3& position, const Float3& target, const Float3& up = Float3::UnitY);
 
-        const Matrix44& CameraToClip() const { return m_cameraToClip; }
+        const Matrix44& LocalToClip() const { return m_localToClip; }
 
-        const Matrix44& WorldToCamera() const { return m_worldToCamera; }
+        const Matrix44& WorldToLocal() const { return m_worldToLocal; }
 
-        const Matrix44& CameraToWorld() const { return m_cameraToWorld; }
+        const Matrix44& LocalToWorld() const { return m_localToWorld; }
 
         const Float3& Position() const { return m_position; }
         const Float3& Forward() const { return m_forward; }
 
     private:
-        Matrix44 m_worldToCamera;
-        Matrix44 m_cameraToWorld;
+        Matrix44 m_worldToLocal;
+        Matrix44 m_localToWorld;
 
-        Matrix44 m_cameraToClip;
+        Matrix44 m_localToClip;
 
         Float3 m_position;
         Float3 m_forward;
 
-        void UpdateCameraToWorld(const Float3& position);
+        void UpdateLocalToWorld(const Float3& position);
+    };
+
+    struct Light
+    {
+        Light(EntityTransform transform, float intensity) : m_transform(transform), 
+                                                            m_intensity(intensity)
+        {}
+
+        EntityTransform m_transform;
+        float           m_intensity;
     };
 
     struct Material
     {
-        static const Float3 m_diffuseColor;
+       Float3 m_diffuseColor;
 
        std::wstring m_diffuseTexture;
        std::wstring m_specularTexture;
        std::wstring m_normalsTexture;
+
+       bool m_shadowReceiver;
+       bool m_shadowCaster;
     };
 
     class TextureData
@@ -86,8 +104,10 @@ namespace D3D12Basics
         std::wstring    m_name;
         Type            m_type;
         size_t          m_id;
+        Float4          m_uvScaleOffset;
 
         Matrix44 m_transform;
+        Matrix44 m_normalTransform;
         Material m_material;
     };
 
@@ -95,8 +115,9 @@ namespace D3D12Basics
     {
         std::wstring m_sceneFile;
 
-        Camera                m_camera;
-        std::vector<Model>    m_models;
+        EntityTransform     m_camera;
+        std::vector<Light>  m_lights;
+        std::vector<Model>  m_models;
     };
 
     class SceneLoader
@@ -121,7 +142,7 @@ namespace D3D12Basics
     public:
         CameraController(InputController& inputController);
 
-        void Update(Camera& camera, float deltaTime, float totalTime);
+        void Update(EntityTransform& camera, float deltaTime, float totalTime);
 
     private:
         struct UserCameraState
@@ -150,7 +171,7 @@ namespace D3D12Basics
 
         void ProcessInput();
 
-        void UpdateCamera(Camera& camera, float deltaTime, float totalTime);
+        void UpdateCamera(EntityTransform& camera, float deltaTime, float totalTime);
     };
 
     class AppController
@@ -169,4 +190,7 @@ namespace D3D12Basics
 
         bool ProcessGamePadInput(const DirectX::GamePad::ButtonStateTracker& gamepadTracker);
     };
+
+    using TextureDataCache = std::unordered_map<std::wstring, TextureData>;
+    using MeshDataCache = std::unordered_map<size_t, MeshData>;
 }

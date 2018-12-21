@@ -1,6 +1,7 @@
 // c++ includes
 #include <sstream>
 #include <iostream>
+#include <filesystem>
 
 // windows includes
 #include <windows.h>
@@ -11,37 +12,74 @@
 // thirdparty libraries include
 #include "imgui/imgui.h"
 
+#include <fstream>
+
 using namespace D3D12Basics;
 
-#define DONT_LOAD_SCENE (0)
-#define LOAD_ONLY_PLANE (0)
-#define LOAD_SPONZA (1 && !LOAD_ONLY_PLANE && !DONT_LOAD_SCENE)
+// NOTE: horrible but good enough for this project as scene management is not a feature
+#define LOAD_ONLY_PLANE         (0)
+#define LOAD_ONLY_AXIS_GUIZMOS  (0)
+#define LOAD_ENABLED (!LOAD_ONLY_PLANE && !LOAD_ONLY_AXIS_GUIZMOS)
+
+#define LOAD_AXIS_GUIZMOS   (1 && LOAD_ENABLED)
+#define LOAD_SPHERES        (1 && LOAD_ENABLED)
+#define LOAD_CUBES          (1 && LOAD_ENABLED)
+#define LOAD_PLANE          (1 && LOAD_ENABLED)
+#define LOAD_SPONZA         (1 && LOAD_ENABLED)
 
 namespace
 {
-    // NOTE:  Assuming working directory contains the data folder
+    // NOTE: Assuming working directory contains the data folder
     const wchar_t* g_sponzaDataWorkingPath = L"./data/sponza/";
     const wchar_t* g_sponzaModel = L"./data/sponza/sponza.dae";
-    
+
     const wchar_t* g_texture256FileName     = L"./data/texture_256.png";
     const wchar_t* g_texture1024FileName    = L"./data/texture_1024.jpg";
 
+#if (LOAD_PLANE || LOAD_ONLY_PLANE)
     const size_t g_planesCount          = 1;
+#else
+    const size_t g_planesCount          = 0;
+#endif
     const size_t g_planeModelID         = 0;
 
-    const size_t g_spheresCount         = 100;
-    const size_t g_spheresModelStartID  = g_planeModelID + g_planesCount;
-    const float g_spheresAngleDiff      = (D3D12Basics::M_2PI / g_spheresCount);
-
-    const size_t g_cubesCount           = 25;
-    const size_t g_cubesModelStartID    = g_spheresModelStartID + g_spheresCount;
-    const float g_cubesAngleDiff        = (D3D12Basics::M_2PI / g_cubesCount);
-
-#if LOAD_ONLY_PLANE
-    const size_t g_modelsCount = 1;
+#if LOAD_SPHERES 
+#if LOAD_AXIS_GUIZMOS
+    const size_t g_spheresCount         = 31;
+    const float g_spheresAngleDiff      = (D3D12Basics::M_2PI / (g_spheresCount - 1));
 #else
+    const size_t g_spheresCount         = 30;
+    const float g_spheresAngleDiff      = (D3D12Basics::M_2PI / g_spheresCount);
+#endif // !LOAD_AXIS_GUIZMOS
+#else
+#if LOAD_AXIS_GUIZMOS || LOAD_ONLY_AXIS_GUIZMOS
+    const size_t g_spheresCount         = 1;
+#else
+    const size_t g_spheresCount         = 0;
+#endif // !(LOAD_AXIS_GUIZMOS || LOAD_ONLY_AXIS_GUIZMOS)
+#endif // LOAD_SPHERES
+    const size_t g_spheresModelStartID  = g_planeModelID + g_planesCount;
+
+#if LOAD_CUBES
+#if LOAD_AXIS_GUIZMOS
+    const size_t g_cubesCount           = 21;
+    const float g_cubesAngleDiff        = (D3D12Basics::M_2PI / (g_cubesCount - 1));
+#else
+    const size_t g_cubesCount           = 20;
+    const float g_cubesAngleDiff        = (D3D12Basics::M_2PI / g_cubesCount);
+#endif // !LOAD_AXIS_GUIZMOS
+#else
+#if LOAD_AXIS_GUIZMOS || LOAD_ONLY_AXIS_GUIZMOS
+    const size_t g_cubesCount           = 1;
+#else
+    const size_t g_cubesCount           = 0;
+#endif // !(LOAD_AXIS_GUIZMOS || LOAD_ONLY_AXIS_GUIZMOS)
+#endif // LOAD_CUBES
+    const size_t g_cubesModelStartID    = g_spheresModelStartID + g_spheresCount;
+
     const size_t g_modelsCount = g_planesCount + g_spheresCount + g_cubesCount;
-#endif
+
+    const Float3 g_modelsOffset = { -30.0f, 0.0f, 0.0 };
 
     const wchar_t* g_enableWaitForPresentCmdName        = L"waitForPresent";
     const size_t g_enableWaitForPresentCmdNameLength    = wcslen(g_enableWaitForPresentCmdName);
@@ -51,73 +89,162 @@ namespace
         bool m_isWaitableForPresentEnabled;
     };
 
+#if LOAD_SPHERES
     D3D12Basics::Matrix44 CalculateSphereLocalToWorld(size_t sphereID, float totalTime)
     {
         const float longitude = g_spheresAngleDiff * sphereID;
         const float latitude = D3D12Basics::M_PI_2;
-        const float altitude = 3.3f;
-        const auto sphereOffsetPos = D3D12Basics::Float3(0.0f, 0.3f + (sinf(sphereID - totalTime * 5.0f) * 0.5f + 0.5f)*0.5f, 0.0f);
+        const float altitude = 15.0f;
+        const auto sphereOffsetPos = D3D12Basics::Float3(0.0f, 2.0f + (sinf(sphereID - totalTime * 5.0f) * 0.5f + 0.5f)*0.5f, 0.0f) + g_modelsOffset;
         D3D12Basics::Float3 spherePos = D3D12Basics::SphericalToCartersian(longitude, latitude, altitude) + sphereOffsetPos;
 
-        return D3D12Basics::Matrix44::CreateScale(0.2f) * D3D12Basics::Matrix44::CreateTranslation(spherePos);
+        return D3D12Basics::Matrix44::CreateScale(2.0f) * D3D12Basics::Matrix44::CreateTranslation(spherePos);
     }
+#endif // LOAD_SPHERES
 
     Scene CreateScene()
     {
         Scene scene;
-#if !DONT_LOAD_SCENE
+#if LOAD_ONLY_PLANE || LOAD_PLANE || LOAD_AXIS_GUIZMOS || LOAD_ONLY_AXIS_GUIZMOS || LOAD_SPHERES || LOAD_CUBES
+        if (!g_modelsCount)
+            return scene;
+
         std::vector<Model> models(g_modelsCount);
         size_t modelId = 0;
+#endif
+
+#if LOAD_ONLY_PLANE || LOAD_PLANE
         // Plane
         {
-            D3D12Basics::Matrix44 localToWorld = D3D12Basics::Matrix44::CreateScale(10.0f) * D3D12Basics::Matrix44::CreateRotationX(D3D12Basics::M_PI_2);
-            Material material { g_texture256FileName };
-            // TODO use a proper constructor
-            models[g_planeModelID] = Model{ L"Ground plane", Model::Type::Plane, modelId++, localToWorld, material };
+            D3D12Basics::Matrix44 localToWorld =    D3D12Basics::Matrix44::CreateScale(150.0f, 50.0f, 1.0f) *
+                                                    D3D12Basics::Matrix44::CreateRotationX(D3D12Basics::M_PI_2);
+            D3D12Basics::Matrix44 normalLocalToWorld = D3D12Basics::Matrix44::CreateRotationX(D3D12Basics::M_PI_2);
+
+            Material material;
+            material.m_diffuseTexture = g_texture256FileName;
+            material.m_shadowReceiver = true;
+            material.m_shadowCaster = true;
+
+            models[g_planeModelID] = Model{ L"Ground plane", Model::Type::Plane, 
+                                            modelId++, Float4{6.0f, 2.0f, 0.0f, 0.0f}, 
+                                            localToWorld, normalLocalToWorld, material };
         }
-        
-#if !LOAD_ONLY_PLANE
-        // Spheres
-        Material sphereMaterial { g_texture1024FileName };
-        for (size_t i = 0; i < g_spheresCount; ++i)
+#endif // LOAD_ONLY_PLANE || LOAD_PLANE
+
+#if LOAD_AXIS_GUIZMOS || LOAD_ONLY_AXIS_GUIZMOS
         {
-            D3D12Basics::Matrix44 localToWorld = CalculateSphereLocalToWorld(i, 0.0f);
+            Material fixedColorMat;
+            fixedColorMat.m_diffuseColor = Float3 { 1.0f, 0.0f, 0.0f };
+            fixedColorMat.m_shadowReceiver = false;
+            fixedColorMat.m_shadowCaster = false;
+            D3D12Basics::Matrix44 localToWorld = D3D12Basics::Matrix44::CreateTranslation(6.0f, 0.0f, 0.0f);
+            D3D12Basics::Matrix44 normalLocalToWorld;
+
+            models[g_spheresModelStartID] = Model{  L"Sphere +X", Model::Type::Sphere,
+                                                    modelId++, Float4{1.0f, 1.0f, 0.0f, 0.0f}, 
+                                                    localToWorld, normalLocalToWorld,
+                                                    fixedColorMat };
+        }
+        {
+            Material fixedColorMat;
+            fixedColorMat.m_diffuseColor = Float3{ 0.0f, 0.0f, 1.0f };
+            fixedColorMat.m_shadowReceiver = false;
+            fixedColorMat.m_shadowCaster = false;
+
+            D3D12Basics::Matrix44 localToWorld = D3D12Basics::Matrix44::CreateTranslation(0.0f, 0.0f, 6.0f);
+            D3D12Basics::Matrix44 normalLocalToWorld;
+
+            models[g_cubesModelStartID] = Model{    L"Cube +Z", Model::Type::Cube,
+                                                    modelId++, Float4{1.0f, 1.0f, 0.0f, 0.0f}, 
+                                                    localToWorld, normalLocalToWorld,
+                                                    fixedColorMat };
+        }
+#endif // LOAD_AXIS_GUIZMOS || LOAD_ONLY_AXIS_GUIZMOS
+        Material material; 
+        material.m_diffuseTexture = g_texture1024FileName;
+        material.m_shadowReceiver = true;
+        material.m_shadowCaster = true;
+
+#if LOAD_SPHERES
+#if LOAD_AXIS_GUIZMOS
+        const size_t sphereIDOffset = 1;
+        const size_t spheresAxisOffsetStart = 1;
+#else
+        const size_t sphereIDOffset = 0;
+        const size_t spheresAxisOffsetStart = 0;
+#endif // !LOAD_AXIS_GUIZMOS
+        // Spheres
+        for (size_t i = spheresAxisOffsetStart; i < g_spheresCount; ++i)
+        {
+            D3D12Basics::Matrix44 localToWorld = CalculateSphereLocalToWorld(i - sphereIDOffset, 0.0f);
+            D3D12Basics::Matrix44 normalLocalToWorld;
+
             std::wstringstream converter;
+
             converter << "Sphere " << i;
 
-            models[g_spheresModelStartID + i] = Model{ converter.str().c_str(), Model::Type::Sphere, modelId++, localToWorld, sphereMaterial };
+            models[g_spheresModelStartID + i] = Model{  converter.str().c_str(), Model::Type::Sphere, 
+                                                        modelId++, Float4{1.0f, 1.0f, 0.0f, 0.0f}, 
+                                                        localToWorld, normalLocalToWorld,
+                                                        material };
         }
-
+#endif // LOAD_SPHERES
+#if LOAD_CUBES
+#if LOAD_AXIS_GUIZMOS
+        const size_t cubeIDOffset = 1;
+        const size_t cubesAxisOffsetStart = 1;
+#else
+        const size_t cubeIDOffset = 0;
+        const size_t cubesAxisOffsetStart = 0;
+#endif // !LOAD_AXIS_GUIZMOS
         // Cubes
-        const Material cubeMaterial { g_texture1024FileName };
-        for (size_t i = 0; i < g_cubesCount; ++i)
+        for (size_t i = cubesAxisOffsetStart; i < g_cubesCount; ++i)
         {
-            const float longitude = g_cubesAngleDiff * i;
+            const size_t cubeId = i - cubeIDOffset;
+            const float longitude = g_cubesAngleDiff * cubeId;
             const float latitude = D3D12Basics::M_PI_2;
-            const float altitude = 2.0f;
-            const auto cubeOffsetPos = D3D12Basics::Float3(0.0f, (sinf(static_cast<float>(i)) * 0.5f + 0.5f) * 0.5f + 0.35f, 0.0f);
+            const float altitude = 10.0f;
+            const auto cubeOffsetPos = D3D12Basics::Float3(0.0f, 1.75f + (sinf(static_cast<float>(cubeId)) * 0.5f + 0.5f) * 0.5f + 0.5f, 0.0f);
             D3D12Basics::Float3 cubePos = D3D12Basics::SphericalToCartersian(longitude, latitude, altitude) + cubeOffsetPos;
 
-            D3D12Basics::Matrix44 localToWorld = D3D12Basics::Matrix44::CreateScale(0.35f) * D3D12Basics::Matrix44::CreateTranslation(cubePos);
+            D3D12Basics::Matrix44 localToWorld = D3D12Basics::Matrix44::CreateScale(1.5f) * D3D12Basics::Matrix44::CreateTranslation(cubePos);
+            D3D12Basics::Matrix44 normalLocalToWorld;
+
             std::wstringstream converter;
             converter << "Cube " << i;
 
-            models[g_cubesModelStartID + i] = Model{ converter.str().c_str(), Model::Type::Cube, modelId++, localToWorld, cubeMaterial};
+            models[g_cubesModelStartID + i] = Model {   converter.str().c_str(), Model::Type::Cube, 
+                                                        modelId++, Float4{1.0f, 1.0f, 0.0f, 0.0f},
+                                                        localToWorld, normalLocalToWorld,
+                                                        material};
         }
-#endif // LOAD_ONLY_PLANE
+#endif // LOAD_CUBES
+
 #if LOAD_SPONZA
         scene.m_sceneFile = g_sponzaModel;
 #endif
+#if LOAD_ONLY_PLANE || LOAD_PLANE || LOAD_AXIS_GUIZMOS || LOAD_ONLY_AXIS_GUIZMOS || LOAD_SPHERES || LOAD_CUBES
         scene.m_models = std::move(models);
-#endif // DONT_LOAD_SCENE
+#endif
+
+        scene.m_lights.emplace_back(EntityTransform::ProjectionType::Orthographic, 10.0f);
+        scene.m_lights[0].m_transform.TranslateLookingAt({ 0.0f, 1.0f, 0.0f }, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f});
+        scene.m_lights.emplace_back(EntityTransform::ProjectionType::Orthographic, 10.0f );
+        scene.m_lights[1].m_transform.TranslateLookingAt({ 0.0f, 1.0f, 0.0f }, { -0.85f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f });
+
         return scene;
     }
 
     void UpdateScene(Scene& scene, float totalTime)
     {
-#if !DONT_LOAD_SCENE && !LOAD_ONLY_PLANE
+#if LOAD_SPHERES
+#if LOAD_AXIS_GUIZMOS
+        const size_t spheresAxisOffsetStart = 1;
+#else
+        const size_t spheresAxisOffsetStart = 0;
+#endif // !LOAD_AXIS_GUIZMOS
         // Spheres
-        for (size_t i = 0; i < g_spheresCount; ++i)
+        for (size_t i = spheresAxisOffsetStart; i < g_spheresCount; ++i)
         {
             auto& sphereModel = scene.m_models[g_spheresModelStartID + i];
 
@@ -126,7 +253,7 @@ namespace
 #else
         scene;
         totalTime;
-#endif
+#endif // !LOAD_SPHERES
     }
 
     CommandLine ProcessCmndLine(LPWSTR szCmdLine)
@@ -154,6 +281,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
     auto cmdLine = ProcessCmndLine(szCmdLine);
     D3D12Basics::D3D12BasicsEngine::Settings settings{ cmdLine.m_isWaitableForPresentEnabled, g_sponzaDataWorkingPath };
 
+	// Note CreateScene will create the scene description but wont load any resources.
     D3D12Basics::D3D12BasicsEngine d3d12Engine(settings, CreateScene());
 
     // Game loop
@@ -169,7 +297,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
         {
             d3d12Engine.BeginFrame();
 
-            d3d12Engine.Update(UpdateScene);
+            d3d12Engine.RunFrame(UpdateScene);
 
             d3d12Engine.EndFrame();
         }

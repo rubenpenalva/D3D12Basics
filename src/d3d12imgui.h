@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "d3d12gpu.h"
+#include "d3d12pipelinestate.h"
 
 struct ImDrawData;
 
@@ -9,20 +10,19 @@ namespace D3D12Basics
     class D3D12ImGui
     {
     public:
-        D3D12ImGui(D3D12Basics::D3D12Gpu& gpu);
+        D3D12ImGui(D3D12Basics::D3D12Gpu& gpu, FileMonitor& fileMonitor);
         ~D3D12ImGui();
 
         void BeginFrame();
 
-        std::vector<D3D12GpuRenderTask> EndFrame();
+        void EndFrame(ID3D12GraphicsCommandListPtr cmdList);
 
     private:
         D3D12Basics::D3D12Gpu& m_gpu;
 
-        ID3D12PipelineStatePtr m_pso;
-        ID3D12RootSignaturePtr m_rootSignature;
+        D3D12PipelineState m_pipelineState;
 
-        D3D12GpuMemoryView m_textureView;
+        D3D12GpuViewHandle m_textureView;
 
         D3D12_VIEWPORT m_defaultViewport;
 
@@ -33,8 +33,6 @@ namespace D3D12Basics
         D3D12GpuMemoryHandle    m_indexBuffer;
 
         D3D12GpuMemoryHandle    m_transformation;
-
-        void CreatePSO();
 
         void CreateFontTexture();
 

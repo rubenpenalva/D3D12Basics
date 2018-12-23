@@ -112,6 +112,27 @@
     <ClCompile Include="src\meshgenerator.cpp" />
     <ClCompile Include="src\scene.cpp" />
     <ClCompile Include="src\utils.cpp" />
+    <ClCompile Include="thirdparty\enkiTS\example\LambdaTask.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="thirdparty\enkiTS\example\ParallelSum.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="thirdparty\enkiTS\example\PinnedTask.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="thirdparty\enkiTS\example\TaskOverhead.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="thirdparty\enkiTS\example\TaskThroughput.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="thirdparty\enkiTS\src\TaskScheduler.cpp" />
     <ClCompile Include="thirdparty\imgui\imgui.cpp" />
     <ClCompile Include="thirdparty\imgui\imgui_demo.cpp" />
     <ClCompile Include="thirdparty\imgui\imgui_draw.cpp" />
@@ -133,6 +154,12 @@
     <ClInclude Include="src\d3d12basicsengine.h" />
     <ClInclude Include="src\scene.h" />
     <ClInclude Include="src\utils.h" />
+    <ClInclude Include="thirdparty\enkiTS\example\Timer.h">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClInclude>
+    <ClInclude Include="thirdparty\enkiTS\src\LockLessMultiReadPipe.h" />
+    <ClInclude Include="thirdparty\enkiTS\src\TaskScheduler.h" />
     <ClInclude Include="thirdparty\imgui\imconfig.h" />
     <ClInclude Include="thirdparty\imgui\imgui.h" />
     <ClInclude Include="thirdparty\imgui\imgui_internal.h" />

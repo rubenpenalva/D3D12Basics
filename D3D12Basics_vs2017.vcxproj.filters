@@ -25,6 +25,15 @@
     <Filter Include="BasicsEngine\src">
       <UniqueIdentifier>{d0042835-8a9a-47ae-8012-f24204ace63b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Thirdparty\enkiTS">
+      <UniqueIdentifier>{a5238ee5-5c11-4202-b3bf-9d6704206465}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Thirdparty\enkiTS\src">
+      <UniqueIdentifier>{1cb7099e-213f-495f-8b1f-84125be2cbf8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Thirdparty\enkiTS\examples">
+      <UniqueIdentifier>{74530ebd-ff32-4905-b1ee-a1bca9b425e6}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="thirdparty\imgui\imgui.cpp">
@@ -78,6 +87,24 @@
     </ClCompile>
     <ClCompile Include="src\d3d12committedresources.cpp">
       <Filter>D3D12Gpu\src</Filter>
+    </ClCompile>
+    <ClCompile Include="thirdparty\enkiTS\src\TaskScheduler.cpp">
+      <Filter>Thirdparty\enkiTS\src</Filter>
+    </ClCompile>
+    <ClCompile Include="thirdparty\enkiTS\example\LambdaTask.cpp">
+      <Filter>Thirdparty\enkiTS\examples</Filter>
+    </ClCompile>
+    <ClCompile Include="thirdparty\enkiTS\example\ParallelSum.cpp">
+      <Filter>Thirdparty\enkiTS\examples</Filter>
+    </ClCompile>
+    <ClCompile Include="thirdparty\enkiTS\example\PinnedTask.cpp">
+      <Filter>Thirdparty\enkiTS\examples</Filter>
+    </ClCompile>
+    <ClCompile Include="thirdparty\enkiTS\example\TaskOverhead.cpp">
+      <Filter>Thirdparty\enkiTS\examples</Filter>
+    </ClCompile>
+    <ClCompile Include="thirdparty\enkiTS\example\TaskThroughput.cpp">
+      <Filter>Thirdparty\enkiTS\examples</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -137,6 +164,15 @@
     </ClInclude>
     <ClInclude Include="src\d3d12committedresources.h">
       <Filter>D3D12Gpu\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="thirdparty\enkiTS\src\TaskScheduler.h">
+      <Filter>Thirdparty\enkiTS\src</Filter>
+    </ClInclude>
+    <ClInclude Include="thirdparty\enkiTS\src\LockLessMultiReadPipe.h">
+      <Filter>Thirdparty\enkiTS\src</Filter>
+    </ClInclude>
+    <ClInclude Include="thirdparty\enkiTS\example\Timer.h">
+      <Filter>Thirdparty\enkiTS\examples</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

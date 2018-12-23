@@ -113,7 +113,7 @@ void D3D12BasicsEngine::RunFrame(void(*UpdateScene)(Scene& scene, float totalTim
 #if ENABLE_IMGUI
     ShowSceneLoadUI();
 
-    ShowFrameStats();
+    ShowStats();
 #endif
 
     RenderFrame();
@@ -218,7 +218,7 @@ void D3D12BasicsEngine::ShowSceneLoadUI()
     ImGui::End();
 }
 
-void D3D12BasicsEngine::ShowFrameStats()
+void D3D12BasicsEngine::ShowStats()
 {
     const float DISTANCE = 10.0f;
     static int corner = 0;
@@ -234,6 +234,7 @@ void D3D12BasicsEngine::ShowFrameStats()
                                          ImGuiWindowFlags_NoNav;
 
     auto frameStats = m_gpu.GetFrameStats();
+    auto sceneStats = m_sceneRender->GetStats();
 
     ImGui::Begin("Example: Fixed Overlay", nullptr, windowFlags);
     ImGui::Text("CPU: begin to end %.3f ms", m_beginToEndDeltaTime * 1000.0f);
@@ -243,6 +244,8 @@ void D3D12BasicsEngine::ShowFrameStats()
     ImGui::Text("CPU: waitfor fence %.3f ms", frameStats.m_waitForFenceTime * 1000.0f);
     ImGui::Text("CPU: frame time %.3f ms", frameStats.m_frameTime * 1000.0f);
     ImGui::Text("GPU: cmdlist time %.3f ms", frameStats.m_cmdListTime * 1000.0f);
+    ImGui::Text("# draw calls: shadow pass %d", sceneStats.m_shadowPassDrawCallsCount);
+    ImGui::Text("# draw calls: forward pass %d", sceneStats.m_forwardPassDrawCallsCount);
     ImGui::End();
 }
 

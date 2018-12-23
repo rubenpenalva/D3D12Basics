@@ -533,6 +533,7 @@ void D3D12Gpu::SetBindings(ID3D12GraphicsCommandListPtr cmdList, const D3D12Bind
         cmdList->SetGraphicsRootConstantBufferView(static_cast<UINT>(cbv.m_bindingSlot), memoryVA);
     }
 
+    // TODO figure out how to copy the descriptors in batches (maybe having arrays of views?) if possible
     for (auto& cpuDescriptorTable : bindings.m_descriptorTables)
     {
         D3D12_GPU_DESCRIPTOR_HANDLE descriptorTableHandle = m_gpuDescriptorRingBuffer->CurrentDescriptor();
@@ -759,7 +760,7 @@ IDXGIAdapterPtr D3D12Gpu::CreateDXGIInfrastructure()
 
 void D3D12Gpu::CreateDescriptorHeaps()
 {
-	const uint32_t maxDescriptors = 1024;
+	const uint32_t maxDescriptors = 65536;
     m_dsvDescPool = std::make_unique<D3D12DSVDescriptorPool>(m_device, maxDescriptors);
     assert(m_dsvDescPool);
 

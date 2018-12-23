@@ -26,6 +26,7 @@ using namespace D3D12Basics;
 #define LOAD_CUBES          (1 && LOAD_ENABLED)
 #define LOAD_PLANE          (1 && LOAD_ENABLED)
 #define LOAD_SPONZA         (1 && LOAD_ENABLED)
+#define LOAD_WAVE           (1 && LOAD_ENABLED)
 
 namespace
 {
@@ -77,7 +78,27 @@ namespace
 #endif // LOAD_CUBES
     const size_t g_cubesModelStartID    = g_spheresModelStartID + g_spheresCount;
 
-    const size_t g_modelsCount = g_planesCount + g_spheresCount + g_cubesCount;
+#if LOAD_WAVE
+    const size_t g_waveColsCount        = 30; // width
+    const size_t g_waveRowsCount        = 20; // depth
+    const size_t g_waveEntsCount        = g_waveColsCount * g_waveRowsCount;
+    const float g_waveWidth             = 150.0f;
+    const float g_waveDepth             = 50.0f;
+    const float g_waveHeight            = 20.0f;
+    const float g_waveHalfWidth         = g_waveWidth * 0.5f;
+    const float g_waveHalfDepth         = g_waveDepth * 0.5f;
+    const float g_waveCellWidth         = (g_waveWidth / g_waveColsCount);
+    const float g_waveCellDepth         = (g_waveDepth / g_waveRowsCount);
+    const float g_waveEntSizeScale      = 0.1f;
+    const float g_waveEntSize           = g_waveCellWidth * g_waveEntSizeScale;
+    const float g_waveCellWidthOffset   = g_waveCellWidth * (1.0f - g_waveEntSizeScale) * 0.5f;
+    const float g_waveCellDepthOffset   = g_waveCellDepth * (1.0f - g_waveEntSizeScale) * 0.5f;
+#else
+    const size_t g_waveEntsCount    = 0;
+#endif
+    const size_t g_waveEntsModelStartID = g_cubesModelStartID + g_cubesCount;
+
+    const size_t g_modelsCount = g_planesCount + g_spheresCount + g_cubesCount + g_waveEntsCount;
 
     const Float3 g_modelsOffset = { -30.0f, 0.0f, 0.0 };
 
@@ -105,7 +126,7 @@ namespace
     Scene CreateScene()
     {
         Scene scene;
-#if LOAD_ONLY_PLANE || LOAD_PLANE || LOAD_AXIS_GUIZMOS || LOAD_ONLY_AXIS_GUIZMOS || LOAD_SPHERES || LOAD_CUBES
+#if LOAD_ONLY_PLANE || LOAD_PLANE || LOAD_AXIS_GUIZMOS || LOAD_ONLY_AXIS_GUIZMOS || LOAD_SPHERES || LOAD_CUBES || LOAD_WAVE
         if (!g_modelsCount)
             return scene;
 
@@ -220,10 +241,39 @@ namespace
         }
 #endif // LOAD_CUBES
 
+#if LOAD_WAVE
+        assert(g_waveColsCount > g_waveRowsCount);
+
+        const float y = g_waveHeight;
+
+        for (size_t i = 0; i < g_waveColsCount; ++i)
+        {
+            const float x = -g_waveHalfWidth + i * g_waveCellWidth + g_waveCellWidthOffset;
+            for (size_t j = 0; j < g_waveRowsCount; ++j)
+            {
+                const float z = -g_waveHalfDepth + j * g_waveCellDepth + g_waveCellDepthOffset;
+
+                const size_t cellIndex = i * g_waveRowsCount + j;
+
+                D3D12Basics::Matrix44 localToWorld = D3D12Basics::Matrix44::CreateScale(g_waveEntSize) * 
+                                                     D3D12Basics::Matrix44::CreateTranslation(x, y, z);
+                D3D12Basics::Matrix44 normalLocalToWorld;
+
+                std::wstringstream converter;
+
+                converter << "Wave Entity " << cellIndex;
+
+                models[g_waveEntsModelStartID + cellIndex] = Model{ converter.str().c_str(), Model::Type::Sphere,
+                                                                    modelId++, Float4{1.0f, 1.0f, 0.0f, 0.0f},
+                                                                    localToWorld, normalLocalToWorld,
+                                                                    material };
+            }
+        }
+#endif
 #if LOAD_SPONZA
         scene.m_sceneFile = g_sponzaModel;
 #endif
-#if LOAD_ONLY_PLANE || LOAD_PLANE || LOAD_AXIS_GUIZMOS || LOAD_ONLY_AXIS_GUIZMOS || LOAD_SPHERES || LOAD_CUBES
+#if LOAD_ONLY_PLANE || LOAD_PLANE || LOAD_AXIS_GUIZMOS || LOAD_ONLY_AXIS_GUIZMOS || LOAD_SPHERES || LOAD_CUBES || LOAD_WAVE
         scene.m_models = std::move(models);
 #endif
 
@@ -237,6 +287,9 @@ namespace
 
     void UpdateScene(Scene& scene, float totalTime)
     {
+        scene;
+        totalTime;
+
 #if LOAD_SPHERES
 #if LOAD_AXIS_GUIZMOS
         const size_t spheresAxisOffsetStart = 1;
@@ -250,10 +303,24 @@ namespace
 
             sphereModel.m_transform = CalculateSphereLocalToWorld(i, totalTime);
         }
-#else
-        scene;
-        totalTime;
-#endif // !LOAD_SPHERES
+#endif // LOAD_SPHERES
+#if LOAD_WAVE
+        for (size_t i = 0; i < g_waveColsCount; ++i)
+        {
+            const float x = -g_waveHalfWidth + i * g_waveCellWidth + g_waveCellWidthOffset;
+            const float y = g_waveHeight + 2.0f * (sinf(x - totalTime));
+
+            for (size_t j = 0; j < g_waveRowsCount; ++j)
+            {
+                const float z = -g_waveHalfDepth + j * g_waveCellDepth + g_waveCellDepthOffset;
+                const size_t cellIndex = i * g_waveRowsCount + j;
+
+                auto& waveModel = scene.m_models[g_waveEntsModelStartID + cellIndex];
+                waveModel.m_transform = D3D12Basics::Matrix44::CreateScale(g_waveEntSize) *
+                                        D3D12Basics::Matrix44::CreateTranslation(x, y, z);
+            }
+        }
+#endif // LOAD_WAVE
     }
 
     CommandLine ProcessCmndLine(LPWSTR szCmdLine)

@@ -81,7 +81,7 @@ namespace D3D12Basics
 
         void ShowSceneLoadUI();
 
-        void ShowFrameStats();
+        void ShowStats();
 
         void RenderFrame();
 

@@ -409,6 +409,8 @@ void D3D12SceneRender::RecordCmdList(ID3D12GraphicsCommandListPtr cmdList,
 {
     assert(cmdList);
 
+    m_sceneStats = { 0 };
+
     // Shadows pass
     RenderShadowPass(cmdList);
 
@@ -491,6 +493,7 @@ void D3D12SceneRender::RenderShadowPass(ID3D12GraphicsCommandListPtr cmdList)
             m_gpu.SetVertexBuffer(cmdList, gpuMesh.m_vertexBuffer, gpuMesh.m_vertexBufferSizeBytes, gpuMesh.m_vertexSizeBytes);
             m_gpu.SetIndexBuffer(cmdList, gpuMesh.m_indexBuffer, gpuMesh.m_indexBufferSizeBytes);
             cmdList->DrawIndexedInstanced(static_cast<UINT>(gpuMesh.m_indicesCount), 1, 0, 0, 0);
+            m_sceneStats.m_shadowPassDrawCallsCount++;
         }
 
         ++lightIndex;
@@ -548,6 +551,7 @@ void D3D12SceneRender::RenderForwardPass(ID3D12GraphicsCommandListPtr cmdList,
         m_gpu.SetVertexBuffer(cmdList, gpuMesh.m_vertexBuffer, gpuMesh.m_vertexBufferSizeBytes, gpuMesh.m_vertexSizeBytes);
         m_gpu.SetIndexBuffer(cmdList, gpuMesh.m_indexBuffer, gpuMesh.m_indexBufferSizeBytes);
         cmdList->DrawIndexedInstanced(static_cast<UINT>(gpuMesh.m_indicesCount), 1, 0, 0, 0);
+        m_sceneStats.m_forwardPassDrawCallsCount++;
     }
 }
 

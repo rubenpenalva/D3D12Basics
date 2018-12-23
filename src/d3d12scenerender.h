@@ -12,6 +12,12 @@
 
 namespace D3D12Basics
 {
+    struct SceneStats
+    {
+        uint32_t m_shadowPassDrawCallsCount;
+        uint32_t m_forwardPassDrawCallsCount;
+    };
+
     class D3D12SceneRender
     {
     public:
@@ -28,6 +34,8 @@ namespace D3D12Basics
         void RecordCmdList(ID3D12GraphicsCommandListPtr cmdList, 
                             D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
                             D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer);
+
+        const SceneStats& GetStats() const { return m_sceneStats; }
 
     private:
         enum class PipelineStateId
@@ -90,6 +98,8 @@ namespace D3D12Basics
 
         D3D12GpuMemoryHandle        m_quadVb;
         D3D12GpuMemoryHandle        m_quadIb;
+
+        SceneStats m_sceneStats;
 
         D3D12GpuViewHandle CreateTexture(const std::wstring& textureFile);
 

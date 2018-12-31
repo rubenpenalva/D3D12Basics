@@ -21,7 +21,9 @@ namespace D3D12Basics
     public:
         D3D12SwapChain(HWND hwnd, DXGI_FORMAT format, const D3D12Basics::Resolution& resolution, 
                        IDXGIFactory4Ptr factory, ID3D12DevicePtr device, 
-                       ID3D12CommandQueuePtr commandQueue, bool waitForPresentEnabled = false);
+                       ID3D12CommandQueuePtr commandQueue, 
+                       SplitTimes<>& presentTime, SplitTimes<>& waitForPresentTime,
+                       bool waitForPresentEnabled = false);
 
         ~D3D12SwapChain();
 
@@ -40,10 +42,6 @@ namespace D3D12Basics
 
         const D3D12Basics::Resolution& GetCurrentResolution() const { return m_resolution; }
 
-        float GetPresentTime() { return m_presentTimer.ElapsedAvgTime(); }
-
-        float GetWaitForPresentTime() { return m_waitForPresentTimer.ElapsedAvgTime(); }
-
     private:
         ID3D12DevicePtr m_device;
         
@@ -59,8 +57,8 @@ namespace D3D12Basics
 
         D3D12_RESOURCE_BARRIER m_transitions[TransitionType_COUNT][D3D12Gpu::m_backBuffersCount];
 
-        D3D12Basics::Timer m_presentTimer;
-        D3D12Basics::Timer m_waitForPresentTimer;
+        D3D12Basics::SplitTimes<>& m_presentTime;
+        D3D12Basics::SplitTimes<>& m_waitForPresentTime;
 
         bool    m_waitForPresentEnabled;
         HANDLE  m_frameLatencyWaitableObject;

@@ -409,7 +409,8 @@ void D3D12SceneRender::RecordCmdList(ID3D12GraphicsCommandListPtr cmdList,
 {
     assert(cmdList);
 
-    m_sceneStats = { 0 };
+    m_sceneStats.m_forwardPassDrawCallsCount = 0;
+    m_sceneStats.m_shadowPassDrawCallsCount = 0;
 
     // Shadows pass
     RenderShadowPass(cmdList);
@@ -455,6 +456,9 @@ void D3D12SceneRender::RenderShadowPass(ID3D12GraphicsCommandListPtr cmdList)
 {
     if (m_shadowResPerLight.empty())
         return;
+ 
+    StopClock stopClock(m_sceneStats.m_shadowPassCmdListTime);
+    stopClock.Mark();
 
     // Transition from depth write to none
     std::vector<D3D12_RESOURCE_BARRIER> barriersDepthBufferReadWrite(m_shadowResPerLight.size() > 1? 2 : 1);
@@ -506,12 +510,17 @@ void D3D12SceneRender::RenderShadowPass(ID3D12GraphicsCommandListPtr cmdList)
         barriersDepthBufferReadWrite[i].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     }
     cmdList->ResourceBarrier(static_cast<UINT>(barriersDepthBufferReadWrite.size()), &barriersDepthBufferReadWrite[0]);
+
+    stopClock.Mark();
 }
 
 void D3D12SceneRender::RenderForwardPass(ID3D12GraphicsCommandListPtr cmdList, 
                                          D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
                                          D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer)
 {
+    ScopedStopClock stopClock(m_sceneStats.m_forwardPassCmdListTime);
+    stopClock.Mark();
+
     cmdList->OMSetRenderTargets(1, &renderTarget, FALSE, &depthStencilBuffer);
 
     cmdList->ClearDepthStencilView(depthStencilBuffer, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
@@ -553,6 +562,8 @@ void D3D12SceneRender::RenderForwardPass(ID3D12GraphicsCommandListPtr cmdList,
         cmdList->DrawIndexedInstanced(static_cast<UINT>(gpuMesh.m_indicesCount), 1, 0, 0, 0);
         m_sceneStats.m_forwardPassDrawCallsCount++;
     }
+
+    stopClock.Mark();
 }
 
 void D3D12SceneRender::RenderDebug(ID3D12GraphicsCommandListPtr cmdList)

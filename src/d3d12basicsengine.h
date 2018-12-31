@@ -6,6 +6,7 @@
 #include "scene.h"
 #include "d3d12fwd.h"
 #include "filemonitor.h"
+#include "d3d12scenerender.h"
 
 // c++ includes
 #include <atomic>
@@ -39,15 +40,27 @@ namespace D3D12Basics
         bool HasUserRequestedToQuit() const { return m_quit; }
 
     private:
-        using InputControllerPtr    = std::unique_ptr<InputController>;
         using CameraControllerPtr   = std::unique_ptr<CameraController>;
         using AppControllerPtr      = std::unique_ptr<AppController>;
+
+        struct CachedStats
+        {
+            SplitTimes<>    m_beginToEndTime;
+            SplitTimes<>    m_endToEndTime;
+            FrameStats      m_frameStats;
+            SceneStats      m_sceneStats;
+
+            bool m_enabled;
+        };
 
         D3D12Gpu        m_gpu;
         CustomWindowPtr m_window;
 
-        Timer m_beginToEndTimer;
-        Timer m_endToEndTimer;
+        SplitTimes<>    m_beginToEndTime;
+        SplitTimes<>    m_endToEndTime;
+        SplitTimes<1>   m_totalTime;
+        float           m_cachedDeltaTime;
+        float           m_cachedTotalTime;
 
         Scene                                           m_scene;
         std::thread                                     m_sceneLoaderThread;
@@ -58,20 +71,18 @@ namespace D3D12Basics
         D3D12SceneRenderPtr m_sceneRender;
         GpuTexture m_depthBuffer;
 
-        InputControllerPtr  m_inputController;
         CameraControllerPtr m_cameraController;
         AppControllerPtr    m_appController;
 
         bool m_quit;
-        float m_totalTime;
-        float m_deltaTime;
-        float m_beginToEndDeltaTime;
 
         D3D12ImGuiPtr m_imgui;
 
-        Timer m_sceneLoadedUITimer;
+        SplitTimes<1> m_sceneLoadedUITime;
 
         FileMonitor m_fileMonitor;
+
+        CachedStats m_cachedStats;
 
         void ProcessWindowEvents();
 

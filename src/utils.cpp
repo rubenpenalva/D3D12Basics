@@ -9,6 +9,9 @@
 #include <numeric>
 #include <fstream>
 
+// thirdparty libraries include
+#include "imgui/imgui.h"
+
 using namespace D3D12Basics;
 
 namespace
@@ -36,31 +39,6 @@ namespace
         case WM_DESTROY:
             PostQuitMessage(0);
             return 0;
-
-        case WM_ACTIVATEAPP:
-            DirectX::Keyboard::ProcessMessage(message, wparam, lparam);
-            DirectX::Mouse::ProcessMessage(message, wparam, lparam);
-            break;
-        case WM_INPUT:
-        case WM_MOUSEMOVE:
-        case WM_LBUTTONDOWN:
-        case WM_LBUTTONUP:
-        case WM_RBUTTONDOWN:
-        case WM_RBUTTONUP:
-        case WM_MBUTTONDOWN:
-        case WM_MBUTTONUP:
-        case WM_MOUSEWHEEL:
-        case WM_XBUTTONDOWN:
-        case WM_XBUTTONUP:
-        case WM_MOUSEHOVER:
-            DirectX::Mouse::ProcessMessage(message, wparam, lparam);
-            break;
-        case WM_KEYDOWN:
-        case WM_SYSKEYDOWN:
-        case WM_KEYUP:
-        case WM_SYSKEYUP:
-            DirectX::Keyboard::ProcessMessage(message, wparam, lparam);
-            break;
         
         // Handle beep sound
         case WM_MENUCHAR:
@@ -72,16 +50,75 @@ namespace
             RECT windowRect = {};
             GetClientRect(hwnd, &windowRect);
             customWindow->ChangeResolution(windowRect);
+            return 0;
         }
         break;
-
+        
         default:
-            return DefWindowProc(hwnd, message, wparam, lparam);
+            break;
         }
 
-        return 0;
-    }
+        const bool imguiCurrentContextAvailable = ImGui::GetCurrentContext() != nullptr;
+        if (imguiCurrentContextAvailable)
+        {
+            ImGuiIO& io = ImGui::GetIO();
 
+            switch (message)
+            {
+            case WM_LBUTTONDOWN: case WM_LBUTTONDBLCLK:
+            case WM_RBUTTONDOWN: case WM_RBUTTONDBLCLK:
+            case WM_MBUTTONDOWN: case WM_MBUTTONDBLCLK:
+            {
+                int button = 0;
+                if (message == WM_LBUTTONDOWN || message == WM_LBUTTONDBLCLK) button = 0;
+                if (message == WM_RBUTTONDOWN || message == WM_RBUTTONDBLCLK) button = 1;
+                if (message == WM_MBUTTONDOWN || message == WM_MBUTTONDBLCLK) button = 2;
+                if (!ImGui::IsAnyMouseDown() && ::GetCapture() == NULL)
+                    ::SetCapture(hwnd);
+                io.MouseDown[button] = true;
+                return 0;
+            }
+            case WM_LBUTTONUP:
+            case WM_RBUTTONUP:
+            case WM_MBUTTONUP:
+            {
+                int button = 0;
+                if (message == WM_LBUTTONUP) button = 0;
+                if (message == WM_RBUTTONUP) button = 1;
+                if (message == WM_MBUTTONUP) button = 2;
+                io.MouseDown[button] = false;
+                if (!ImGui::IsAnyMouseDown() && ::GetCapture() == hwnd)
+                    ::ReleaseCapture();
+                return 0;
+            }
+            case WM_MOUSEWHEEL:
+                io.MouseWheel += (float)GET_WHEEL_DELTA_WPARAM(wparam) / (float)WHEEL_DELTA;
+                return 0;
+            case WM_MOUSEHWHEEL:
+                io.MouseWheelH += (float)GET_WHEEL_DELTA_WPARAM(wparam) / (float)WHEEL_DELTA;
+                return 0;
+            case WM_KEYDOWN:
+            case WM_SYSKEYDOWN:
+                if (wparam < 256)
+                    io.KeysDown[wparam] = 1;
+                return 0;
+            case WM_KEYUP:
+            case WM_SYSKEYUP:
+                if (wparam < 256)
+                    io.KeysDown[wparam] = 0;
+                return 0;
+            case WM_CHAR:
+                // You can also use ToAscii()+GetKeyboardState() to retrieve characters.
+                if (wparam > 0 && wparam < 0x10000)
+                    io.AddInputCharacter((unsigned short)wparam);
+                return 0;
+            default:
+                break;
+            }
+        }
+
+        return DefWindowProc(hwnd, message, wparam, lparam);
+    }
 }
 
 VertexStreams::VertexStreams() : m_vertexElementsCount(0)
@@ -206,52 +243,6 @@ void CustomWindow::CreateCustomWindow()
     ShowWindow(m_hwnd, SW_SHOW);
 }
 
-Timer::Timer(int samplesCount) : m_elapsedTimes(samplesCount, 0.0f)
-{
-    assert(samplesCount > 0);
-
-    Reset();
-}
-
-void Timer::Reset()
-{
-    std::fill(m_elapsedTimes.begin(), m_elapsedTimes.end(), 0.0f);
-    
-    m_currentIndex = 0;
-
-    m_mark = std::chrono::high_resolution_clock::now();
-    m_start = std::chrono::high_resolution_clock::now();
-}
-
-void Timer::Mark()
-{
-    const auto lastMark = m_mark;
-    m_mark = std::chrono::high_resolution_clock::now();
-
-    m_elapsedTimes[m_currentIndex] = std::chrono::duration<float>(m_mark - lastMark).count();
-}
-
-float Timer::ElapsedTime()
-{
-    size_t oldIndex = m_currentIndex;
-
-    m_currentIndex = (m_currentIndex + 1) % m_elapsedTimes.size();
-
-    return m_elapsedTimes[oldIndex];
-}
-
-float Timer::ElapsedAvgTime()
-{
-    m_currentIndex = (m_currentIndex + 1) % m_elapsedTimes.size();
-    return std::accumulate(m_elapsedTimes.begin(), m_elapsedTimes.end(), 0.0f) / static_cast<float>(m_elapsedTimes.size());
-}
-
-float Timer::TotalTime() const
-{
-    const auto now = std::chrono::high_resolution_clock::now();
-    return std::chrono::duration<float>(now - m_start).count();
-}
-
 // https://knarkowicz.wordpress.com/2013/05/25/simple-gpuview-custom-event-markers/
 GpuViewMarker::GpuViewMarker(const std::wstring& name, const wchar_t* uuid) : m_name(name)
 {
@@ -267,39 +258,6 @@ GpuViewMarker::~GpuViewMarker()
 void GpuViewMarker::Mark()
 {
     EventWriteString(m_eventHandle, 0, 0, m_name.c_str());
-}
-
-InputController::InputController(HWND hwnd) : m_roInit(RO_INIT_MULTITHREADED)
-{
-    // https://stackoverflow.com/a/36468365
-    // "TL;DR: If you are making a Windows desktop app that requires Windows 10, 
-    //  then link with RuntimeObject.lib and add this to your app initialization 
-    //  (replacing CoInitialize or CoInitializeEx):"
-    AssertIfFailed(m_roInit);
-
-    m_mouse.SetWindow(hwnd);
-}
-
-void InputController::Update()
-{
-    m_gamepadState = m_gamepad.GetState(0);
-    if (m_gamepadState.IsConnected())
-        m_gamepadTracker.Update(m_gamepadState);
-
-    m_keyboardState = std::move(m_keyboard.GetState());
-    if (m_keyboard.IsConnected())
-        m_keyboardTracker.Update(m_keyboardState);
-    
-    if (m_mouse.IsConnected())
-    {
-        m_mouseState = std::move(m_mouse.GetState());
-        m_mouseTracker.Update(m_mouseState);
-    }
-}
-
-void InputController::SetMouseRelativeMode(bool enable)
-{
-    m_mouse.SetMode(enable ? DirectX::Mouse::MODE_RELATIVE : DirectX::Mouse::MODE_ABSOLUTE);
 }
 
 void D3D12Basics::AssertIfFailed(HRESULT hr)

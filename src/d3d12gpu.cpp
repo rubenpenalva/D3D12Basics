@@ -96,8 +96,7 @@ namespace
 
 D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_currentFrameIndex(0), 
                                                             m_isWaitableForPresentEnabled(isWaitableForPresentEnabled),
-                                                            m_nextHandleId(0), m_currentFrame(0),
-                                                            m_frameTime(10), m_frameWaitTime(10)
+                                                            m_nextHandleId(0), m_currentFrame(0)
 {
     auto adapter = CreateDXGIInfrastructure();
     assert(adapter);
@@ -117,7 +116,8 @@ D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_currentFrameIndex(
 
     CreateFrameTimestampInfrastructure();
 
-    m_gpuSync = std::make_unique<D3D12GpuSynchronizer>(m_device, m_graphicsCmdQueue, m_framesInFlight);
+    m_gpuSync = std::make_unique<D3D12GpuSynchronizer>(m_device, m_graphicsCmdQueue, m_framesInFlight, 
+                                                       m_frameStats.m_waitForFenceTime);
 }
 
 D3D12Gpu::~D3D12Gpu()
@@ -136,6 +136,8 @@ void D3D12Gpu::SetOutputWindow(HWND hwnd)
     // NOTE only one output supported
     m_swapChain = std::make_unique<D3D12SwapChain>(hwnd, g_swapChainFormat, m_safestResolution,
                                                    m_factory, m_device, m_graphicsCmdQueue,
+                                                   m_frameStats.m_presentTime,
+                                                   m_frameStats.m_waitForPresentTime,
                                                    m_isWaitableForPresentEnabled);
     assert(m_swapChain);
 }
@@ -451,7 +453,8 @@ void D3D12Gpu::PresentFrame()
     // still in flight.
     DestroyRetiredAllocations();
 
-    m_frameTime.Mark();
+    StopClock stopClock(m_frameStats.m_frameTime);
+    stopClock.Mark();
 
     UpdateFrameStats();
 }
@@ -878,11 +881,6 @@ void D3D12Gpu::DestroyRetiredAllocations()
 
 void D3D12Gpu::UpdateFrameStats()
 {
-    m_frameStats.m_presentTime = m_swapChain->GetPresentTime();
-    m_frameStats.m_waitForPresentTime = m_swapChain->GetWaitForPresentTime();
-    m_frameStats.m_waitForFenceTime = m_gpuSync->GetWaitForFenceTime();
-    m_frameStats.m_frameTime = m_frameTime.ElapsedTime();
-
     UpdateFrameTimestamp();
 }
 
@@ -939,7 +937,7 @@ void D3D12Gpu::UpdateFrameTimestamp()
 
     // Calculate the GPU execution time in milliseconds.
     const float gpuTimeS = (timeStampDelta / static_cast<float>(m_cmdQueueTimestampFrequency));
-    m_frameStats.m_cmdListTime = gpuTimeS;
+    m_frameStats.m_cmdListTime.AddSplitTime(gpuTimeS);
 }
 
 D3D12GpuViewHandle D3D12Gpu::CreateView(D3D12GpuMemoryHandle memHandle, DescriptorHandlesPtrs&& descriptors)

@@ -6,6 +6,7 @@
 #include "assimp/postprocess.h"
 #include "assimp/scene.h"
 #include "directxtk12/ddstextureloader_custom.h"
+#include "imgui/imgui.h"
 
 // c++ libraries
 #include <fstream>
@@ -253,7 +254,7 @@ MeshData SceneLoader::LoadMesh(size_t modelId)
     return MeshData{ streams.GetStreams(), std::move(indices), model->mNumVertices, vertexElementsCount * sizeof(float), vertexElementsCount };
 }
 
-CameraController::CameraController(InputController& inputController) : m_inputController(inputController)
+CameraController::CameraController()
 {
 }
 
@@ -264,82 +265,52 @@ void CameraController::Update(EntityTransform& camera, float deltaTime, float to
     UpdateCamera(camera, deltaTime, totalTime);
 }
 
-void CameraController::ProcessMouseInput(const DirectX::Mouse::State& mouseState)
+void CameraController::ProcessMouseInput()
 {
-    if (mouseState.positionMode != DirectX::Mouse::MODE_RELATIVE)
+    if (!ImGui::IsMouseDragging(0))
         return;
 
-    Float3 direction = Float3(static_cast<float>(mouseState.x), static_cast<float>(-mouseState.y), 0.0f);
+    auto mouseDrag = ImGui::GetMouseDragDelta();
+    Float3 direction = Float3(static_cast<float>(mouseDrag.x), static_cast<float>(-mouseDrag.y), 0.0f);
     m_cameraState.m_speedLookModifier = 0.5f;
     direction.Normalize();
 
     m_cameraState.m_target = direction;
 }
 
-void CameraController::ProcessKeyboardInput(const DirectX::Keyboard::State& keyboardState,
-    const DirectX::Keyboard::KeyboardStateTracker& keyboardTracker)
+void CameraController::ProcessKeyboardInput()
 {
-    if (keyboardTracker.IsKeyPressed(DirectX::Keyboard::Enter))
+    if (ImGui::IsKeyPressed(VK_RETURN))
         m_cameraState.m_manualMovement = !m_cameraState.m_manualMovement;
 
-    if (keyboardState.OemMinus)
+    if (ImGui::IsKeyDown(VK_OEM_MINUS))
         m_cameraState.m_maxSpeed -= 0.5f;
-    if (keyboardState.OemPlus)
+    if (ImGui::IsKeyDown(VK_OEM_PLUS))
         m_cameraState.m_maxSpeed += 0.5f;
 
     bool keyPressed = false;
-    if (keyboardState.W)
+    if (ImGui::IsKeyDown('W'))
     {
         keyPressed = true;
         m_cameraState.m_direction = Float3(0.0f, 0.0f, 1.0f);
     }
-    if (keyboardState.S)
+    if (ImGui::IsKeyDown('S'))
     {
         keyPressed = true;
         m_cameraState.m_direction = Float3(0.0f, 0.0f, -1.0f);
     }
-    if (keyboardState.A)
+    if (ImGui::IsKeyDown('A'))
     {
         keyPressed = true;
         m_cameraState.m_direction = Float3(-1.0f, 0.0f, 0.0f);
     }
-    if (keyboardState.D)
+    if (ImGui::IsKeyDown('D'))
     {
         keyPressed = true;
         m_cameraState.m_direction = Float3(1.0f, 0.0f, 0.0f);
     }
     if (keyPressed)
         m_cameraState.m_speedModifier = 1.0f;
-}
-
-void CameraController::ProcessGamePadInput(const DirectX::GamePad::State& gamepadState,
-    const DirectX::GamePad::ButtonStateTracker& gamepadTracker)
-{
-    if (gamepadTracker.start == DirectX::GamePad::ButtonStateTracker::PRESSED)
-        m_cameraState.m_manualMovement = !m_cameraState.m_manualMovement;
-
-    if (gamepadTracker.leftShoulder == DirectX::GamePad::ButtonStateTracker::PRESSED)
-        m_cameraState.m_maxSpeed -= 0.5f;
-    else if (gamepadTracker.rightShoulder == DirectX::GamePad::ButtonStateTracker::PRESSED)
-        m_cameraState.m_maxSpeed += 0.5f;
-
-    if (gamepadState.thumbSticks.leftX != 0.0f || gamepadState.thumbSticks.leftY != 0.0f)
-    {
-        Float3 direction = Float3(gamepadState.thumbSticks.leftX, 0.0f, gamepadState.thumbSticks.leftY);
-        m_cameraState.m_speedModifier = direction.Length();
-        direction.Normalize();
-
-        m_cameraState.m_direction = direction;
-    }
-
-    if (gamepadState.thumbSticks.rightX != 0.0f || gamepadState.thumbSticks.rightY != 0.0f)
-    {
-        Float3 direction = Float3(gamepadState.thumbSticks.rightX, gamepadState.thumbSticks.rightY, 0.0f);
-        m_cameraState.m_speedLookModifier = direction.Length();
-        direction.Normalize();
-
-        m_cameraState.m_target = direction;
-    }
 }
 
 void CameraController::ProcessInput()
@@ -349,34 +320,9 @@ void CameraController::ProcessInput()
     if (m_cameraState.m_maxSpeed < 0.0f)
         m_cameraState.m_maxSpeed = 0.0f;
 
-    if (m_inputController.IsMainGamePadConnected())
-    {
-        const auto& gamepadTracker = m_inputController.GetGamepadTracker();
-        const auto& gamepadState = m_inputController.GetMainGamePadState();
+    ProcessKeyboardInput();
 
-        ProcessGamePadInput(gamepadState, gamepadTracker);
-    }
-
-    if (m_inputController.IsKeyboardConnected())
-    {
-        const auto& keyboardState = m_inputController.GetKeyboardState();
-        const auto& keyboardTracker = m_inputController.GetKeyboardTracker();
-        ProcessKeyboardInput(keyboardState, keyboardTracker);
-    }
-
-    if (m_inputController.IsMouseConnected())
-    {
-        const auto& mouseState = m_inputController.GetMouseState();
-        const auto& mouseTracker = m_inputController.GetMouseTracker();
-        if (mouseTracker.leftButton == DirectX::Mouse::ButtonStateTracker::ButtonState::PRESSED &&
-            (mouseState.x != 0 && mouseState.y != 0) && m_cameraState.m_manualMovement)
-            m_inputController.SetMouseRelativeMode(true);
-        else if (mouseTracker.leftButton == DirectX::Mouse::ButtonStateTracker::ButtonState::RELEASED &&
-                 mouseState.positionMode == DirectX::Mouse::MODE_RELATIVE)
-            m_inputController.SetMouseRelativeMode(false);
-
-        ProcessMouseInput(mouseState);
-    }
+    ProcessMouseInput();
 }
 
 void CameraController::UpdateCamera(EntityTransform& camera, float deltaTime, float totalTime)
@@ -418,7 +364,7 @@ void CameraController::UpdateCamera(EntityTransform& camera, float deltaTime, fl
     }
 }
 
-AppController::AppController(const InputController& inputController) : m_inputController(inputController)
+AppController::AppController()
 {
 }
 
@@ -426,42 +372,20 @@ void AppController::Update(CustomWindow& customWindow, bool& quit)
 {
     quit = false;
 
-    if (m_inputController.IsMainGamePadConnected())
+    if (ProcessKeyboardInput(customWindow))
     {
-        const auto& gamepadTracker = m_inputController.GetGamepadTracker();
-        if (ProcessGamePadInput(gamepadTracker))
-        {
-            quit = true;
-            return;
-        }
-    }
-
-    if (m_inputController.IsKeyboardConnected())
-    {
-        const auto& keyboardState = m_inputController.GetKeyboardState();
-        const auto& keyboardTracker = m_inputController.GetKeyboardTracker();
-        if (ProcessKeyboardInput(keyboardState, keyboardTracker, customWindow))
-        {
-            quit = true;
-            return;
-        }
+        quit = true;
+        return;
     }
 }
 
-bool AppController::ProcessKeyboardInput(const DirectX::Keyboard::State& keyboardState,
-                                         const DirectX::Keyboard::KeyboardStateTracker& keyboardTracker,
-                                         D3D12Basics::CustomWindow& customWindow)
+bool AppController::ProcessKeyboardInput(D3D12Basics::CustomWindow& customWindow)
 {
-    if (keyboardState.Escape)
+    if (ImGui::IsKeyPressed(VK_ESCAPE))
         return true;
 
-    if (keyboardTracker.IsKeyPressed(DirectX::Keyboard::Space))
+    if (ImGui::IsKeyPressed(VK_SPACE))
         customWindow.ChangeFullscreenMode();
 
     return false;
-}
-
-bool AppController::ProcessGamePadInput(const DirectX::GamePad::ButtonStateTracker& gamepadTracker)
-{
-    return gamepadTracker.view;
 }

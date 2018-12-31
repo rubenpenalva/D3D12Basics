@@ -32,11 +32,11 @@ namespace D3D12Basics
 
     struct FrameStats
     {
-        float m_presentTime;
-        float m_waitForPresentTime;
-        float m_waitForFenceTime;
-        float m_frameTime;
-        float m_cmdListTime;
+        SplitTimes<> m_presentTime;
+        SplitTimes<> m_waitForPresentTime;
+        SplitTimes<> m_waitForFenceTime;
+        SplitTimes<> m_frameTime;
+        SplitTimes<> m_cmdListTime;
     };
 
     struct D3D12GpuHandle
@@ -183,7 +183,7 @@ namespace D3D12Basics
 
         // Utils
         const FrameStats& GetFrameStats() const { return m_frameStats; }
-        
+
         // Others
         // NOTE not sure about these ones here. Exposing too much detail? 
         //      move them to other classes ie, an extended cmd list class?
@@ -243,13 +243,15 @@ namespace D3D12Basics
 
         ID3D12CommandQueuePtr                       m_graphicsCmdQueue;
         UINT64                                      m_cmdQueueTimestampFrequency;
-        ID3D12GraphicsCommandListPtr                m_cmdLists[m_framesInFlight];
-        ID3D12CommandAllocatorPtr                   m_cmdAllocators[m_framesInFlight];
-        D3D12GpuSynchronizerPtr                     m_gpuSync;
-        unsigned int                                m_currentFrameIndex;
-        uint64_t                                    m_currentFrame;
-        D3D12Basics::Timer                          m_frameTime;
-        D3D12Basics::Timer                          m_frameWaitTime;
+        // TODO ID3D12GraphicsCommandList can be thought as the interface to
+        // a chunk of memory, which is the command allocator. Therefore it should
+        // be possible to just have one command list, reset it and use the
+        // next command allocator
+        ID3D12GraphicsCommandListPtr    m_cmdLists[m_framesInFlight];
+        ID3D12CommandAllocatorPtr       m_cmdAllocators[m_framesInFlight];
+        D3D12GpuSynchronizerPtr         m_gpuSync;
+        unsigned int                    m_currentFrameIndex;
+        uint64_t                        m_currentFrame;
 
         bool                        m_isWaitableForPresentEnabled;
         D3D12SwapChainPtr           m_swapChain;

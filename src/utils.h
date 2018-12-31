@@ -3,6 +3,7 @@
 // c++ includes
 #include <chrono>
 #include <vector>
+#include <array>
 
 // windows includes
 #include <windows.h>
@@ -12,9 +13,6 @@
 // thirdparty includes
 #include <d3d12.h>
 #include "directxtk12/simplemath.h"
-#include "directxtk12/gamepad.h"
-#include "directxtk12/keyboard.h"
-#include "directxtk12/mouse.h"
 
 namespace D3D12Basics
 {
@@ -154,29 +152,77 @@ namespace D3D12Basics
         void CreateCustomWindow();
     };
 
-    class Timer
+    template<uint8_t Size = 10>
+    class SplitTimes
     {
     public:
-        Timer(int samplesCount = 1);
+        using Array = std::array<float, Size>;
+        using time_point = std::chrono::high_resolution_clock::time_point;
 
-        void Reset();
+        SplitTimes() : m_splitTimes{}, m_nextIndex(0), m_lastSample{}
+        {
+        }
 
-        void Mark();
+        void AddSample(time_point sample)
+        {
+            m_splitTimes[m_nextIndex] = std::chrono::duration<float>(sample - m_lastSample).count();
+            m_lastSample = sample;
+            m_nextIndex = (m_nextIndex + 1) % Size;
+        }
 
-        // Elapsed time between two marks
-        float ElapsedTime();
+        void AddSplitTime(float splitTime)
+        {
+            m_splitTimes[m_nextIndex] = splitTime;
+            m_nextIndex = (m_nextIndex + 1) % Size;
+        }
 
-        float ElapsedAvgTime();
+        float RunningSplitTime() const 
+        {
+            return std::chrono::duration<float>(std::chrono::high_resolution_clock::now() - m_lastSample).count();
+        }
 
-        // Total time from the timer construction to now
-        float TotalTime() const;
+        bool IsRunning() const { return m_lastSample.time_since_epoch() != std::chrono::high_resolution_clock::duration::zero(); }
+
+        float LastSplitTime() const { return m_splitTimes.empty() ? 0.0f : m_splitTimes.back(); }
+
+        const Array& Values() const { return m_splitTimes; }
 
     private:
-        std::chrono::high_resolution_clock::time_point m_start;
-        std::chrono::high_resolution_clock::time_point m_mark;
+        Array       m_splitTimes;
+        time_point  m_lastSample;
+        size_t      m_nextIndex;
+    };
 
-        size_t              m_currentIndex;
-        std::vector<float>  m_elapsedTimes;
+    // https://en.wikipedia.org/wiki/Stopwatch
+    template<uint8_t Size = 10>
+    class StopClock
+    {
+    public:
+        StopClock(SplitTimes<Size>& samples) : m_splitTimes(samples)
+        {
+        }
+
+        void Mark() 
+        { 
+            auto mark = std::chrono::high_resolution_clock::now();
+            m_splitTimes.AddSample(std::move(mark));
+        }
+
+    private:
+        SplitTimes<Size>& m_splitTimes;
+    };
+
+    template<uint8_t Size = 10>
+    class ScopedStopClock : public StopClock<Size>
+    {
+    public:
+        ScopedStopClock(SplitTimes<Size>& samples) : StopClock(samples)
+        {}
+
+        ~ScopedStopClock()
+        {
+            Mark();
+        }
     };
 
     class GpuViewMarker
@@ -191,50 +237,6 @@ namespace D3D12Basics
         REGHANDLE m_eventHandle;
         GUID guid;
         std::wstring m_name;
-    };
-
-    class InputController
-    {
-    public:
-        InputController(HWND hwnd);
-
-        void Update();
-
-        bool IsKeyboardConnected() const { return m_keyboard.IsConnected(); }
-        bool IsMouseConnected() const { return m_mouse.IsConnected(); }
-        bool IsMainGamePadConnected() const { return m_gamepadState.IsConnected(); }
-
-        const DirectX::GamePad::ButtonStateTracker& GetGamepadTracker() const { return m_gamepadTracker; }
-        const DirectX::Keyboard::KeyboardStateTracker& GetKeyboardTracker() const { return m_keyboardTracker; }
-        const DirectX::Mouse::ButtonStateTracker& GetMouseTracker() const { return m_mouseTracker; }
-        
-        const DirectX::GamePad::State& GetMainGamePadState() const { return m_gamepadState; }
-        const DirectX::Keyboard::State& GetKeyboardState() const { return m_keyboardState; }
-        const DirectX::Mouse::State& GetMouseState() const { return m_mouseState; }
-
-        void SetMouseRelativeMode(bool enable);
-
-    private:
-        // NOTE InputController is not the best place to have this initialization but
-        // since its only needed by the gamepad init and I dont see right now where
-        // Id need it elsewhere in the future
-        // https://stackoverflow.com/a/36468365
-        // "TL;DR: If you are making a Windows desktop app that requires Windows 10, 
-        //  then link with RuntimeObject.lib and add this to your app initialization 
-        //  (replacing CoInitialize or CoInitializeEx):"
-        Microsoft::WRL::Wrappers::RoInitializeWrapper m_roInit;
-
-        DirectX::GamePad    m_gamepad;
-        DirectX::Keyboard   m_keyboard;
-        DirectX::Mouse      m_mouse;
-
-        DirectX::GamePad::ButtonStateTracker        m_gamepadTracker;
-        DirectX::Keyboard::KeyboardStateTracker     m_keyboardTracker;
-        DirectX::Mouse::ButtonStateTracker          m_mouseTracker;
-
-        DirectX::GamePad::State                 m_gamepadState;
-        DirectX::Keyboard::State                m_keyboardState;
-        DirectX::Mouse::State                   m_mouseState;
     };
 
     void AssertIfFailed(HRESULT hr);

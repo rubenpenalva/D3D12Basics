@@ -10,14 +10,19 @@ namespace D3D12Basics
     class D3D12ImGui
     {
     public:
-        D3D12ImGui(D3D12Basics::D3D12Gpu& gpu, FileMonitor& fileMonitor);
+        D3D12ImGui(HWND hwnd, D3D12Basics::D3D12Gpu& gpu, FileMonitor& fileMonitor);
+
         ~D3D12ImGui();
 
-        void BeginFrame();
+        void ProcessInput();
+
+        void BeginFrame(const Resolution& resolution);
 
         void EndFrame(ID3D12GraphicsCommandListPtr cmdList);
 
     private:
+        HWND m_hwnd;
+
         D3D12Basics::D3D12Gpu& m_gpu;
 
         D3D12PipelineState m_pipelineState;

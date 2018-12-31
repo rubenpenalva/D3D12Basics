@@ -140,7 +140,7 @@ namespace D3D12Basics
     class CameraController
     {
     public:
-        CameraController(InputController& inputController);
+        CameraController();
 
         void Update(EntityTransform& camera, float deltaTime, float totalTime);
 
@@ -157,17 +157,11 @@ namespace D3D12Basics
             float   m_speedLookModifier = 0.0f;
         };
 
-        InputController& m_inputController;
-
         UserCameraState m_cameraState;
 
-        void ProcessMouseInput(const DirectX::Mouse::State& mouseState);
+        void ProcessMouseInput();
 
-        void ProcessKeyboardInput(const DirectX::Keyboard::State& keyboardState,
-            const DirectX::Keyboard::KeyboardStateTracker& keyboardTracker);
-
-        void ProcessGamePadInput(const DirectX::GamePad::State& gamepadState,
-            const DirectX::GamePad::ButtonStateTracker& gamepadTracker);
+        void ProcessKeyboardInput();
 
         void ProcessInput();
 
@@ -177,18 +171,12 @@ namespace D3D12Basics
     class AppController
     {
     public:
-        AppController(const InputController& inputController);
+        AppController();
 
         void Update(CustomWindow& customWindow, bool& quit);
 
     private:
-        const InputController& m_inputController;
-
-        bool ProcessKeyboardInput(const DirectX::Keyboard::State& keyboardState,
-                                  const DirectX::Keyboard::KeyboardStateTracker& keyboardTracker,
-                                  D3D12Basics::CustomWindow& customWindow);
-
-        bool ProcessGamePadInput(const DirectX::GamePad::ButtonStateTracker& gamepadTracker);
+        bool ProcessKeyboardInput(D3D12Basics::CustomWindow& customWindow);
     };
 
     using TextureDataCache = std::unordered_map<std::wstring, TextureData>;

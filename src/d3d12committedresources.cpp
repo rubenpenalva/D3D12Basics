@@ -107,11 +107,13 @@ namespace
                        size_t alignedSize, D3D12_RESOURCE_STATES stateAfter,
                        const std::wstring& debugName) : m_context(context), m_device(device), 
                                                         m_cmdQueue(cmdQueue),
-                                                        m_gpuSync(device, cmdQueue, 1),
                                                         m_stateAfter(stateAfter)
         {
             assert(m_device);
             assert(m_cmdQueue);
+
+            m_gpuSync = std::make_unique<D3D12GpuSynchronizer>(device, cmdQueue, 1, m_gpuSyncWaitTime);
+            assert(m_gpuSync);
 
             const auto bufferDesc = CreateBufferDesc(alignedSize);
             m_uploadHeap = CreateResourceHeap(m_device, bufferDesc, ResourceHeapType::UploadHeap,
@@ -149,7 +151,7 @@ namespace
             m_cmdQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
             // Wait for the command list to finish executing on the gpu
-            m_gpuSync.Wait();
+            m_gpuSync->Wait();
         }
 
     protected:
@@ -157,12 +159,14 @@ namespace
 
         ID3D12DevicePtr         m_device;
         ID3D12CommandQueuePtr   m_cmdQueue;
-        D3D12GpuSynchronizer    m_gpuSync;
+        D3D12GpuSynchronizerPtr m_gpuSync;
 
         D3D12_RESOURCE_STATES m_stateAfter;
 
         ID3D12ResourcePtr   m_uploadHeap;
         ID3D12ResourcePtr   m_defaultHeap;
+
+        SplitTimes<> m_gpuSyncWaitTime;
     };
 
     class UploadHelperBuffer : public UploaderHelper
@@ -452,18 +456,20 @@ void D3D12DynamicBufferAllocator::Deallocate(D3D12DynamicBufferAllocation& alloc
     assert(allocation.m_allocationBlock);
     assert(allocation.m_allocationBlock->m_pageIndex < m_pages.size());
 
-    auto& page = m_pages[allocation.m_allocationBlock->m_pageIndex];
+    auto pageIndex = allocation.m_allocationBlock->m_pageIndex;
+    auto& page = m_pages[pageIndex];
     page.m_freeBlocks.push_back(std::move(allocation.m_allocationBlock));
 
-    // TODO does destroying the resource immediately makes sense? would it better to 
-    // have a strategy based on size, frequency of use and other pages size?
-    size_t freeSize = 0;
-    for (auto& freeBlock : page.m_freeBlocks)
-        freeSize += freeBlock->m_size;
+    //// TODO erasing pages does not work. It introduces glitches and crashes. Fix it
+    //// TODO does destroying the resource immediately makes sense? would it better to 
+    //// have a strategy based on size, frequency of use and other pages size?
+    //size_t freeSize = 0;
+    //for (auto& freeBlock : page.m_freeBlocks)
+    //    freeSize += freeBlock->m_size;
 
-    // TODO linear time! change to list for const time?
-    if (freeSize == m_pageSizeInBytes)
-        m_pages.erase(m_pages.begin() + allocation.m_allocationBlock->m_pageIndex);
+    //// TODO linear time! change to list for const time?
+    //if (freeSize == m_pageSizeInBytes)
+    //    m_pages.erase(m_pages.begin() + pageIndex);
 }
 
 void D3D12DynamicBufferAllocator::AllocatePage()

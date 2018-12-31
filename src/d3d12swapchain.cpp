@@ -17,11 +17,13 @@ D3D12SwapChain::D3D12SwapChain(HWND hwnd, DXGI_FORMAT format,
                                const D3D12Basics::Resolution& resolution,
                                IDXGIFactory4Ptr factory, ID3D12DevicePtr device,
                                ID3D12CommandQueuePtr commandQueue,
+                               SplitTimes<>& presentTime, SplitTimes<>& waitForPresentTime,
                                bool waitForPresentEnabled)  :   m_device(device),
                                                                 m_descriptorPool(device, D3D12Gpu::m_backBuffersCount),
                                                                 m_resolution(resolution),
-                                                                m_waitForPresentEnabled(waitForPresentEnabled),
-                                                                m_presentTimer(10), m_waitForPresentTimer(10)
+                                                                m_presentTime(presentTime), 
+                                                                m_waitForPresentTime(waitForPresentTime),
+                                                                m_waitForPresentEnabled(waitForPresentEnabled)
 {
     assert(factory);
     assert(device);
@@ -71,20 +73,17 @@ D3D12SwapChain::~D3D12SwapChain()
 // TODO switch to Present1
 HRESULT D3D12SwapChain::Present(bool vsync)
 { 
-    m_presentTimer.Mark();
-    HRESULT result = m_swapChain->Present(vsync? 1 : 0, 0);
-    m_presentTimer.Mark();
+    ScopedStopClock stopClock(m_presentTime);
+    HRESULT result = m_swapChain->Present(vsync ? 1 : 0, 0);
 
     return result;
 }
 
 void D3D12SwapChain::WaitForPresent()
 {
-    m_waitForPresentTimer.Mark();
+    ScopedStopClock stopClock(m_waitForPresentTime);
 
     AssertIfFailed(WaitForSingleObject(m_frameLatencyWaitableObject, INFINITE), WAIT_FAILED);
-
-    m_waitForPresentTimer.Mark();
 }
 
 void D3D12SwapChain::ToggleFullScreen()

@@ -2,6 +2,7 @@
 
 // project includes
 #include "d3d12basicsfwd.h"
+#include "utils.h"
 
 // windows includes
 #include <windows.h>
@@ -15,7 +16,8 @@ namespace D3D12Basics
     class D3D12GpuSynchronizer
     {
     public:
-        D3D12GpuSynchronizer(ID3D12DevicePtr device, ID3D12CommandQueuePtr cmdQueue, unsigned int maxFramesInFlight);
+        D3D12GpuSynchronizer(ID3D12DevicePtr device, ID3D12CommandQueuePtr cmdQueue, unsigned int maxFramesInFlight,
+                             SplitTimes<>& waitTime);
         ~D3D12GpuSynchronizer();
 
         bool Wait();
@@ -25,8 +27,6 @@ namespace D3D12Basics
         uint64_t GetLastRetiredFrameId() const { return m_lastRetiredFrameId; }
 
         uint64_t GetNextFrameId() const { return m_nextFenceValue; }
-
-        float GetWaitForFenceTime() const { return m_waitTime; }
 
     private:
         ID3D12CommandQueuePtr m_cmdQueue;
@@ -41,7 +41,7 @@ namespace D3D12Basics
         UINT64          m_currentFenceValue;
         UINT64          m_nextFenceValue;
 
-        float m_waitTime;
+        SplitTimes<>&    m_waitTime;
 
         void SignalWork();
 

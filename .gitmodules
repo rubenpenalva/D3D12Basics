@@ -1,3 +1,7 @@
 [submodule "thirdparty/imgui"]
 	path = thirdparty/imgui
 	url = https://github.com/ocornut/imgui
+[submodule "thirdparty/enkiTS"]
+	path = thirdparty/enkiTS
+	url = https://github.com/dougbinks/enkiTS
+	branch = C++11

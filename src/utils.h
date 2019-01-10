@@ -30,11 +30,12 @@ namespace D3D12Basics
     const uint32_t g_2mb    = g_1mb << 1;
     const uint32_t g_4mb    = g_2mb << 1;
 
-
     using Float2    = DirectX::SimpleMath::Vector2;
     using Float3    = DirectX::SimpleMath::Vector3;
     using Float4    = DirectX::SimpleMath::Vector4;
     using Matrix44  = DirectX::SimpleMath::Matrix;
+
+    using hr_clock  = std::chrono::high_resolution_clock;
 
     // NOTE: https://www.gnu.org/software/libc/manual/html_node/Mathematical-Constants.html
     constexpr float M_PI        = 3.14159265358979323846f;
@@ -151,78 +152,77 @@ namespace D3D12Basics
 
         void CreateCustomWindow();
     };
-
-    template<uint8_t Size = 10>
-    class SplitTimes
+    
+    constexpr bool IsPowerOf2(size_t value)
     {
+        return (value & (value - 1)) == 0;
+    }
+
+    template<class T, uint8_t Size = 128>
+    class CircularBuffer
+    {
+        static_assert(Size != 0);
+        static_assert(D3D12Basics::IsPowerOf2(Size), "CircularBuffer Size has to be power of 2 because of Next function");
+
     public:
         using Array = std::array<float, Size>;
-        using time_point = std::chrono::high_resolution_clock::time_point;
 
-        SplitTimes() : m_splitTimes{}, m_nextIndex(0), m_lastSample{}
+        CircularBuffer() : m_values{}, m_nextIndex{}, m_lastIndex{}
         {
         }
 
-        void AddSample(time_point sample)
-        {
-            m_splitTimes[m_nextIndex] = std::chrono::duration<float>(sample - m_lastSample).count();
-            m_lastSample = sample;
-            m_nextIndex = (m_nextIndex + 1) % Size;
+        void Next() 
+        { 
+            m_lastIndex = m_nextIndex; 
+            m_nextIndex = (m_nextIndex + 1) & (Size - 1); 
         }
+        
+        void SetValue(const T& value) { m_values[m_nextIndex] = value; }
 
-        void AddSplitTime(float splitTime)
-        {
-            m_splitTimes[m_nextIndex] = splitTime;
-            m_nextIndex = (m_nextIndex + 1) % Size;
-        }
+        const T& LastValue() const { return m_values[m_lastIndex]; }
 
-        float RunningSplitTime() const 
-        {
-            return std::chrono::duration<float>(std::chrono::high_resolution_clock::now() - m_lastSample).count();
-        }
-
-        bool IsRunning() const { return m_lastSample.time_since_epoch() != std::chrono::high_resolution_clock::duration::zero(); }
-
-        float LastSplitTime() const { return m_splitTimes.empty() ? 0.0f : m_splitTimes.back(); }
-
-        const Array& Values() const { return m_splitTimes; }
+        const Array& Values() const { return m_values; }
 
     private:
-        Array       m_splitTimes;
-        time_point  m_lastSample;
-        size_t      m_nextIndex;
+        std::array<T, Size> m_values;
+        size_t m_nextIndex;
+        size_t m_lastIndex;
     };
 
-    // https://en.wikipedia.org/wiki/Stopwatch
-    template<uint8_t Size = 10>
     class StopClock
     {
     public:
-        StopClock(SplitTimes<Size>& samples) : m_splitTimes(samples)
-        {
-        }
+        using SplitTimeBuffer = CircularBuffer<float, 16>;
+        using SplitTimeArray = SplitTimeBuffer::Array;
 
-        void Mark() 
-        { 
-            auto mark = std::chrono::high_resolution_clock::now();
-            m_splitTimes.AddSample(std::move(mark));
-        }
+        StopClock();
+
+        void Mark();
+
+        void ResetMark();
+
+        const SplitTimeArray& Values() const { return m_splitTimes.Values(); }
+
+        float LastSplitTime() const { return m_splitTimes.LastValue(); }
 
     private:
-        SplitTimes<Size>& m_splitTimes;
+        hr_clock::time_point m_last;
+
+        SplitTimeBuffer m_splitTimes;
+
+        void AddSplitTime(const hr_clock::time_point& begin, const hr_clock::time_point& end);
     };
 
-    template<uint8_t Size = 10>
-    class ScopedStopClock : public StopClock<Size>
+    class RunningTime
     {
     public:
-        ScopedStopClock(SplitTimes<Size>& samples) : StopClock(samples)
-        {}
+        RunningTime();
 
-        ~ScopedStopClock()
-        {
-            Mark();
-        }
+        void Reset();
+
+        float Value() const;
+    private:
+        hr_clock::time_point m_startTime;
     };
 
     class GpuViewMarker
@@ -255,8 +255,6 @@ namespace D3D12Basics
 
     // alignmentPower2 has to be a power of 2
     size_t AlignToPowerof2(size_t value, size_t alignmentPower2);
-
-    bool IsPowerOf2(size_t value);
 
     bool IsAlignedToPowerof2(size_t value, size_t alignmentPower2);
 

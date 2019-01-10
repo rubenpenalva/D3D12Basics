@@ -453,8 +453,7 @@ void D3D12Gpu::PresentFrame()
     // still in flight.
     DestroyRetiredAllocations();
 
-    StopClock stopClock(m_frameStats.m_frameTime);
-    stopClock.Mark();
+    m_frameStats.m_frameTime.Mark();
 
     UpdateFrameStats();
 }
@@ -937,7 +936,8 @@ void D3D12Gpu::UpdateFrameTimestamp()
 
     // Calculate the GPU execution time in milliseconds.
     const float gpuTimeS = (timeStampDelta / static_cast<float>(m_cmdQueueTimestampFrequency));
-    m_frameStats.m_cmdListTime.AddSplitTime(gpuTimeS);
+    m_frameStats.m_cmdListTime.SetValue(gpuTimeS);
+    m_frameStats.m_cmdListTime.Next();
 }
 
 D3D12GpuViewHandle D3D12Gpu::CreateView(D3D12GpuMemoryHandle memHandle, DescriptorHandlesPtrs&& descriptors)

@@ -17,8 +17,8 @@ namespace D3D12Basics
         uint32_t m_shadowPassDrawCallsCount;
         uint32_t m_forwardPassDrawCallsCount;
 
-        SplitTimes<> m_shadowPassCmdListTime;
-        SplitTimes<> m_forwardPassCmdListTime;
+        StopClock m_shadowPassCmdListTime;
+        StopClock m_forwardPassCmdListTime;
     };
 
     class D3D12SceneRender

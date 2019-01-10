@@ -112,7 +112,7 @@ namespace
             assert(m_device);
             assert(m_cmdQueue);
 
-            m_gpuSync = std::make_unique<D3D12GpuSynchronizer>(device, cmdQueue, 1, m_gpuSyncWaitTime);
+            m_gpuSync = std::make_unique<D3D12GpuSynchronizer>(device, cmdQueue, 1, m_gpuSyncWaitClock);
             assert(m_gpuSync);
 
             const auto bufferDesc = CreateBufferDesc(alignedSize);
@@ -166,7 +166,7 @@ namespace
         ID3D12ResourcePtr   m_uploadHeap;
         ID3D12ResourcePtr   m_defaultHeap;
 
-        SplitTimes<> m_gpuSyncWaitTime;
+        StopClock m_gpuSyncWaitClock;
     };
 
     class UploadHelperBuffer : public UploaderHelper

@@ -17,7 +17,7 @@ namespace D3D12Basics
     {
     public:
         D3D12GpuSynchronizer(ID3D12DevicePtr device, ID3D12CommandQueuePtr cmdQueue, unsigned int maxFramesInFlight,
-                             SplitTimes<>& waitTime);
+                             StopClock& waitClock);
         ~D3D12GpuSynchronizer();
 
         bool Wait();
@@ -41,7 +41,7 @@ namespace D3D12Basics
         UINT64          m_currentFenceValue;
         UINT64          m_nextFenceValue;
 
-        SplitTimes<>&    m_waitTime;
+        StopClock&    m_waitClock;
 
         void SignalWork();
 

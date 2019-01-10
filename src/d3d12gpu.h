@@ -32,11 +32,11 @@ namespace D3D12Basics
 
     struct FrameStats
     {
-        SplitTimes<> m_presentTime;
-        SplitTimes<> m_waitForPresentTime;
-        SplitTimes<> m_waitForFenceTime;
-        SplitTimes<> m_frameTime;
-        SplitTimes<> m_cmdListTime;
+        StopClock m_presentTime;
+        StopClock m_waitForPresentTime;
+        StopClock m_waitForFenceTime;
+        StopClock m_frameTime;
+        StopClock::SplitTimeBuffer m_cmdListTime;
     };
 
     struct D3D12GpuHandle

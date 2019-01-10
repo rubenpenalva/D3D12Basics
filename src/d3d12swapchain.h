@@ -22,7 +22,7 @@ namespace D3D12Basics
         D3D12SwapChain(HWND hwnd, DXGI_FORMAT format, const D3D12Basics::Resolution& resolution, 
                        IDXGIFactory4Ptr factory, ID3D12DevicePtr device, 
                        ID3D12CommandQueuePtr commandQueue, 
-                       SplitTimes<>& presentTime, SplitTimes<>& waitForPresentTime,
+                       StopClock& presentClock, StopClock& waitForPresentClock,
                        bool waitForPresentEnabled = false);
 
         ~D3D12SwapChain();
@@ -57,8 +57,8 @@ namespace D3D12Basics
 
         D3D12_RESOURCE_BARRIER m_transitions[TransitionType_COUNT][D3D12Gpu::m_backBuffersCount];
 
-        D3D12Basics::SplitTimes<>& m_presentTime;
-        D3D12Basics::SplitTimes<>& m_waitForPresentTime;
+        D3D12Basics::StopClock& m_presentClock;
+        D3D12Basics::StopClock& m_waitForPresentClock;
 
         bool    m_waitForPresentEnabled;
         HANDLE  m_frameLatencyWaitableObject;

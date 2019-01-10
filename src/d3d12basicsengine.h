@@ -43,12 +43,46 @@ namespace D3D12Basics
         using CameraControllerPtr   = std::unique_ptr<CameraController>;
         using AppControllerPtr      = std::unique_ptr<AppController>;
 
+        struct CachedFrameStats
+        {
+            StopClock::SplitTimeArray m_presentTime;
+            StopClock::SplitTimeArray m_waitForPresentTime;
+            StopClock::SplitTimeArray m_waitForFenceTime;
+            StopClock::SplitTimeArray m_frameTime;
+            StopClock::SplitTimeArray m_cmdListTime;
+
+            CachedFrameStats& operator=(const FrameStats& frameStats)
+            {
+                m_presentTime = frameStats.m_presentTime.Values();
+                m_waitForPresentTime = frameStats.m_waitForPresentTime.Values();
+                m_waitForFenceTime = frameStats.m_waitForFenceTime.Values();
+                m_frameTime = frameStats.m_frameTime.Values();
+                m_cmdListTime = frameStats.m_cmdListTime.Values();
+
+                return *this;
+            }
+        };
+
+        struct CachedSceneStats
+        {
+            StopClock::SplitTimeArray m_shadowPassCmdListTime;
+            StopClock::SplitTimeArray m_forwardPassCmdListTime;
+
+            CachedSceneStats& operator=(const SceneStats& sceneStats)
+            {
+                m_shadowPassCmdListTime = sceneStats.m_shadowPassCmdListTime.Values();
+                m_forwardPassCmdListTime = sceneStats.m_forwardPassCmdListTime.Values();
+
+                return *this;
+            }
+        };
+
         struct CachedStats
         {
-            SplitTimes<>    m_beginToEndTime;
-            SplitTimes<>    m_endToEndTime;
-            FrameStats      m_frameStats;
-            SceneStats      m_sceneStats;
+            StopClock::SplitTimeArray    m_beginToEndTime;
+            StopClock::SplitTimeArray    m_endToEndTime;
+            CachedFrameStats        m_frameStats;
+            CachedSceneStats        m_sceneStats;
 
             bool m_enabled;
         };
@@ -56,9 +90,10 @@ namespace D3D12Basics
         D3D12Gpu        m_gpu;
         CustomWindowPtr m_window;
 
-        SplitTimes<>    m_beginToEndTime;
-        SplitTimes<>    m_endToEndTime;
-        SplitTimes<1>   m_totalTime;
+    public:
+        StopClock       m_beginToEndClock;
+        StopClock       m_endToEndClock;
+        RunningTime     m_totalTime;
         float           m_cachedDeltaTime;
         float           m_cachedTotalTime;
 
@@ -78,7 +113,7 @@ namespace D3D12Basics
 
         D3D12ImGuiPtr m_imgui;
 
-        SplitTimes<1> m_sceneLoadedUITime;
+        RunningTime m_sceneLoadedUIStart;
 
         FileMonitor m_fileMonitor;
 

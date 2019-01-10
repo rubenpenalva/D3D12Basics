@@ -10,11 +10,11 @@ using namespace D3D12Basics;
 
 D3D12GpuSynchronizer::D3D12GpuSynchronizer(ID3D12DevicePtr device, ID3D12CommandQueuePtr cmdQueue,
                                            unsigned int maxFramesInFlight,
-                                           SplitTimes<>& waitTime)  :   m_cmdQueue(cmdQueue), 
+                                           StopClock& waitClock)  :   m_cmdQueue(cmdQueue), 
                                                                         m_maxFramesInFlight(maxFramesInFlight),
                                                                         m_framesInFlight(0), m_currentFenceValue(0), 
                                                                         m_completedFramesCount(0), m_lastRetiredFrameId(0),
-                                                                        m_waitTime(waitTime)
+                                                                        m_waitClock(waitClock)
 {
     assert(device);
     assert(m_cmdQueue);
@@ -83,7 +83,7 @@ void D3D12GpuSynchronizer::SignalWork()
 
 void D3D12GpuSynchronizer::WaitForFence(UINT64 fenceValue)
 {
-    ScopedStopClock stopClock(m_waitTime);
+    m_waitClock.Mark();
 
     AssertIfFailed(m_fence->SetEventOnCompletion(fenceValue, m_event));
     AssertIfFailed(WaitForSingleObject(m_event, INFINITE), WAIT_FAILED);

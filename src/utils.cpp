@@ -243,6 +243,41 @@ void CustomWindow::CreateCustomWindow()
     ShowWindow(m_hwnd, SW_SHOW);
 }
 
+StopClock::StopClock() : m_last{}, m_splitTimes{}
+{
+}
+
+void StopClock::Mark()
+{
+    auto now = hr_clock::now();
+    AddSplitTime(m_last, now);
+    m_last = now;
+}
+
+void StopClock::ResetMark()
+{
+    m_last = hr_clock::now();
+}
+
+void StopClock::AddSplitTime(const hr_clock::time_point& begin, const hr_clock::time_point& end)
+{
+    m_splitTimes.SetValue(std::chrono::duration<float>(end - begin).count());
+    m_splitTimes.Next();
+}
+
+RunningTime::RunningTime() : m_startTime(hr_clock::now())
+{}
+
+void RunningTime::Reset()
+{
+    m_startTime = hr_clock::now();
+}
+
+float RunningTime::Value() const 
+{ 
+    return std::chrono::duration<float>(hr_clock::now() - m_startTime).count();
+}
+
 // https://knarkowicz.wordpress.com/2013/05/25/simple-gpuview-custom-event-markers/
 GpuViewMarker::GpuViewMarker(const std::wstring& name, const wchar_t* uuid) : m_name(name)
 {
@@ -357,11 +392,6 @@ std::wstring D3D12Basics::ConvertFromUTF8ToUTF16(const std::string& str)
 size_t D3D12Basics::AlignToPowerof2(size_t value, size_t alignmentPower2)
 {
     return (value + (alignmentPower2 - 1)) & ~(alignmentPower2 - 1);
-}
-
-bool D3D12Basics::IsPowerOf2(size_t value)
-{
-    return (value & (value - 1)) == 0;
 }
 
 bool D3D12Basics::IsAlignedToPowerof2(size_t value, size_t alignmentPower2)

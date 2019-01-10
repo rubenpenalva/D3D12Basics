@@ -17,12 +17,12 @@ D3D12SwapChain::D3D12SwapChain(HWND hwnd, DXGI_FORMAT format,
                                const D3D12Basics::Resolution& resolution,
                                IDXGIFactory4Ptr factory, ID3D12DevicePtr device,
                                ID3D12CommandQueuePtr commandQueue,
-                               SplitTimes<>& presentTime, SplitTimes<>& waitForPresentTime,
+                               StopClock& presentClock, StopClock& waitForPresentClock,
                                bool waitForPresentEnabled)  :   m_device(device),
                                                                 m_descriptorPool(device, D3D12Gpu::m_backBuffersCount),
                                                                 m_resolution(resolution),
-                                                                m_presentTime(presentTime), 
-                                                                m_waitForPresentTime(waitForPresentTime),
+                                                                m_presentClock(presentClock), 
+                                                                m_waitForPresentClock(waitForPresentClock),
                                                                 m_waitForPresentEnabled(waitForPresentEnabled)
 {
     assert(factory);
@@ -73,7 +73,7 @@ D3D12SwapChain::~D3D12SwapChain()
 // TODO switch to Present1
 HRESULT D3D12SwapChain::Present(bool vsync)
 { 
-    ScopedStopClock stopClock(m_presentTime);
+    m_presentClock.Mark();
     HRESULT result = m_swapChain->Present(vsync ? 1 : 0, 0);
 
     return result;
@@ -81,8 +81,7 @@ HRESULT D3D12SwapChain::Present(bool vsync)
 
 void D3D12SwapChain::WaitForPresent()
 {
-    ScopedStopClock stopClock(m_waitForPresentTime);
-
+    m_waitForPresentClock.Mark();
     AssertIfFailed(WaitForSingleObject(m_frameLatencyWaitableObject, INFINITE), WAIT_FAILED);
 }
 

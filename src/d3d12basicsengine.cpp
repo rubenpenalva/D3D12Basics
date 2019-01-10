@@ -21,7 +21,7 @@ namespace
 {
     static const float g_showSceneLoadedUITime = 5.0f;
 
-    void ShowSplitTimesUI(const char* text, const SplitTimes<>::Array& splitTimesArray, float lastSplitTime, bool plotEnabled)
+    void ShowSplitTimesUI(const char* text, const StopClock::SplitTimeArray& splitTimesArray, float lastSplitTime, bool plotEnabled = true)
     {
         ImGui::Text((text + std::string(" %.3f ms")).c_str(), lastSplitTime * 1000.0f);
         ImGui::NextColumn();
@@ -41,8 +41,6 @@ D3D12BasicsEngine::D3D12BasicsEngine(const Settings& settings,
                                                         m_scene(std::move(scene)), 
                                                         m_fileMonitor(L"./data")
 {
-    ScopedStopClock stopClock(m_totalTime);
-
     m_window = std::make_unique<CustomWindow>(m_gpu.GetSafestResolutionSupported());
     assert(m_window);
 
@@ -82,11 +80,10 @@ D3D12BasicsEngine::~D3D12BasicsEngine()
 
 void D3D12BasicsEngine::BeginFrame()
 {
-    StopClock stopClock(m_beginToEndTime);
-    stopClock.Mark();
+    m_beginToEndClock.ResetMark();
 
-    m_cachedDeltaTime = m_endToEndTime.LastSplitTime();
-    m_cachedTotalTime = m_totalTime.RunningSplitTime();
+    m_cachedDeltaTime = m_endToEndClock.LastSplitTime();
+    m_cachedTotalTime = m_totalTime.Value();
 
     ProcessWindowEvents();
 
@@ -105,8 +102,8 @@ void D3D12BasicsEngine::RunFrame(void(*UpdateScene)(Scene& scene, float totalTim
         {
             // Note This calls blocks
             m_sceneRender->LoadGpuResources();
-
-            ScopedStopClock stopClock(m_sceneLoadedUITime);
+            
+            m_sceneLoadedUIStart.Reset();
         }
 
         assert(m_sceneRender->AreGpuResourcesLoaded());
@@ -127,8 +124,8 @@ void D3D12BasicsEngine::EndFrame()
 {
     m_gpu.PresentFrame();
 
-    ScopedStopClock beginToEndStopClock(m_beginToEndTime);
-    ScopedStopClock endToEndStopClock(m_endToEndTime);
+    m_beginToEndClock.Mark();
+    m_endToEndClock.Mark();
 }
 
 void D3D12BasicsEngine::ProcessWindowEvents()
@@ -201,12 +198,7 @@ void D3D12BasicsEngine::ShowSceneLoadUI()
     std::string loadUIStr = "Scene loading!";
     if (m_sceneRender->AreGpuResourcesLoaded())
     {
-        if (!m_sceneLoadedUITime.IsRunning())
-        {
-            ScopedStopClock stopClock(m_sceneLoadedUITime);
-        }
-
-        if (m_sceneLoadedUITime.RunningSplitTime() > g_showSceneLoadedUITime)
+        if (m_sceneLoadedUIStart.Value() > g_showSceneLoadedUITime)
             return;
 
         loadUIStr = "Scene loaded!";
@@ -249,8 +241,8 @@ void D3D12BasicsEngine::ShowStats()
     ImGui::Checkbox("Pause plots", &pausePlots);
     if (pausePlots && pausePlotsOld != pausePlots)
     {
-        m_cachedStats.m_endToEndTime = m_endToEndTime;
-        m_cachedStats.m_beginToEndTime = m_beginToEndTime;
+        m_cachedStats.m_endToEndTime = m_endToEndClock.Values();
+        m_cachedStats.m_beginToEndTime = m_beginToEndClock.Values();
         m_cachedStats.m_frameStats = frameStats;
         m_cachedStats.m_sceneStats = sceneStats;
         m_cachedStats.m_enabled = true;
@@ -263,50 +255,41 @@ void D3D12BasicsEngine::ShowStats()
     ImGui::Columns(2, "");
 
     ShowSplitTimesUI("CPU: begin to end", 
-                      m_cachedStats.m_enabled?  m_cachedStats.m_beginToEndTime.Values() : 
-                                                m_beginToEndTime.Values(), 
-                      m_beginToEndTime.LastSplitTime(),
-                      m_beginToEndTime.IsRunning());
+                      m_cachedStats.m_enabled?  m_cachedStats.m_beginToEndTime : 
+                                                m_beginToEndClock.Values(), 
+                      m_beginToEndClock.LastSplitTime());
     ShowSplitTimesUI("CPU: end to end",
-                      m_cachedStats.m_enabled ? m_cachedStats.m_endToEndTime.Values() : 
-                                                m_endToEndTime.Values(),
-                      m_endToEndTime.LastSplitTime(),
-                      m_endToEndTime.IsRunning());
+                      m_cachedStats.m_enabled ? m_cachedStats.m_endToEndTime : 
+                                                m_endToEndClock.Values(),
+                      m_endToEndClock.LastSplitTime());
     ShowSplitTimesUI("CPU: present", 
-                      m_cachedStats.m_enabled ? m_cachedStats.m_frameStats.m_presentTime.Values() : 
+                      m_cachedStats.m_enabled ? m_cachedStats.m_frameStats.m_presentTime : 
                                                 frameStats.m_presentTime.Values(),
-                      frameStats.m_presentTime.LastSplitTime(), 
-                      frameStats.m_presentTime.IsRunning());
+                      frameStats.m_presentTime.LastSplitTime());
     ShowSplitTimesUI("CPU: waitfor present", 
-                      m_cachedStats.m_enabled ? m_cachedStats.m_frameStats.m_waitForPresentTime.Values() :
+                      m_cachedStats.m_enabled ? m_cachedStats.m_frameStats.m_waitForPresentTime :
                                                 frameStats.m_waitForPresentTime.Values(),
-                      frameStats.m_waitForPresentTime.LastSplitTime(), 
-                      frameStats.m_waitForPresentTime.IsRunning());
+                      frameStats.m_waitForPresentTime.LastSplitTime());
     ShowSplitTimesUI("CPU: waitfor fence", 
-                      m_cachedStats.m_enabled ? m_cachedStats.m_frameStats.m_waitForFenceTime.Values() : 
+                      m_cachedStats.m_enabled ? m_cachedStats.m_frameStats.m_waitForFenceTime : 
                                                 frameStats.m_waitForFenceTime.Values(),
-                      frameStats.m_waitForFenceTime.LastSplitTime(), 
-                      frameStats.m_waitForFenceTime.IsRunning());
+                      frameStats.m_waitForFenceTime.LastSplitTime());
     ShowSplitTimesUI("CPU: frame time", 
-                      m_cachedStats.m_enabled ? m_cachedStats.m_frameStats.m_frameTime.Values() :
+                      m_cachedStats.m_enabled ? m_cachedStats.m_frameStats.m_frameTime :
                                                 frameStats.m_frameTime.Values(),
-                      frameStats.m_frameTime.LastSplitTime(),
-                      frameStats.m_frameTime.IsRunning());
+                      frameStats.m_frameTime.LastSplitTime());
     ShowSplitTimesUI("CPU: shadow pass cmd list time", 
-                      m_cachedStats.m_enabled ? m_cachedStats.m_sceneStats.m_shadowPassCmdListTime.Values() : 
+                      m_cachedStats.m_enabled ? m_cachedStats.m_sceneStats.m_shadowPassCmdListTime : 
                                                 sceneStats.m_shadowPassCmdListTime.Values(),
-                      sceneStats.m_shadowPassCmdListTime.LastSplitTime(),
-                      sceneStats.m_shadowPassCmdListTime.IsRunning());
+                      sceneStats.m_shadowPassCmdListTime.LastSplitTime());
     ShowSplitTimesUI("CPU: forward pass cmd list time",
-                      m_cachedStats.m_enabled ? m_cachedStats.m_sceneStats.m_forwardPassCmdListTime.Values() : 
+                      m_cachedStats.m_enabled ? m_cachedStats.m_sceneStats.m_forwardPassCmdListTime : 
                                                 sceneStats.m_forwardPassCmdListTime.Values(),
-                      sceneStats.m_forwardPassCmdListTime.LastSplitTime(), 
-                      sceneStats.m_forwardPassCmdListTime.IsRunning());
+                      sceneStats.m_forwardPassCmdListTime.LastSplitTime());
     ShowSplitTimesUI("GPU: cmdlist time", 
-                      m_cachedStats.m_enabled ? m_cachedStats.m_frameStats.m_cmdListTime.Values() :
+                      m_cachedStats.m_enabled ? m_cachedStats.m_frameStats.m_cmdListTime :
                                                 frameStats.m_cmdListTime.Values(),
-                      frameStats.m_cmdListTime.LastSplitTime(), 
-                      frameStats.m_cmdListTime.IsRunning());
+                      frameStats.m_cmdListTime.LastValue());
     ImGui::Text("CPU: delta time %.3f ms", m_cachedDeltaTime);
     ImGui::Text("# draw calls: shadow pass %d", sceneStats.m_shadowPassDrawCallsCount);
     ImGui::Text("# draw calls: forward pass %d", sceneStats.m_forwardPassDrawCallsCount);

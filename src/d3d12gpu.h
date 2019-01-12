@@ -243,11 +243,8 @@ namespace D3D12Basics
 
         ID3D12CommandQueuePtr                       m_graphicsCmdQueue;
         UINT64                                      m_cmdQueueTimestampFrequency;
-        // TODO ID3D12GraphicsCommandList can be thought as the interface to
-        // a chunk of memory, which is the command allocator. Therefore it should
-        // be possible to just have one command list, reset it and use the
-        // next command allocator
-        ID3D12GraphicsCommandListPtr    m_cmdLists[m_framesInFlight];
+
+        ID3D12GraphicsCommandListPtr    m_cmdList;
         ID3D12CommandAllocatorPtr       m_cmdAllocators[m_framesInFlight];
         D3D12GpuSynchronizerPtr         m_gpuSync;
         unsigned int                    m_currentFrameIndex;

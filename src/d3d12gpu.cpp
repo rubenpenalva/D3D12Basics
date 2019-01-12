@@ -174,7 +174,7 @@ D3D12GpuMemoryHandle D3D12Gpu::AllocateDynamicMemory(size_t sizeBytes, const std
 
 D3D12GpuMemoryHandle D3D12Gpu::AllocateStaticMemory(const void* data, size_t sizeBytes, const std::wstring& debugName)
 {
-    D3D12CommittedResourceAllocator::Context context { m_cmdAllocators[m_currentFrameIndex], m_cmdLists[m_currentFrameIndex] };
+    D3D12CommittedResourceAllocator::Context context { m_cmdAllocators[m_currentFrameIndex], m_cmdList };
     auto committedBuffer = m_committedResourceAllocator->AllocateBuffer(context, data, sizeBytes, 
                                                                         D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT,
                                                                         debugName);
@@ -188,7 +188,7 @@ D3D12GpuMemoryHandle D3D12Gpu::AllocateStaticMemory(const std::vector<D3D12_SUBR
                                                     const D3D12_RESOURCE_DESC& desc,
                                                     const std::wstring& debugName)
 {
-    D3D12CommittedResourceAllocator::Context context{ m_cmdAllocators[m_currentFrameIndex], m_cmdLists[m_currentFrameIndex] };
+    D3D12CommittedResourceAllocator::Context context{ m_cmdAllocators[m_currentFrameIndex], m_cmdList };
     auto resource = m_committedResourceAllocator->AllocateTexture(context, subresources, desc, debugName);
     assert(resource);
 
@@ -390,34 +390,30 @@ const D3D12_CPU_DESCRIPTOR_HANDLE& D3D12Gpu::SwapChainBackBufferViewHandle() con
 
 ID3D12GraphicsCommandListPtr D3D12Gpu::StartCurrentCmdList()
 {
-    auto cmdList = m_cmdLists[m_currentFrameIndex];
     auto cmdAllocator = m_cmdAllocators[m_currentFrameIndex];
 
     AssertIfFailed(cmdAllocator->Reset());
-    AssertIfFailed(cmdList->Reset(cmdAllocator.Get(), nullptr));
+    AssertIfFailed(m_cmdList->Reset(cmdAllocator.Get(), nullptr));
 
-    BeginFrameTimestamp(cmdList);
+    BeginFrameTimestamp(m_cmdList);
 
     ID3D12DescriptorHeap* ppHeaps[] = { m_gpuDescriptorRingBuffer->GetDescriptorHeap().Get() };
-    cmdList->SetDescriptorHeaps(1, ppHeaps);
+    m_cmdList->SetDescriptorHeaps(1, ppHeaps);
 
-    return cmdList;
+    return m_cmdList;
 }
 
 void D3D12Gpu::EndCurrentCmdList()
 {
-    auto cmdList = m_cmdLists[m_currentFrameIndex];
-    EndFrameTimestamp(cmdList);
+    EndFrameTimestamp(m_cmdList);
 
-    AssertIfFailed(cmdList->Close());
+    AssertIfFailed(m_cmdList->Close());
 }
 
 void D3D12Gpu::ExecuteCurrentCmdList()
 {
-    auto cmdList = m_cmdLists[m_currentFrameIndex];
-
     // Execute the command list.
-    ID3D12CommandList* ppCommandLists[] = { cmdList.Get() };
+    ID3D12CommandList* ppCommandLists[] = { m_cmdList.Get() };
     m_graphicsCmdQueue->ExecuteCommandLists(1, ppCommandLists);
 }
 
@@ -712,16 +708,16 @@ void D3D12Gpu::CreateCommandInfrastructure()
         }
 
         AssertIfFailed(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_cmdAllocators[i].Get(), 
-                                                   nullptr, IID_PPV_ARGS(&m_cmdLists[i])));
-        assert(m_cmdLists[i]);
-        AssertIfFailed(m_cmdLists[i]->Close());
+                                                   nullptr, IID_PPV_ARGS(&m_cmdList)));
+        assert(m_cmdList);
+        AssertIfFailed(m_cmdList->Close());
 
         {
             std::wstringstream converter;
             converter << L"Command Allocator " << i;
             m_cmdAllocators[i]->SetName(converter.str().c_str());
         }
-        m_cmdLists[i]->SetName(L"Command List");
+        m_cmdList->SetName(L"Command List");
     }
 }
 

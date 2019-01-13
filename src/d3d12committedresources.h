@@ -33,14 +33,16 @@ namespace D3D12Basics
 
         D3D12CommittedBuffer AllocateReadBackBuffer(size_t sizeBytes, size_t alignment, const std::wstring& debugName);
 
-        D3D12CommittedBuffer AllocateBuffer(const Context& context, const void* data, size_t sizeBytes,
+        D3D12CommittedBuffer AllocateBuffer(const void* data, size_t sizeBytes,
                                             size_t alignment, const std::wstring& debugName);
 
-        ID3D12ResourcePtr AllocateTexture(const Context& context, const std::vector<D3D12_SUBRESOURCE_DATA>& subresources,
+        ID3D12ResourcePtr AllocateTexture(const std::vector<D3D12_SUBRESOURCE_DATA>& subresources,
                                           const D3D12_RESOURCE_DESC& desc, const std::wstring& debugName);
     private:
         ID3D12DevicePtr         m_device;
         ID3D12CommandQueuePtr   m_cmdQueue;
+
+        Context m_uploadingContext;
     };
 
     // TODO what to do with this function?

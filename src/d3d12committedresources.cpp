@@ -127,6 +127,7 @@ namespace
             assert(m_defaultHeap);
             m_defaultHeap->SetName(debugName.c_str());
 
+            // TODO is it guaranteed that at this point cmd allocator wont be used by the gpu?
             AssertIfFailed(context.m_cmdAllocator->Reset());
             AssertIfFailed(context.m_cmdList->Reset(context.m_cmdAllocator.Get(), nullptr));
         }
@@ -291,6 +292,20 @@ D3D12CommittedResourceAllocator::D3D12CommittedResourceAllocator(ID3D12DevicePtr
 {
     assert(m_device);
     assert(m_cmdQueue);
+
+    AssertIfFailed(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
+                    IID_PPV_ARGS(&m_uploadingContext.m_cmdAllocator)));
+    assert(m_uploadingContext.m_cmdAllocator);
+
+    m_uploadingContext.m_cmdAllocator->SetName(L"Command Allocator D3D12CommittedResourceAllocator");
+
+    AssertIfFailed(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                               m_uploadingContext.m_cmdAllocator.Get(), 
+                                               nullptr, IID_PPV_ARGS(&m_uploadingContext.m_cmdList)));
+    assert(m_uploadingContext.m_cmdList);
+    AssertIfFailed(m_uploadingContext.m_cmdList->Close());
+
+    m_uploadingContext.m_cmdList->SetName(L"Command List D3D12CommittedResourceAllocator");
 }
 
 D3D12CommittedBuffer D3D12CommittedResourceAllocator::AllocateReadBackBuffer(size_t sizeBytes, size_t alignment,
@@ -317,30 +332,29 @@ D3D12CommittedBuffer D3D12CommittedResourceAllocator::AllocateReadBackBuffer(siz
     return {resource, alignedSize};
 }
 
-D3D12CommittedBuffer D3D12CommittedResourceAllocator::AllocateBuffer(const Context& context, const void* data, 
+D3D12CommittedBuffer D3D12CommittedResourceAllocator::AllocateBuffer(const void* data, 
                                                                      size_t sizeBytes, size_t alignment, 
                                                                      const std::wstring& debugName)
 {
-    AssertContextIsValid(context);
+    AssertContextIsValid(m_uploadingContext);
     const auto alignedSize = AlignToPowerof2(sizeBytes, alignment);
 
-    UploadHelperBuffer uploadHelper(context, m_device, m_cmdQueue, data, sizeBytes, alignedSize, debugName);
+    UploadHelperBuffer uploadHelper(m_uploadingContext, m_device, m_cmdQueue, data, sizeBytes, alignedSize, debugName);
     auto resource = uploadHelper.GetUploadedResource();
     assert(resource);
 
     return { resource, alignedSize };
 }
 
-ID3D12ResourcePtr D3D12CommittedResourceAllocator::AllocateTexture(const Context& context, 
-                                                                   const std::vector<D3D12_SUBRESOURCE_DATA>& subresources,
+ID3D12ResourcePtr D3D12CommittedResourceAllocator::AllocateTexture(const std::vector<D3D12_SUBRESOURCE_DATA>& subresources,
                                                                    const D3D12_RESOURCE_DESC& desc, 
                                                                    const std::wstring& debugName)
 {
-    AssertContextIsValid(context);
+    AssertContextIsValid(m_uploadingContext);
 
     auto subresourcesFootPrint = CreateSubresourceFootPrint(m_device, subresources.size(), desc);
 
-    UploadHelperTexture uploadHelper(context, m_device, m_cmdQueue, desc, subresourcesFootPrint, subresources, debugName);
+    UploadHelperTexture uploadHelper(m_uploadingContext, m_device, m_cmdQueue, desc, subresourcesFootPrint, subresources, debugName);
 
     return uploadHelper.GetUploadedResource();
 }

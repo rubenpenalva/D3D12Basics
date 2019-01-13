@@ -46,6 +46,9 @@ D3D12BasicsEngine::D3D12BasicsEngine(const Settings& settings,
 
     m_gpu.SetOutputWindow(m_window->GetHWND());
 
+    m_cmdList = m_gpu.CreateCmdList(L"Single threaded Command List");
+    assert(m_cmdList);
+
     m_sceneRender = std::make_unique<D3D12SceneRender>(m_gpu, m_fileMonitor, m_scene, m_textureDataCache, m_meshDataCache);
     assert(m_sceneRender);
 
@@ -61,7 +64,7 @@ D3D12BasicsEngine::D3D12BasicsEngine(const Settings& settings,
     CreateDepthBuffer();
 
     // NOTE: delaying load scene to the last thing to avoid concurrent issues when creating gpu memory.
-    // TODO: find a proper solution for this when working on concurrent cmd lists
+    // TODO: #6. find a proper solution for this when working on concurrent cmd lists
     LoadSceneData(settings.m_dataWorkingPath);
 }
 
@@ -224,7 +227,7 @@ void D3D12BasicsEngine::ShowStats()
     const float DISTANCE = 10.0f;
     ImVec2 window_pos = ImVec2(DISTANCE, DISTANCE);
     ImVec2 window_pos_pivot = ImVec2(0.0f, 0.0f);
-    ImGui::SetNextWindowSize({ 600, 300 });
+    ImGui::SetNextWindowSize({ 700, 300 });
     ImGui::SetNextWindowBgAlpha(0.3f); // Transparent background
     const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                                          ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
@@ -286,10 +289,17 @@ void D3D12BasicsEngine::ShowStats()
                       m_cachedStats.m_enabled ? m_cachedStats.m_sceneStats.m_forwardPassCmdListTime : 
                                                 sceneStats.m_forwardPassCmdListTime.Values(),
                       sceneStats.m_forwardPassCmdListTime.LastSplitTime());
-    ShowSplitTimesUI("GPU: cmdlist time", 
-                      m_cachedStats.m_enabled ? m_cachedStats.m_frameStats.m_cmdListTime :
-                                                frameStats.m_cmdListTime.Values(),
-                      frameStats.m_cmdListTime.LastValue());
+    
+    const size_t cmdListTimesCount = frameStats.m_cmdListTimes.size();
+    assert(!m_cachedStats.m_enabled ||
+            (m_cachedStats.m_enabled && cmdListTimesCount == m_cachedStats.m_frameStats.m_cmdListTimes.size()));
+    for (size_t i = 0; i < cmdListTimesCount; ++i)
+    {
+        ShowSplitTimesUI(("GPU: " + ConvertFromUTF16ToUTF8(frameStats.m_cmdListTimes[i].first)).c_str(),
+                         m_cachedStats.m_enabled ? m_cachedStats.m_frameStats.m_cmdListTimes[i] :
+                         frameStats.m_cmdListTimes[i].second.Values(),
+                         frameStats.m_cmdListTimes[i].second.LastValue());
+    }
     ImGui::Text("CPU: delta time %.3f ms", m_cachedDeltaTime);
     ImGui::Text("# draw calls: shadow pass %d", sceneStats.m_shadowPassDrawCallsCount);
     ImGui::Text("# draw calls: forward pass %d", sceneStats.m_forwardPassDrawCallsCount);
@@ -300,7 +310,9 @@ void D3D12BasicsEngine::RenderFrame()
 {
     ImGui::Render();
 
-    auto cmdList = m_gpu.StartCurrentCmdList();
+    m_cmdList->Open();
+
+    auto cmdList = m_cmdList->GetCmdList();
 
     auto presentToRT = m_gpu.SwapChainTransition(Present_To_RenderTarget);
     cmdList->ResourceBarrier(1, &presentToRT);
@@ -319,9 +331,11 @@ void D3D12BasicsEngine::RenderFrame()
     auto rtToPresent = m_gpu.SwapChainTransition(RenderTarget_To_Present);
     cmdList->ResourceBarrier(1, &rtToPresent);
 
-    m_gpu.EndCurrentCmdList();
+    m_cmdList->Close();
 
-    m_gpu.ExecuteCurrentCmdList();
+    D3D12CmdLists cmdLists{ m_cmdList->GetCmdList().Get() };
+
+    m_gpu.ExecuteCmdLists(cmdLists);
 }
 
 void D3D12BasicsEngine::CreateDepthBuffer()

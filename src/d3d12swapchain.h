@@ -8,7 +8,7 @@
 // project includes
 #include "d3d12basicsfwd.h"
 #include "utils.h"
-// TODO needed because D3D12Gpu::m_backBuffersCount
+// TODO needed because D3D12GpuConfig::m_backBuffersCount
 //      find a better way to expose the static parameters
 //      for frames in flight and backbuffers count
 //      without having to add dependencies.
@@ -51,11 +51,11 @@ namespace D3D12Basics
 
         IDXGISwapChain3Ptr m_swapChain;
         
-        D3D12DescriptorAllocation* m_backbuffersRTVHandles[D3D12Gpu::m_backBuffersCount];
+        D3D12DescriptorAllocation* m_backbuffersRTVHandles[D3D12GpuConfig::m_backBuffersCount];
 
-        ID3D12ResourcePtr m_backbufferResources[D3D12Gpu::m_backBuffersCount];
+        ID3D12ResourcePtr m_backbufferResources[D3D12GpuConfig::m_backBuffersCount];
 
-        D3D12_RESOURCE_BARRIER m_transitions[TransitionType_COUNT][D3D12Gpu::m_backBuffersCount];
+        D3D12_RESOURCE_BARRIER m_transitions[TransitionType_COUNT][D3D12GpuConfig::m_backBuffersCount];
 
         D3D12Basics::StopClock& m_presentClock;
         D3D12Basics::StopClock& m_waitForPresentClock;

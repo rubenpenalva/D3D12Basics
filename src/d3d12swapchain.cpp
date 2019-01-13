@@ -19,7 +19,7 @@ D3D12SwapChain::D3D12SwapChain(HWND hwnd, DXGI_FORMAT format,
                                ID3D12CommandQueuePtr commandQueue,
                                StopClock& presentClock, StopClock& waitForPresentClock,
                                bool waitForPresentEnabled)  :   m_device(device),
-                                                                m_descriptorPool(device, D3D12Gpu::m_backBuffersCount),
+                                                                m_descriptorPool(device, D3D12GpuConfig::m_backBuffersCount),
                                                                 m_resolution(resolution),
                                                                 m_presentClock(presentClock), 
                                                                 m_waitForPresentClock(waitForPresentClock),
@@ -39,7 +39,7 @@ D3D12SwapChain::D3D12SwapChain(HWND hwnd, DXGI_FORMAT format,
     swapChainDesc.SampleDesc.Count      = 1;
     swapChainDesc.SampleDesc.Quality    = 0;
     swapChainDesc.BufferUsage           = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    swapChainDesc.BufferCount           = D3D12Gpu::m_backBuffersCount;
+    swapChainDesc.BufferCount           = D3D12GpuConfig::m_backBuffersCount;
     swapChainDesc.Scaling               = DXGI_SCALING_STRETCH;
     swapChainDesc.SwapEffect            = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     swapChainDesc.AlphaMode             = DXGI_ALPHA_MODE_UNSPECIFIED;
@@ -53,7 +53,7 @@ D3D12SwapChain::D3D12SwapChain(HWND hwnd, DXGI_FORMAT format,
 
     if (m_waitForPresentEnabled)
     {
-        AssertIfFailed(m_swapChain->SetMaximumFrameLatency(D3D12Gpu::m_framesInFlight));
+        AssertIfFailed(m_swapChain->SetMaximumFrameLatency(D3D12GpuConfig::m_framesInFlight));
 
         m_frameLatencyWaitableObject = m_swapChain->GetFrameLatencyWaitableObject();
         assert(m_frameLatencyWaitableObject);
@@ -116,12 +116,12 @@ void D3D12SwapChain::Resize(const DXGI_MODE_DESC1& mode)
         mode.Height == m_resolution.m_height)
         return;
 
-    for (unsigned int i = 0; i < D3D12Gpu::m_backBuffersCount; ++i)
+    for (unsigned int i = 0; i < D3D12GpuConfig::m_backBuffersCount; ++i)
         m_backbufferResources[i] = nullptr;
     
     AssertIfFailed(m_swapChain->ResizeTarget(reinterpret_cast<const DXGI_MODE_DESC*>(&mode)));
 
-    AssertIfFailed(m_swapChain->ResizeBuffers(D3D12Gpu::m_backBuffersCount, mode.Width, mode.Height, mode.Format, 
+    AssertIfFailed(m_swapChain->ResizeBuffers(D3D12GpuConfig::m_backBuffersCount, mode.Width, mode.Height, mode.Format,
                                               m_waitForPresentEnabled? DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT : 0));
 
     UpdateBackBuffers();
@@ -131,7 +131,7 @@ void D3D12SwapChain::Resize(const DXGI_MODE_DESC1& mode)
 
 void D3D12SwapChain::CreateBackBuffers()
 {
-    for (unsigned int i = 0; i < D3D12Gpu::m_backBuffersCount; ++i)
+    for (unsigned int i = 0; i < D3D12GpuConfig::m_backBuffersCount; ++i)
     {
         AssertIfFailed(m_swapChain->GetBuffer(i, IID_PPV_ARGS(&m_backbufferResources[i])));
         std::wstringstream converter;
@@ -157,7 +157,7 @@ void D3D12SwapChain::CreateBackBuffers()
 
 void D3D12SwapChain::UpdateBackBuffers()
 {
-    for (unsigned int i = 0; i < D3D12Gpu::m_backBuffersCount; ++i)
+    for (unsigned int i = 0; i < D3D12GpuConfig::m_backBuffersCount; ++i)
     {
         AssertIfFailed(m_swapChain->GetBuffer(i, IID_PPV_ARGS(&m_backbufferResources[i])));
         std::wstringstream converter;

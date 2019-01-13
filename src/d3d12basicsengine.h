@@ -45,11 +45,11 @@ namespace D3D12Basics
 
         struct CachedFrameStats
         {
-            StopClock::SplitTimeArray m_presentTime;
-            StopClock::SplitTimeArray m_waitForPresentTime;
-            StopClock::SplitTimeArray m_waitForFenceTime;
-            StopClock::SplitTimeArray m_frameTime;
-            StopClock::SplitTimeArray m_cmdListTime;
+            StopClock::SplitTimeArray               m_presentTime;
+            StopClock::SplitTimeArray               m_waitForPresentTime;
+            StopClock::SplitTimeArray               m_waitForFenceTime;
+            StopClock::SplitTimeArray               m_frameTime;
+            std::vector<StopClock::SplitTimeArray>  m_cmdListTimes;
 
             CachedFrameStats& operator=(const FrameStats& frameStats)
             {
@@ -57,7 +57,12 @@ namespace D3D12Basics
                 m_waitForPresentTime = frameStats.m_waitForPresentTime.Values();
                 m_waitForFenceTime = frameStats.m_waitForFenceTime.Values();
                 m_frameTime = frameStats.m_frameTime.Values();
-                m_cmdListTime = frameStats.m_cmdListTime.Values();
+                size_t cmdListTimesCount = frameStats.m_cmdListTimes.size();
+                m_cmdListTimes.resize(cmdListTimesCount);
+                for (size_t i = 0; i < cmdListTimesCount; ++i)
+                {
+                    m_cmdListTimes[i] = frameStats.m_cmdListTimes[i].second.Values();
+                }
 
                 return *this;
             }
@@ -90,7 +95,6 @@ namespace D3D12Basics
         D3D12Gpu        m_gpu;
         CustomWindowPtr m_window;
 
-    public:
         StopClock       m_beginToEndClock;
         StopClock       m_endToEndClock;
         RunningTime     m_totalTime;
@@ -105,6 +109,7 @@ namespace D3D12Basics
 
         D3D12SceneRenderPtr m_sceneRender;
         GpuTexture m_depthBuffer;
+        D3D12GraphicsCmdListPtr m_cmdList;
 
         CameraControllerPtr m_cameraController;
         AppControllerPtr    m_appController;

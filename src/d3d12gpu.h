@@ -36,7 +36,7 @@ namespace D3D12Basics
         StopClock m_waitForPresentTime;
         StopClock m_waitForFenceTime;
         StopClock m_frameTime;
-        StopClock::SplitTimeBuffer m_cmdListTime;
+        std::vector<std::pair<std::wstring, StopClock::SplitTimeBuffer>> m_cmdListTimes;
     };
 
     struct D3D12GpuHandle
@@ -93,6 +93,49 @@ namespace D3D12Basics
         std::vector<D3D12DescriptorTable>       m_descriptorTables;
     };
 
+    struct D3D12GpuShareableState;
+    using D3D12GpuShareableStatePtr = std::unique_ptr<D3D12GpuShareableState>;
+
+    struct D3D12GpuConfig
+    {
+        // TODO check c++ core guidelines about static class data members naming
+        // for better ideas on it
+        static const unsigned int   m_framesInFlight    = 2;
+        static const unsigned int   m_backBuffersCount  = 2;
+        static const bool           m_vsync             = true;
+    };
+
+    class D3D12CmdListTimeStamp;
+    using D3D12CmdListTimeStampPtr = std::unique_ptr<D3D12CmdListTimeStamp>;
+
+    class D3D12GraphicsCmdList
+    {
+    public:
+        D3D12GraphicsCmdList(D3D12GpuShareableState* gpuState, D3D12CommittedResourceAllocator* committedAllocator,
+                             UINT64 cmdQueueTimestampFrequency, StopClock::SplitTimeBuffer& splitTimes,
+                             const std::wstring& debugName);
+
+        // Note Forcing the compiler to use a definition of the destructor in order to
+        // not trigger a default inline destructor usage. In that case the compiler will
+        // need the complete definition of D3D12CmdListTimeStamp.
+        ~D3D12GraphicsCmdList();
+
+        void Open();
+
+        void Close();
+
+        ID3D12GraphicsCommandListPtr GetCmdList() const { return m_cmdList; }
+
+    private:
+        D3D12GpuShareableState*     m_gpuState;
+        D3D12CmdListTimeStampPtr    m_timeStamp;
+
+        ID3D12GraphicsCommandListPtr    m_cmdList;
+        ID3D12CommandAllocatorPtr       m_cmdAllocators[D3D12GpuConfig::m_framesInFlight];
+    };
+    using D3D12GraphicsCmdListPtr   = std::unique_ptr<D3D12GraphicsCmdList>;
+    using D3D12CmdLists             = std::vector<ID3D12CommandList*>;
+
     // Creates a d3d12 device bound to the main adapter and the main output
     // with debug capabilities enabled, feature level 11.0 set, 
     // a 3d command queue, a command list, a swap chain, double buffering, etc...
@@ -101,13 +144,6 @@ namespace D3D12Basics
     class D3D12Gpu
     {
     public:
-
-        // TODO check c++ core guidelines about static class data members naming
-        // for better ideas on it
-        static const unsigned int   m_framesInFlight        = 2;
-        static const unsigned int   m_backBuffersCount      = 2;
-        static const bool           m_vsync                 = true;
-
         D3D12Gpu(bool isWaitableForPresentEnabled);
 
         ~D3D12Gpu();
@@ -166,9 +202,8 @@ namespace D3D12Basics
         const D3D12_CPU_DESCRIPTOR_HANDLE& SwapChainBackBufferViewHandle() const;
 
         // Execution
-        ID3D12GraphicsCommandListPtr StartCurrentCmdList();
-        void EndCurrentCmdList();
-		void ExecuteCurrentCmdList();
+        D3D12GraphicsCmdListPtr CreateCmdList(const std::wstring& debugName);
+        void ExecuteCmdLists(const D3D12CmdLists& cmdLists);
         void PresentFrame();
         void WaitAll();
 
@@ -196,7 +231,7 @@ namespace D3D12Basics
         ID3D12Resource* GetResource(D3D12GpuMemoryHandle memHandle);
 
     private:
-        using DescriptorHandlesPtrs = std::array<D3D12DescriptorAllocation*, m_framesInFlight>;
+        using DescriptorHandlesPtrs = std::array<D3D12DescriptorAllocation*, D3D12GpuConfig::m_framesInFlight>;
 
         struct D3D12GpuMemoryView
         {
@@ -228,8 +263,8 @@ namespace D3D12Basics
         // TODO allocate the memory on demand instead of pre allocating the maximum needed
         struct DynamicMemoryAlloc
         {
-            uint64_t                        m_frameId[m_framesInFlight] = { 0 };
-            D3D12DynamicBufferAllocation    m_allocation[m_framesInFlight];
+            uint64_t                        m_frameId[D3D12GpuConfig::m_framesInFlight] = { 0 };
+            D3D12DynamicBufferAllocation    m_allocation[D3D12GpuConfig::m_framesInFlight];
         };
 
         // dxgi data
@@ -239,15 +274,15 @@ namespace D3D12Basics
         D3D12Basics::Resolution m_safestResolution;
 
         // d3d12 data
-        ID3D12DevicePtr m_device;
+        // TODO #6. this is used by cmdlist and other classes as internal data not exposed to
+        // the user of that class. This way D3D12Gpu doesnt have to expose the data thats
+        // required by the other classes like cmdlist
+        D3D12GpuShareableStatePtr m_state;
 
         ID3D12CommandQueuePtr                       m_graphicsCmdQueue;
         UINT64                                      m_cmdQueueTimestampFrequency;
 
-        ID3D12GraphicsCommandListPtr    m_cmdList;
-        ID3D12CommandAllocatorPtr       m_cmdAllocators[m_framesInFlight];
         D3D12GpuSynchronizerPtr         m_gpuSync;
-        unsigned int                    m_currentFrameIndex;
         uint64_t                        m_currentFrame;
 
         bool                        m_isWaitableForPresentEnabled;
@@ -259,6 +294,7 @@ namespace D3D12Basics
         D3D12RTVDescriptorBufferPtr         m_cpuRTVDescHeap;           // system memory
         D3D12GPUDescriptorRingBufferPtr     m_gpuDescriptorRingBuffer;  // vidmem
 
+        // TODO wrap this into its own class?
         // Gpu memory management
         // TODO unordered_map is suboptimal. Use a multiindirection vector based as in a packedarray/slot map
         // http://bitsquid.blogspot.ca/2011/09/managing-decoupling-part-4-id-lookup.html
@@ -274,8 +310,6 @@ namespace D3D12Basics
         std::vector<D3D12GpuMemoryViewPtr>  m_memoryViews;
 
         FrameStats                              m_frameStats;
-        Microsoft::WRL::ComPtr<ID3D12QueryHeap> m_timestampQueryHeap;
-        ID3D12ResourcePtr                       m_timestampBuffer;
 
         DisplayModes EnumerateDisplayModes(DXGI_FORMAT format);
 
@@ -294,16 +328,6 @@ namespace D3D12Basics
         D3D12_GPU_VIRTUAL_ADDRESS GetBufferVA(D3D12GpuMemoryHandle memHandle);
 
         void DestroyRetiredAllocations();
-
-        void UpdateFrameStats();
-
-        void CreateFrameTimestampInfrastructure();
-
-        void BeginFrameTimestamp(ID3D12GraphicsCommandListPtr cmdList);
-
-        void EndFrameTimestamp(ID3D12GraphicsCommandListPtr cmdList);
-
-        void UpdateFrameTimestamp();
 
         D3D12GpuViewHandle CreateView(D3D12GpuMemoryHandle memHandle, DescriptorHandlesPtrs&& descriptors);
     };

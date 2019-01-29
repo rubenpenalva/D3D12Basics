@@ -15,7 +15,7 @@ using namespace D3D12Basics;
 
 D3D12SwapChain::D3D12SwapChain(HWND hwnd, DXGI_FORMAT format, 
                                const D3D12Basics::Resolution& resolution,
-                               IDXGIFactory4Ptr factory, ID3D12DevicePtr device,
+                               IDXGIFactoryPtr factory, ID3D12DevicePtr device,
                                ID3D12CommandQueuePtr commandQueue,
                                StopClock& presentClock, StopClock& waitForPresentClock,
                                bool waitForPresentEnabled)  :   m_device(device),

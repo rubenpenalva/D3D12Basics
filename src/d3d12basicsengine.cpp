@@ -1,4 +1,4 @@
-﻿#include "d3d12basicsengine.h"
+#include "d3d12basicsengine.h"
 
 // c++ includes
 #include <cassert>
@@ -14,6 +14,8 @@
 
 // thirdparty libraries include
 #include "imgui/imgui.h"
+
+#define LOAD_SCENE (1)
 
 using namespace D3D12Basics;
 
@@ -46,9 +48,6 @@ D3D12BasicsEngine::D3D12BasicsEngine(const Settings& settings,
 
     m_gpu.SetOutputWindow(m_window->GetHWND());
 
-    m_cmdList = m_gpu.CreateCmdList(L"Single threaded Command List");
-    assert(m_cmdList);
-
     m_sceneRender = std::make_unique<D3D12SceneRender>(m_gpu, m_fileMonitor, m_scene, m_textureDataCache, m_meshDataCache);
     assert(m_sceneRender);
 
@@ -63,9 +62,11 @@ D3D12BasicsEngine::D3D12BasicsEngine(const Settings& settings,
 
     CreateDepthBuffer();
 
+#if LOAD_SCENE
     // NOTE: delaying load scene to the last thing to avoid concurrent issues when creating gpu memory.
     // TODO: #6. find a proper solution for this when working on concurrent cmd lists
     LoadSceneData(settings.m_dataWorkingPath);
+#endif
 }
 
 D3D12BasicsEngine::~D3D12BasicsEngine()
@@ -227,14 +228,14 @@ void D3D12BasicsEngine::ShowStats()
     const float DISTANCE = 10.0f;
     ImVec2 window_pos = ImVec2(DISTANCE, DISTANCE);
     ImVec2 window_pos_pivot = ImVec2(0.0f, 0.0f);
-    ImGui::SetNextWindowSize({ 700, 300 });
+    ImGui::SetNextWindowSize({ 700, 400 });
     ImGui::SetNextWindowBgAlpha(0.3f); // Transparent background
     const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                                          ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
                                          ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
                                          ImGuiWindowFlags_NoNav;
 
-    auto frameStats = m_gpu.GetFrameStats();
+    const auto& frameStats = m_gpu.GetFrameStats();
     auto sceneStats = m_sceneRender->GetStats();
   
     ImGui::Begin("", nullptr, windowFlags);
@@ -295,10 +296,10 @@ void D3D12BasicsEngine::ShowStats()
             (m_cachedStats.m_enabled && cmdListTimesCount == m_cachedStats.m_frameStats.m_cmdListTimes.size()));
     for (size_t i = 0; i < cmdListTimesCount; ++i)
     {
-        ShowSplitTimesUI(("GPU: " + ConvertFromUTF16ToUTF8(frameStats.m_cmdListTimes[i].first)).c_str(),
+        ShowSplitTimesUI(("GPU: " + ConvertFromUTF16ToUTF8(frameStats.m_cmdListTimes[i]->first)).c_str(),
                          m_cachedStats.m_enabled ? m_cachedStats.m_frameStats.m_cmdListTimes[i] :
-                         frameStats.m_cmdListTimes[i].second.Values(),
-                         frameStats.m_cmdListTimes[i].second.LastValue());
+                         frameStats.m_cmdListTimes[i]->second.Values(),
+                         frameStats.m_cmdListTimes[i]->second.LastValue());
     }
     ImGui::Text("CPU: delta time %.3f ms", m_cachedDeltaTime);
     ImGui::Text("# draw calls: shadow pass %d", sceneStats.m_shadowPassDrawCallsCount);
@@ -310,31 +311,13 @@ void D3D12BasicsEngine::RenderFrame()
 {
     ImGui::Render();
 
-    m_cmdList->Open();
-
-    auto cmdList = m_cmdList->GetCmdList();
-
-    auto presentToRT = m_gpu.SwapChainTransition(Present_To_RenderTarget);
-    cmdList->ResourceBarrier(1, &presentToRT);
-
     const auto& depthBufferViewHandle = m_gpu.GetViewCPUHandle(m_depthBuffer.m_dsv);
     const auto& backbufferRT = m_gpu.SwapChainBackBufferViewHandle();
 
-    // Record command lists: scene and imgui
-    {
-        m_sceneRender->RecordCmdList(cmdList, backbufferRT, depthBufferViewHandle);
-
-        // IMGUI
-        m_imgui->EndFrame(cmdList);
-    }
-
-    auto rtToPresent = m_gpu.SwapChainTransition(RenderTarget_To_Present);
-    cmdList->ResourceBarrier(1, &rtToPresent);
-
-    m_cmdList->Close();
-
-    D3D12CmdLists cmdLists{ m_cmdList->GetCmdList().Get() };
-
+    auto cmdLists = m_sceneRender->RecordCmdLists(backbufferRT, depthBufferViewHandle);
+    auto imguiCmdList = m_imgui->EndFrame(backbufferRT, depthBufferViewHandle);
+    assert(imguiCmdList);
+    cmdLists.push_back(imguiCmdList);
     m_gpu.ExecuteCmdLists(cmdLists);
 }
 

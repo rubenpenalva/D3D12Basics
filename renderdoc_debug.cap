@@ -11,15 +11,14 @@
             "allowFullscreen": true,
             "allowVSync": true,
             "apiValidation": true,
-            "captureAllCmdLists": false,
+            "captureAllCmdLists": true,
             "captureCallstacks": true,
             "captureCallstacksOnlyDraws": false,
             "debugOutputMute": true,
             "delayForDebugger": 0,
             "hookIntoChildren": false,
             "refAllResources": true,
-            "saveAllInitials": true,
-            "verifyMapWrites": true
+            "verifyBufferAccess": true
         },
         "workingDir": "C:/Development/GitHub/D3D12Basics"
     }

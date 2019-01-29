@@ -1,5 +1,5 @@
 #define MyRS1 "RootFlags( ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT ),"                                                \
-              "DescriptorTable( CBV(b0), visibility = SHADER_VISIBILITY_VERTEX),"                               \
+              "CBV(b0, visibility = SHADER_VISIBILITY_VERTEX),"                                                 \
               "DescriptorTable( SRV(t0, numDescriptors = 4), visibility = SHADER_VISIBILITY_PIXEL),"            \
               "StaticSampler(s0, visibility = SHADER_VISIBILITY_PIXEL),"                                        \
               "StaticSampler(s1, "                                                                              \

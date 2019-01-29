@@ -5,16 +5,18 @@
 
 // c++ includes
 #include <cassert>
+#include <sstream>
 
 using namespace D3D12Basics;
 
 D3D12GpuSynchronizer::D3D12GpuSynchronizer(ID3D12DevicePtr device, ID3D12CommandQueuePtr cmdQueue,
                                            unsigned int maxFramesInFlight,
-                                           StopClock& waitClock)  :   m_cmdQueue(cmdQueue), 
-                                                                        m_maxFramesInFlight(maxFramesInFlight),
-                                                                        m_framesInFlight(0), m_currentFenceValue(0), 
-                                                                        m_completedFramesCount(0), m_lastRetiredFrameId(0),
-                                                                        m_waitClock(waitClock)
+                                           StopClock& waitClock)  : m_cmdQueue(cmdQueue), 
+                                                                    m_maxFramesInFlight(maxFramesInFlight),
+                                                                    m_currentFenceValue(0),
+                                                                    m_waitedFenceValue(0),
+                                                                    m_nextFenceValue(0),
+                                                                    m_waitClock(waitClock)
 {
     assert(device);
     assert(m_cmdQueue);
@@ -23,7 +25,6 @@ D3D12GpuSynchronizer::D3D12GpuSynchronizer(ID3D12DevicePtr device, ID3D12Command
     assert(m_fence);
     m_nextFenceValue = m_currentFenceValue + 1;
 
-    // Create an event handle to use for frame synchronization.
     m_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     assert(m_event);
     if (!m_event)
@@ -37,54 +38,104 @@ D3D12GpuSynchronizer::~D3D12GpuSynchronizer()
 
 bool D3D12GpuSynchronizer::Wait()
 {
-    bool hasWaitedForFence = false;
-    m_completedFramesCount = 0;
+
+#if ENABLE_GPU_SYNC_DEBUG_OUTPUT
+    m_debugReportStream << L"D3D12GpuSynchronizer::Wait()\n";
+#endif
 
     SignalWork();
 
-    m_lastRetiredFrameId = m_fence->GetCompletedValue();
+    bool hasWaitedForFence = false;
 
-    if (m_framesInFlight == m_maxFramesInFlight)
+#if ENABLE_GPU_SYNC_DEBUG_OUTPUT
+    m_debugReportStream << " m_maxFramesInFlight " << m_maxFramesInFlight << "\n"
+                        << " PRE m_waitedFenceValue " << m_waitedFenceValue << "\n";
+#endif
+
+    m_waitedFenceValue = m_fence->GetCompletedValue(); 
+    assert(m_currentFenceValue >= m_waitedFenceValue);
+    const auto framesInFlight = m_currentFenceValue - m_waitedFenceValue;
+
+#if ENABLE_GPU_SYNC_DEBUG_OUTPUT
+    m_debugReportStream << "POST m_waitedFenceValue " << m_waitedFenceValue << "\n" 
+                        << " framesInFlight " << framesInFlight << "\n";
+#endif
+
+    if (framesInFlight == m_maxFramesInFlight)
     {
-        assert(m_lastRetiredFrameId <= m_currentFenceValue);
-        if (m_lastRetiredFrameId < m_currentFenceValue)
-        {
-            WaitForFence(m_lastRetiredFrameId + 1);
-            m_lastRetiredFrameId++;
-            hasWaitedForFence = true;
-        }
+#if ENABLE_GPU_SYNC_DEBUG_OUTPUT
+        m_debugReportStream << "+[COND] m_framesSignaled == m_maxFramesInFlight\n";
+#endif
 
-        m_completedFramesCount = m_lastRetiredFrameId - m_currentFenceValue + m_maxFramesInFlight;
-        assert(m_maxFramesInFlight >= m_completedFramesCount);
-        m_framesInFlight -= m_completedFramesCount;
+        WaitForFence(m_waitedFenceValue + 1);
+        hasWaitedForFence = true;
     }
+
+#if ENABLE_GPU_SYNC_DEBUG_OUTPUT
+    m_debugReportStream << L"-------------\n-------------\n";
+    OutputDebugString(m_debugReportStream.str().c_str());
+    m_debugReportStream.clear();
+#endif
 
     return hasWaitedForFence;
 }
 
 void D3D12GpuSynchronizer::WaitAll()
 {
+#if ENABLE_GPU_SYNC_DEBUG_OUTPUT
+    m_debugReportStream << L"D3D12GpuSynchronizer::WaitAll()\n m_maxFramesInFlight" 
+                        << m_maxFramesInFlight << "\n";
+#endif
+
     SignalWork();
 
     WaitForFence(m_currentFenceValue);
 
-    m_framesInFlight = 0;
+#if ENABLE_GPU_SYNC_DEBUG_OUTPUT
+    m_debugReportStream << L"-------------\n-------------\n";
+    OutputDebugString(m_debugReportStream.str().c_str());
+    m_debugReportStream.clear();
+#endif
 }
 
 void D3D12GpuSynchronizer::SignalWork()
 {
-    AssertIfFailed(m_cmdQueue->Signal(m_fence.Get(), m_nextFenceValue));
-    m_currentFenceValue = m_nextFenceValue;
-    m_nextFenceValue++;
+#if ENABLE_GPU_SYNC_DEBUG_OUTPUT
+    m_debugReportStream << "D3D12GpuSynchronizer::SignalWork() with fence " << m_nextFenceValue << "\n"
+                        << " PRE m_nextFenceValue " << m_nextFenceValue
+                        << " PRE m_currentFenceValue " << m_currentFenceValue << "\n";
+#endif
 
-    m_framesInFlight++;
-    assert(m_framesInFlight <= m_maxFramesInFlight);
+    AssertIfFailed(m_cmdQueue->Signal(m_fence.Get(), m_nextFenceValue));
+    m_currentFenceValue = m_nextFenceValue++;
+
+#if ENABLE_GPU_SYNC_DEBUG_OUTPUT
+    m_debugReportStream << " POST m_nextFenceValue " << m_nextFenceValue
+                        << " POST m_currentFenceValue " << m_currentFenceValue << "\n";
+#endif
 }
 
 void D3D12GpuSynchronizer::WaitForFence(UINT64 fenceValue)
 {
+#if ENABLE_GPU_SYNC_DEBUG_OUTPUT
+    m_debugReportStream << "D3D12GpuSynchronizer::WaitForFence() fence " << fenceValue
+                        << " PRE m_waitedFenceValue " << m_waitedFenceValue << "\n";
+#endif
+
+    m_waitedFenceValue = fenceValue;
+
+#if ENABLE_GPU_SYNC_DEBUG_OUTPUT
+    m_debugReportStream << " POST m_waitedFenceValue " << m_waitedFenceValue << "\n";
+#endif
+
+    m_waitClock.ResetMark();
     m_waitClock.Mark();
 
     AssertIfFailed(m_fence->SetEventOnCompletion(fenceValue, m_event));
     AssertIfFailed(WaitForSingleObject(m_event, INFINITE), WAIT_FAILED);
+    m_waitClock.Mark();
+
+#if ENABLE_GPU_SYNC_DEBUG_OUTPUT
+    m_debugReportStream << " waited time " << m_waitClock.LastSplitTime() << "\n";
+#endif
 }

@@ -1,6 +1,6 @@
 #define MyRS1 "RootFlags( ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT ),"                                                \
-              "DescriptorTable( CBV(b0), visibility = SHADER_VISIBILITY_VERTEX),"                               \
-              "DescriptorTable( CBV(b1), visibility = SHADER_VISIBILITY_PIXEL)"                                 \
+              "CBV(b0, visibility = SHADER_VISIBILITY_VERTEX),"                                                 \
+              "DescriptorTable( CBV(b0), visibility = SHADER_VISIBILITY_PIXEL)"                                 \
 
 struct ShadingData
 {
@@ -17,7 +17,7 @@ struct MaterialData
 {
     float4 m_fixedColor;
 };
-ConstantBuffer<MaterialData> g_MaterialData : register(b1);
+ConstantBuffer<MaterialData> g_MaterialData : register(b0);
 
 Interpolators VertexShaderMain(float4 position : POSITION)
 {

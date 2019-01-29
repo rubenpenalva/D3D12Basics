@@ -16,7 +16,7 @@ D3D12Basics::ID3DBlobPtr D3D12Basics::D3D12CompileBlob(const char* src, const ch
 
     ID3DBlobPtr errors;
     auto result = D3DCompile(src, strlen(src), nullptr, nullptr, nullptr, mainName,
-        target, flags, 0, &blob, &errors);
+                             target, flags, 0, &blob, &errors);
     if (FAILED(result))
     {
         assert(errors);

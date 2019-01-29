@@ -20,7 +20,7 @@ namespace D3D12Basics
     {
     public:
         D3D12SwapChain(HWND hwnd, DXGI_FORMAT format, const D3D12Basics::Resolution& resolution, 
-                       IDXGIFactory4Ptr factory, ID3D12DevicePtr device, 
+                       IDXGIFactoryPtr factory, ID3D12DevicePtr device, 
                        ID3D12CommandQueuePtr commandQueue, 
                        StopClock& presentClock, StopClock& waitForPresentClock,
                        bool waitForPresentEnabled = false);
@@ -49,7 +49,7 @@ namespace D3D12Basics
 
         D3D12Basics::Resolution m_resolution;
 
-        IDXGISwapChain3Ptr m_swapChain;
+        IDXGISwapChainPtr m_swapChain;
         
         D3D12DescriptorAllocation* m_backbuffersRTVHandles[D3D12GpuConfig::m_backBuffersCount];
 

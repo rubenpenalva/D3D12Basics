@@ -18,12 +18,15 @@ namespace D3D12Basics
 
         void BeginFrame(const Resolution& resolution);
 
-        void EndFrame(ID3D12GraphicsCommandListPtr cmdList);
+        ID3D12CommandList* EndFrame(D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
+                                    D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer);
 
     private:
         HWND m_hwnd;
 
         D3D12Basics::D3D12Gpu& m_gpu;
+       
+        D3D12Basics::D3D12GraphicsCmdListPtr m_cmdList;
 
         D3D12PipelineState m_pipelineState;
 

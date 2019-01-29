@@ -12,6 +12,13 @@
 #include <sstream>
 #include <algorithm>
 
+#define ENABLE_D3D12_DEBUG_LAYER            (1)
+
+// NOTE enabling gpu validation with an intel igpu will trigger a device removed.
+// maybe the TDR is actually timing out? For now just ignoring the igpu and using
+// the nvidia dgpu.
+#define ENABLE_D3D12_DEBUG_GPU_VALIDATION   (1)
+
 using namespace D3D12Basics;
 
 namespace
@@ -197,7 +204,7 @@ D3D12GraphicsCmdList::D3D12GraphicsCmdList(D3D12GpuShareableState* gpuState,
                                            D3D12CommittedResourceAllocator* committedAllocator,
                                            UINT64 cmdQueueTimestampFrequency,
                                            StopClock::SplitTimeBuffer& splitTimes,
-                                           const std::wstring& debugName) :   m_gpuState(gpuState)
+                                           const std::wstring& debugName) :     m_gpuState(gpuState)
 {
     assert(m_gpuState);
     assert(m_gpuState->m_device);
@@ -210,7 +217,7 @@ D3D12GraphicsCmdList::D3D12GraphicsCmdList(D3D12GpuShareableState* gpuState,
         assert(m_cmdAllocators[i]);
         {
             std::wstringstream converter;
-            converter << L"Command Allocator " << i<< " for cmdlist " << debugName;
+            converter << L"Command Allocator " << i << " for cmdlist " << debugName;
             m_cmdAllocators[i]->SetName(converter.str().c_str());
         }
     }
@@ -225,6 +232,11 @@ D3D12GraphicsCmdList::D3D12GraphicsCmdList(D3D12GpuShareableState* gpuState,
     m_timeStamp = std::make_unique<D3D12CmdListTimeStamp>(m_cmdList, m_gpuState, committedAllocator, 
                                                           cmdQueueTimestampFrequency, splitTimes);
     assert(m_timeStamp);
+
+    std::wstringstream ss;
+    ss << debugName << L" ID3D12GraphicsCommandList 0x" 
+                    << std::ios::uppercase << std::ios::hex << m_cmdList.Get();
+    m_debugName = ss.str();
 }
 
 D3D12GraphicsCmdList::~D3D12GraphicsCmdList() = default;
@@ -249,8 +261,8 @@ void D3D12GraphicsCmdList::Close()
     AssertIfFailed(m_cmdList->Close());
 }
 
-D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_isWaitableForPresentEnabled(isWaitableForPresentEnabled),
-                                                            m_nextHandleId(0), m_currentFrame(0)
+D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :    m_isWaitableForPresentEnabled(isWaitableForPresentEnabled),
+                                                             m_nextHandleId(0), m_currentFrame(0)
 {
     m_state = std::make_unique<D3D12GpuShareableState>();
     assert(m_state);
@@ -274,6 +286,7 @@ D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :   m_isWaitableForPrese
     m_gpuSync = std::make_unique<D3D12GpuSynchronizer>(m_state->m_device, m_graphicsCmdQueue, D3D12GpuConfig::m_framesInFlight,
                                                        m_frameStats.m_waitForFenceTime);
     assert(m_gpuSync);
+    m_currentFrame = m_gpuSync->GetNextFrameId();
 }
 
 D3D12Gpu::~D3D12Gpu()
@@ -547,10 +560,11 @@ const D3D12_CPU_DESCRIPTOR_HANDLE& D3D12Gpu::SwapChainBackBufferViewHandle() con
 
 D3D12GraphicsCmdListPtr D3D12Gpu::CreateCmdList(const std::wstring& debugName)
 {
-    m_frameStats.m_cmdListTimes.push_back({ debugName, {} });
+    FrameStats::NamedCmdListTime cmdListTime{ debugName, {} };
+    m_frameStats.m_cmdListTimes.push_back(std::make_unique<FrameStats::NamedCmdListTime>(std::move(cmdListTime)));
     return std::make_unique<D3D12GraphicsCmdList>(m_state.get(), m_committedResourceAllocator.get(),
                                                   m_cmdQueueTimestampFrequency, 
-                                                  m_frameStats.m_cmdListTimes.back().second, 
+                                                  m_frameStats.m_cmdListTimes.back()->second, 
                                                   debugName);
 }
 
@@ -567,7 +581,7 @@ void D3D12Gpu::PresentFrame()
 
     g_gpuViewMarkerPreWaitFrame.Mark();
 
-    m_gpuSync->Wait();
+    const bool hasWaitedForFence = m_gpuSync->Wait();
 
     // TODO Fences for gpu/cpu sync after present are already being used.
     //      Why would be needed to use the waitable object to wait for
@@ -604,7 +618,9 @@ ID3D12RootSignaturePtr D3D12Gpu::CreateRootSignature(ID3DBlobPtr signature, cons
     assert(signature);
 
     ID3D12RootSignaturePtr rootSignature;
-    if (FAILED(m_state->m_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&rootSignature))))
+    if (FAILED(m_state->m_device->CreateRootSignature(0, signature->GetBufferPointer(), 
+                                                      signature->GetBufferSize(), 
+                                                      IID_PPV_ARGS(&rootSignature))))
         return nullptr;
 
     rootSignature->SetName(name.c_str());
@@ -840,27 +856,53 @@ void D3D12Gpu::CreateCommandInfrastructure()
 
 void D3D12Gpu::CreateDevice(IDXGIAdapterPtr adapter)
 {
+#if ENABLE_D3D12_DEBUG_LAYER
     // Note this needs to be called before creating the d3d12 device
-    Microsoft::WRL::ComPtr<ID3D12Debug> debugController;
-    AssertIfFailed(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)));
-    debugController->EnableDebugLayer();
-
-    AssertIfFailed(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_state->m_device)));
+    Microsoft::WRL::ComPtr<ID3D12Debug> debugController0;
+    AssertIfFailed(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController0)));
+    debugController0->EnableDebugLayer();
+#if ENABLE_D3D12_DEBUG_GPU_VALIDATION
+    Microsoft::WRL::ComPtr<ID3D12Debug1> debugController1;
+    AssertIfFailed(debugController0->QueryInterface(IID_PPV_ARGS(&debugController1)));
+    debugController1->SetEnableGPUBasedValidation(TRUE);
+#endif
+#endif
+    AssertIfFailed(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&m_state->m_device)));
     assert(m_state->m_device);
 }
 
+// Note depending on the preferred gpu in a system with a dgpu and a igpu, the enum outputs might failed.
+// Thats why theres a check for the output enum to work when searching for a suitable adapter.
 IDXGIAdapterPtr D3D12Gpu::CreateDXGIInfrastructure()
 {
     AssertIfFailed(CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, IID_PPV_ARGS(&m_factory)));
     assert(m_factory);
 
-    Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
-    unsigned int primaryAdapterIndex = 0;
-    AssertIfFailed(m_factory->EnumAdapters1(primaryAdapterIndex, &adapter));
+    Microsoft::WRL::ComPtr<IDXGIAdapter4> adapter;
+    Microsoft::WRL::ComPtr<IDXGIOutput> adapterOutput;
+    for (unsigned int adapterIndex = 0; ; ++adapterIndex)
+    {
+        HRESULT result = m_factory->EnumAdapterByGpuPreference(adapterIndex, 
+                                                               DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
+                                                               IID_PPV_ARGS(adapter.ReleaseAndGetAddressOf()));
+        if (result != DXGI_ERROR_NOT_FOUND)
+        {
+            DXGI_ADAPTER_DESC1 desc;
+            AssertIfFailed(adapter->GetDesc1(&desc));
+            if (!(desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE))
+            {
+                if (SUCCEEDED(adapter->EnumOutputs(0, &adapterOutput)))
+                {
+                    OutputDebugString((std::wstring(L"[D3D12Gpu] Using adapter ") + desc.Description + L"\n").c_str());
+                    break;
+                }
+            }
+        }
+    }
+    assert(adapterOutput);
+    assert(adapter);
 
-    Microsoft::WRL::ComPtr<IDXGIOutput> output;
-    AssertIfFailed(adapter->EnumOutputs(0, &output));
-    AssertIfFailed(output->QueryInterface(__uuidof(IDXGIOutput1), (void **)&m_output1));
+    AssertIfFailed(adapterOutput->QueryInterface(__uuidof(IDXGIOutput1), (void **)&m_output1));
     assert(m_output1);
 
     const auto& displayModes = EnumerateDisplayModes(g_swapChainFormat);

@@ -152,7 +152,7 @@ namespace
             m_cmdQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
             // Wait for the command list to finish executing on the gpu
-            m_gpuSync->Wait();
+            m_gpuSync->WaitAll();
         }
 
     protected:

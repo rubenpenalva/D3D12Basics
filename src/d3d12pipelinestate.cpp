@@ -70,7 +70,7 @@ D3D12PipelineState::D3D12PipelineState(D3D12Gpu& gpu, FileMonitor& fileMonitor,
     }
 
     if (!ConstructStates())
-        OutputDebugString((L"Pipeline state construction failed " + m_debugName).c_str());
+        OutputDebugString((L"D3D12PipelineState::D3D12PipelineState Pipeline state construction failed " + m_debugName + L"\n").c_str());
 }
 
 bool D3D12PipelineState::ApplyState(ID3D12GraphicsCommandListPtr cmdList)
@@ -101,8 +101,7 @@ bool D3D12PipelineState::ApplyState(ID3D12GraphicsCommandListPtr cmdList)
 
     if (!IsStateValid(activeState))
     {
-        // TODO spaming log. figure out a better way.
-        //OutputDebugString((L"D3D12PipelineState::ApplyState invalid active state" + m_debugName + L"\n").c_str());
+        OutputDebugString((L"D3D12PipelineState::ApplyState invalid active state" + m_debugName + L"\n").c_str());
         return false;
     }
     activeState.m_frameId = m_gpu.GetCurrentFrameId();

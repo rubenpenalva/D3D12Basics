@@ -61,7 +61,7 @@ namespace D3D12Basics
                 m_cmdListTimes.resize(cmdListTimesCount);
                 for (size_t i = 0; i < cmdListTimesCount; ++i)
                 {
-                    m_cmdListTimes[i] = frameStats.m_cmdListTimes[i].second.Values();
+                    m_cmdListTimes[i] = frameStats.m_cmdListTimes[i]->second.Values();
                 }
 
                 return *this;
@@ -109,7 +109,6 @@ namespace D3D12Basics
 
         D3D12SceneRenderPtr m_sceneRender;
         GpuTexture m_depthBuffer;
-        D3D12GraphicsCmdListPtr m_cmdList;
 
         CameraControllerPtr m_cameraController;
         AppControllerPtr    m_appController;

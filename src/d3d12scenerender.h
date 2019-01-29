@@ -34,9 +34,8 @@ namespace D3D12Basics
 
         void Update();
 
-        void RecordCmdList(ID3D12GraphicsCommandListPtr cmdList, 
-                            D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
-                            D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer);
+        D3D12CmdLists RecordCmdLists(D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
+                                     D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer);
 
         const SceneStats& GetStats() const { return m_sceneStats; }
 
@@ -80,7 +79,7 @@ namespace D3D12Basics
 
         const Scene& m_scene;
         const TextureDataCache& m_textureDataCache;
-        const MeshDataCache&           m_meshDataCache;
+        const MeshDataCache&    m_meshDataCache;
 
         D3D12PipelineState m_stdMaterialPipeState;
         D3D12PipelineState m_defaultMaterialPipeState;
@@ -102,16 +101,16 @@ namespace D3D12Basics
         D3D12GpuMemoryHandle        m_quadVb;
         D3D12GpuMemoryHandle        m_quadIb;
 
+        std::vector<D3D12GraphicsCmdListPtr> m_cmdLists;
         SceneStats m_sceneStats;
 
         D3D12GpuViewHandle CreateTexture(const std::wstring& textureFile);
 
         void CreateDebugResources();
 
-        void RenderShadowPass(ID3D12GraphicsCommandListPtr cmdList);
+        bool RenderShadowPass();
 
-        void RenderForwardPass(ID3D12GraphicsCommandListPtr cmdList,
-                               D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
+        void RenderForwardPass(D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
                                D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer);
 
         void RenderDebug(ID3D12GraphicsCommandListPtr cmdList);

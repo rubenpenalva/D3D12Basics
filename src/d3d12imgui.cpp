@@ -87,6 +87,9 @@ D3D12ImGui::D3D12ImGui(HWND hwnd, D3D12Basics::D3D12Gpu& gpu,
     CreateFontTexture();
 
     m_transformation = m_gpu.AllocateDynamicMemory(sizeof(float) * 16, L"Dynamic CB - DearImgui Transformation");
+
+    m_cmdList = m_gpu.CreateCmdList(L"ImGui");
+    assert(m_cmdList);
 }
 
 D3D12ImGui::~D3D12ImGui()
@@ -129,14 +132,26 @@ void D3D12ImGui::BeginFrame(const Resolution& resolution)
     ImGui::NewFrame();
 }
 
-void D3D12ImGui::EndFrame(ID3D12GraphicsCommandListPtr cmdList)
+ID3D12CommandList* D3D12ImGui::EndFrame(D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
+                                        D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer)
 {
+    m_cmdList->Open();
+    auto cmdList = m_cmdList->GetCmdList();
+
     ImGui::Render();
     ImDrawData* drawData = ImGui::GetDrawData();
     assert(drawData);
 
     if (drawData->CmdListsCount == 0)
-        return;
+    {
+        // NOTE not the best way of handling the transition of the backbuffer but
+        // it is good enough for now
+        auto rtToPresent = m_gpu.SwapChainTransition(RenderTarget_To_Present);
+        cmdList->ResourceBarrier(1, &rtToPresent);
+
+        m_cmdList->Close();
+        return nullptr;
+    }
 
     CreateVertexBuffer(drawData);
     CreateIndexBuffer(drawData);
@@ -166,7 +181,19 @@ void D3D12ImGui::EndFrame(ID3D12GraphicsCommandListPtr cmdList)
     bindings.m_descriptorTables.push_back(descriptorTable);
 
     if (!m_pipelineState.ApplyState(cmdList))
-        return;
+    {
+        // NOTE not the best way of handling the transition of the backbuffer but
+        // it is good enough for now
+        auto rtToPresent = m_gpu.SwapChainTransition(RenderTarget_To_Present);
+        cmdList->ResourceBarrier(1, &rtToPresent);
+
+        m_cmdList->Close();
+        return nullptr;
+    }
+
+    cmdList->OMSetRenderTargets(1, &renderTarget, FALSE, &depthStencilBuffer);
+
+    //UpdateViewportScissor(cmdList, m_gpu.GetCurrentResolution());
 
     cmdList->RSSetViewports(1, &m_defaultViewport);
     m_gpu.SetBindings(cmdList, bindings);
@@ -193,6 +220,15 @@ void D3D12ImGui::EndFrame(ID3D12GraphicsCommandListPtr cmdList)
         }
         vertexOffset += cmd_list->VtxBuffer.Size;
     }
+
+    // NOTE not the best way of handling the transition of the backbuffer but
+    // it is good enough for now
+    auto rtToPresent = m_gpu.SwapChainTransition(RenderTarget_To_Present);
+    cmdList->ResourceBarrier(1, &rtToPresent);
+
+    m_cmdList->Close();
+
+    return m_cmdList->GetCmdList().Get();
 }
 
 void D3D12ImGui::CreateFontTexture()

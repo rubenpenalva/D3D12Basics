@@ -13,7 +13,7 @@
 
 // windows includes
 #include "d3d12fwd.h"
-#include <dxgi1_4.h>
+#include <dxgi1_6.h>
 #include <windows.h>
 
 // directx includes
@@ -36,7 +36,9 @@ namespace D3D12Basics
         StopClock m_waitForPresentTime;
         StopClock m_waitForFenceTime;
         StopClock m_frameTime;
-        std::vector<std::pair<std::wstring, StopClock::SplitTimeBuffer>> m_cmdListTimes;
+
+        using NamedCmdListTime = std::pair<std::wstring, StopClock::SplitTimeBuffer>;
+        std::vector<std::unique_ptr<NamedCmdListTime>> m_cmdListTimes;
     };
 
     struct D3D12GpuHandle
@@ -117,7 +119,8 @@ namespace D3D12Basics
 
         // Note Forcing the compiler to use a definition of the destructor in order to
         // not trigger a default inline destructor usage. In that case the compiler will
-        // need the complete definition of D3D12CmdListTimeStamp.
+        // need the complete definition of D3D12CmdListTimeStamp which doesn't have as
+        // its a fwd declaration
         ~D3D12GraphicsCmdList();
 
         void Open();
@@ -128,6 +131,7 @@ namespace D3D12Basics
 
     private:
         D3D12GpuShareableState*     m_gpuState;
+        std::wstring                m_debugName;
         D3D12CmdListTimeStampPtr    m_timeStamp;
 
         ID3D12GraphicsCommandListPtr    m_cmdList;
@@ -268,7 +272,7 @@ namespace D3D12Basics
         };
 
         // dxgi data
-        IDXGIFactory4Ptr        m_factory;
+        IDXGIFactoryPtr         m_factory;
         IDXGIOutput1Ptr         m_output1;
         DXGI_MODE_DESC1         m_safestDisplayMode;
         D3D12Basics::Resolution m_safestResolution;

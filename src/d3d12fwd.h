@@ -3,7 +3,7 @@
 // windows includes
 #include <wrl.h>
 
-struct IDXGIFactory4;
+struct IDXGIFactory6;
 struct IDXGISwapChain3;
 struct IDXGIAdapter1;
 struct IDXGIOutput1;
@@ -27,8 +27,8 @@ struct D3D12_FEATURE_DATA_ROOT_SIGNATURE;
 
 namespace D3D12Basics
 {
-    using IDXGIFactory4Ptr              = Microsoft::WRL::ComPtr<IDXGIFactory4>;
-    using IDXGISwapChain3Ptr            = Microsoft::WRL::ComPtr<IDXGISwapChain3>;
+    using IDXGIFactoryPtr               = Microsoft::WRL::ComPtr<IDXGIFactory6>;
+    using IDXGISwapChainPtr             = Microsoft::WRL::ComPtr<IDXGISwapChain3>;
     using IDXGIAdapterPtr               = Microsoft::WRL::ComPtr<IDXGIAdapter1>;
     using IDXGIOutput1Ptr               = Microsoft::WRL::ComPtr<IDXGIOutput1>;
 

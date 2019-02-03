@@ -14,6 +14,9 @@
 #include <thread>
 #include <mutex>
 
+// thirdparty libraries include
+#include "enkiTS/src/TaskScheduler.h"
+
 namespace D3D12Basics
 {
     // NOTE once the scene is passed to the engine, it stays the same. 
@@ -45,23 +48,23 @@ namespace D3D12Basics
 
         struct CachedFrameStats
         {
-            StopClock::SplitTimeArray               m_presentTime;
-            StopClock::SplitTimeArray               m_waitForPresentTime;
-            StopClock::SplitTimeArray               m_waitForFenceTime;
-            StopClock::SplitTimeArray               m_frameTime;
-            std::vector<StopClock::SplitTimeArray>  m_cmdListTimes;
+            StopClock::SplitTimeBuffer               m_presentTime;
+            StopClock::SplitTimeBuffer               m_waitForPresentTime;
+            StopClock::SplitTimeBuffer               m_waitForFenceTime;
+            StopClock::SplitTimeBuffer               m_frameTime;
+            std::vector<StopClock::SplitTimeBuffer>  m_cmdListTimes;
 
             CachedFrameStats& operator=(const FrameStats& frameStats)
             {
-                m_presentTime = frameStats.m_presentTime.Values();
-                m_waitForPresentTime = frameStats.m_waitForPresentTime.Values();
-                m_waitForFenceTime = frameStats.m_waitForFenceTime.Values();
-                m_frameTime = frameStats.m_frameTime.Values();
+                m_presentTime = frameStats.m_presentTime.SplitTimes();
+                m_waitForPresentTime = frameStats.m_waitForPresentTime.SplitTimes();
+                m_waitForFenceTime = frameStats.m_waitForFenceTime.SplitTimes();
+                m_frameTime = frameStats.m_frameTime.SplitTimes();
                 size_t cmdListTimesCount = frameStats.m_cmdListTimes.size();
                 m_cmdListTimes.resize(cmdListTimesCount);
                 for (size_t i = 0; i < cmdListTimesCount; ++i)
                 {
-                    m_cmdListTimes[i] = frameStats.m_cmdListTimes[i]->second.Values();
+                    m_cmdListTimes[i] = frameStats.m_cmdListTimes[i]->second;
                 }
 
                 return *this;
@@ -70,13 +73,15 @@ namespace D3D12Basics
 
         struct CachedSceneStats
         {
-            StopClock::SplitTimeArray m_shadowPassCmdListTime;
-            StopClock::SplitTimeArray m_forwardPassCmdListTime;
+            StopClock::SplitTimeBuffer m_shadowPassCmdListTime;
+            StopClock::SplitTimeBuffer m_forwardPassCmdListTime;
+            StopClock::SplitTimeBuffer m_cmdListsTime;
 
             CachedSceneStats& operator=(const SceneStats& sceneStats)
             {
-                m_shadowPassCmdListTime = sceneStats.m_shadowPassCmdListTime.Values();
-                m_forwardPassCmdListTime = sceneStats.m_forwardPassCmdListTime.Values();
+                m_shadowPassCmdListTime = sceneStats.m_shadowPassCmdListTime.SplitTimes();
+                m_forwardPassCmdListTime = sceneStats.m_forwardPassCmdListTime.SplitTimes();
+                m_cmdListsTime = sceneStats.m_cmdListsTime.SplitTimes();
 
                 return *this;
             }
@@ -84,8 +89,8 @@ namespace D3D12Basics
 
         struct CachedStats
         {
-            StopClock::SplitTimeArray    m_beginToEndTime;
-            StopClock::SplitTimeArray    m_endToEndTime;
+            StopClock::SplitTimeBuffer    m_beginToEndTime;
+            StopClock::SplitTimeBuffer    m_endToEndTime;
             CachedFrameStats        m_frameStats;
             CachedSceneStats        m_sceneStats;
 
@@ -104,6 +109,7 @@ namespace D3D12Basics
         Scene                                           m_scene;
         std::thread                                     m_sceneLoaderThread;
         std::atomic<bool>                               m_sceneLoadingDone;
+        float                                           m_sceneLoadingTime;
         TextureDataCache                                m_textureDataCache;
         MeshDataCache                                   m_meshDataCache;
 
@@ -123,6 +129,10 @@ namespace D3D12Basics
 
         CachedStats m_cachedStats;
 
+        enki::TaskScheduler m_taskScheduler;
+
+        bool m_enableParallelCmdsLits;
+
         void ProcessWindowEvents();
 
         void ProcessUserEvents();
@@ -131,7 +141,7 @@ namespace D3D12Basics
 
         void ShowSceneLoadUI();
 
-        void ShowStats();
+        void ShowMainUI();
 
         void RenderFrame();
 

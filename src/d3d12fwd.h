@@ -25,6 +25,7 @@ typedef ID3D10Blob ID3DBlob;
 struct D3D12_CPU_DESCRIPTOR_HANDLE;
 struct D3D12_FEATURE_DATA_ROOT_SIGNATURE;
 
+// TODO get rid of as many ComPtrs as possible
 namespace D3D12Basics
 {
     using IDXGIFactoryPtr               = Microsoft::WRL::ComPtr<IDXGIFactory6>;

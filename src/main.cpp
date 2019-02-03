@@ -12,6 +12,7 @@
 // thirdparty libraries include
 #include "imgui/imgui.h"
 
+// C++ includes
 #include <fstream>
 
 using namespace D3D12Basics;
@@ -79,12 +80,12 @@ namespace
     const size_t g_cubesModelStartID    = g_spheresModelStartID + g_spheresCount;
 
 #if LOAD_WAVE
-    const size_t g_waveColsCount        = 30; // width
-    const size_t g_waveRowsCount        = 20; // depth
+    const size_t g_waveColsCount        = 25; // width
+    const size_t g_waveRowsCount        = 15; // depth
     const size_t g_waveEntsCount        = g_waveColsCount * g_waveRowsCount;
     const float g_waveWidth             = 150.0f;
     const float g_waveDepth             = 50.0f;
-    const float g_waveHeight            = 20.0f;
+    const float g_waveHeight            = 15.0f;
     const float g_waveHalfWidth         = g_waveWidth * 0.5f;
     const float g_waveHalfDepth         = g_waveDepth * 0.5f;
     const float g_waveCellWidth         = (g_waveWidth / g_waveColsCount);
@@ -346,7 +347,9 @@ namespace
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR szCmdLine, int /*iCmdShow*/)
 {
     auto cmdLine = ProcessCmndLine(szCmdLine);
-    D3D12Basics::D3D12BasicsEngine::Settings settings{ cmdLine.m_isWaitableForPresentEnabled, g_sponzaDataWorkingPath };
+    D3D12Basics::D3D12BasicsEngine::Settings settings   {   cmdLine.m_isWaitableForPresentEnabled, 
+                                                            g_sponzaDataWorkingPath
+                                                        };
 
 	// Note CreateScene will create the scene description but wont load any resources.
     D3D12Basics::D3D12BasicsEngine d3d12Engine(settings, CreateScene());

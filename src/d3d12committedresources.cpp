@@ -17,9 +17,10 @@ namespace D3D12Basics
 {
     struct D3D12DynamicBufferAllocationBlock
     {
-        size_t m_offset;
-        size_t m_size;
-        size_t m_pageIndex;
+        size_t  m_offset;
+        size_t  m_size;
+        size_t  m_pageIndex;
+        bool    m_isSmallPage;
     };
 }
 
@@ -383,26 +384,41 @@ D3D12DynamicBufferAllocation& D3D12DynamicBufferAllocation::operator=(D3D12Dynam
 D3D12DynamicBufferAllocation::~D3D12DynamicBufferAllocation() = default;
 
 D3D12DynamicBufferAllocator::D3D12DynamicBufferAllocator(ID3D12DevicePtr device, 
-                                                         size_t pageSizeInBytes) :  m_device(device), 
-                                                                                    m_pageSizeInBytes(pageSizeInBytes)
+                                                         size_t smallPageSizeInBytes,
+                                                         size_t bigPageSizeInBytes) :   m_device(device),
+                                                                                        m_smallPageSizeInBytes(smallPageSizeInBytes),
+                                                                                        m_bigPageSizeInBytes(bigPageSizeInBytes)
 {
     assert(m_device);
-    assert(m_pageSizeInBytes > 0);
+    assert(m_smallPageSizeInBytes > 0);
+    assert(m_bigPageSizeInBytes > 0);
+    assert(m_smallPageSizeInBytes < m_bigPageSizeInBytes);
 
-    AllocatePage();
+    AllocateSmallPage();
+    AllocateBigPage();
 }
 
 D3D12DynamicBufferAllocator::~D3D12DynamicBufferAllocator()
 {
-    D3D12_RANGE readRange{ 0, 0 };
-    for(auto& page : m_pages)
-        page.m_resource->Unmap(0, &readRange);
+    auto unmapPages = [](std::vector<Page>& pages)
+    {
+        D3D12_RANGE readRange{ 0, 0 };
+        for (auto& page : pages)
+            page.m_resource->Unmap(0, &readRange);
+    };
+    unmapPages(m_smallPages);
+    unmapPages(m_bigPages);
 }
 
 D3D12DynamicBufferAllocation D3D12DynamicBufferAllocator::Allocate(size_t sizeInBytes, size_t alignment)
 {
+    assert(sizeInBytes);
+    assert(sizeInBytes < m_bigPageSizeInBytes);
+    const bool isSmallPages = sizeInBytes < m_smallPageSizeInBytes;
+    auto& pages = isSmallPages? m_smallPages : m_bigPages;
+
     assert(alignment);
-    assert(m_pages.size());
+    assert(pages.size());
     assert(D3D12Basics::IsPowerOf2(alignment));
 
     const auto alignedSize = AlignToPowerof2(sizeInBytes, alignment);
@@ -411,9 +427,9 @@ D3D12DynamicBufferAllocation D3D12DynamicBufferAllocator::Allocate(size_t sizeIn
     D3D12DynamicBufferAllocationBlockPtr freeBlock = nullptr;
 
     // Linearly search through all the pages for a free block that fits the requested alignedSize
-    for (size_t i = 0; i < m_pages.size(); ++i)
+    for (size_t i = 0; i < pages.size(); ++i)
     {
-        auto& page = m_pages[i];
+        auto& page = pages[i];
 
         auto foundFreeBlock = std::find_if(page.m_freeBlocks.begin(), page.m_freeBlocks.end(), 
                                            [alignedSize, alignment](const auto& freeBlock)
@@ -433,8 +449,12 @@ D3D12DynamicBufferAllocation D3D12DynamicBufferAllocator::Allocate(size_t sizeIn
     // No memory no problem. Allocate another page!
     if (!freeBlock)
     {
-        AllocatePage();
-        auto& lastPage = m_pages.back();
+        if (isSmallPages)
+            AllocateSmallPage();
+        else
+            AllocateBigPage();
+
+        auto& lastPage = pages.back();
         freeBlock = std::move(lastPage.m_freeBlocks.back());
         lastPage.m_freeBlocks.pop_back();
     }
@@ -447,11 +467,11 @@ D3D12DynamicBufferAllocation D3D12DynamicBufferAllocator::Allocate(size_t sizeIn
     const auto freeBlockPageIndex = freeBlock->m_pageIndex;
 
     // Updating the old freeblock with its new size that takes into account the aligned size and the aligned ptr
-    const auto totalSize = TotalFreeBlockAlignedSize(freeBlock->m_offset, alignedSize, alignment);;
+    const auto totalSize = TotalFreeBlockAlignedSize(freeBlock->m_offset, alignedSize, alignment);
     freeBlock->m_offset += totalSize;
     freeBlock->m_size -= totalSize;
-    assert(freeBlockPageIndex < m_pages.size());
-    auto& page = m_pages[freeBlockPageIndex];
+    assert(freeBlockPageIndex < pages.size());
+    auto& page = pages[freeBlockPageIndex];
     page.m_freeBlocks.push_back(std::move(freeBlock));
 
     // Calculating the aligned memory ptrs
@@ -459,7 +479,7 @@ D3D12DynamicBufferAllocation D3D12DynamicBufferAllocator::Allocate(size_t sizeIn
     allocation.m_cpuPtr = page.m_cpuPtr + alignedOffset;
     allocation.m_gpuPtr = page.m_gpuPtr + alignedOffset;
     allocation.m_size = alignedSize;
-    D3D12Basics::D3D12DynamicBufferAllocationBlock allocationBlock { freeBlockOffset, totalSize, freeBlockPageIndex };
+    D3D12Basics::D3D12DynamicBufferAllocationBlock allocationBlock { freeBlockOffset, totalSize, freeBlockPageIndex, isSmallPages };
     allocation.m_allocationBlock = std::make_unique<D3D12Basics::D3D12DynamicBufferAllocationBlock>(std::move(allocationBlock));
 
     return allocation;
@@ -468,10 +488,11 @@ D3D12DynamicBufferAllocation D3D12DynamicBufferAllocator::Allocate(size_t sizeIn
 void D3D12DynamicBufferAllocator::Deallocate(D3D12DynamicBufferAllocation& allocation)
 {
     assert(allocation.m_allocationBlock);
-    assert(allocation.m_allocationBlock->m_pageIndex < m_pages.size());
+    auto& pages = allocation.m_allocationBlock->m_isSmallPage ? m_smallPages : m_bigPages;
+    assert(allocation.m_allocationBlock->m_pageIndex < pages.size());
 
     auto pageIndex = allocation.m_allocationBlock->m_pageIndex;
-    auto& page = m_pages[pageIndex];
+    auto& page = pages[pageIndex];
     page.m_freeBlocks.push_back(std::move(allocation.m_allocationBlock));
 
     //// TODO erasing pages does not work. It introduces glitches and crashes. Fix it
@@ -486,10 +507,10 @@ void D3D12DynamicBufferAllocator::Deallocate(D3D12DynamicBufferAllocation& alloc
     //    m_pages.erase(m_pages.begin() + pageIndex);
 }
 
-void D3D12DynamicBufferAllocator::AllocatePage()
+void D3D12DynamicBufferAllocator::AllocatePage(size_t pageSizeInBytes, std::vector<Page>& pages)
 {
     Page page;
-    page.m_resource = D3D12CreateDynamicCommittedBuffer(m_device, m_pageSizeInBytes);
+    page.m_resource = D3D12CreateDynamicCommittedBuffer(m_device, pageSizeInBytes);
     assert(page.m_resource);
 
     page.m_gpuPtr = page.m_resource->GetGPUVirtualAddress();
@@ -501,10 +522,20 @@ void D3D12DynamicBufferAllocator::AllocatePage()
     D3D12Basics::AssertIfFailed(page.m_resource->Map(0, &readRange, reinterpret_cast<void**>(&page.m_cpuPtr)));
     assert(D3D12Basics::IsAlignedToPowerof2(reinterpret_cast<size_t>(page.m_cpuPtr), g_4kb));
 
-    const size_t pageIndex = m_pages.size();
-    D3D12DynamicBufferAllocationBlock allocationBlock{ 0, m_pageSizeInBytes, pageIndex };
+    const size_t pageIndex = pages.size();
+    D3D12DynamicBufferAllocationBlock allocationBlock{ 0, pageSizeInBytes, pageIndex };
     D3D12DynamicBufferAllocationBlockPtr freeBlock = std::make_unique<D3D12DynamicBufferAllocationBlock>(std::move(allocationBlock));
     page.m_freeBlocks.push_back(std::move(freeBlock));
 
-    m_pages.push_back(std::move(page));
+    pages.push_back(std::move(page));
+}
+
+void D3D12DynamicBufferAllocator::AllocateSmallPage()
+{
+    AllocatePage(m_smallPageSizeInBytes, m_smallPages);
+}
+
+void D3D12DynamicBufferAllocator::AllocateBigPage()
+{
+    AllocatePage(m_bigPageSizeInBytes, m_bigPages);
 }

@@ -87,6 +87,7 @@ D3D12ImGui::D3D12ImGui(HWND hwnd, D3D12Basics::D3D12Gpu& gpu,
     CreateFontTexture();
 
     m_transformation = m_gpu.AllocateDynamicMemory(sizeof(float) * 16, L"Dynamic CB - DearImgui Transformation");
+    assert(m_transformation.IsValid());
 
     m_cmdList = m_gpu.CreateCmdList(L"ImGui");
     assert(m_cmdList);
@@ -193,6 +194,7 @@ ID3D12CommandList* D3D12ImGui::EndFrame(D3D12_CPU_DESCRIPTOR_HANDLE renderTarget
 
     cmdList->OMSetRenderTargets(1, &renderTarget, FALSE, &depthStencilBuffer);
 
+    // TODO why is this commented out?
     //UpdateViewportScissor(cmdList, m_gpu.GetCurrentResolution());
 
     cmdList->RSSetViewports(1, &m_defaultViewport);
@@ -269,6 +271,7 @@ void D3D12ImGui::CreateVertexBuffer(ImDrawData* drawData)
             m_gpu.FreeMemory(m_vertexBuffer);
 
         m_vertexBuffer = m_gpu.AllocateDynamicMemory(vertexBufferSize, L"Vertex Buffer - DearImgui");
+        assert(m_vertexBuffer.IsValid());
 
         m_vertexBufferSizeBytes = vertexBufferSize;
     }
@@ -287,6 +290,7 @@ void D3D12ImGui::CreateIndexBuffer(ImDrawData* drawData)
             m_gpu.FreeMemory(m_indexBuffer);
 
         m_indexBuffer = m_gpu.AllocateDynamicMemory(indexBufferSize, L"Index Buffer - DearImgui");
+        assert(m_indexBuffer.IsValid());
 
         m_indexBufferSizeBytes = indexBufferSize;
     }

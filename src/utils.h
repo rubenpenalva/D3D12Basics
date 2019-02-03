@@ -158,6 +158,7 @@ namespace D3D12Basics
         return (value & (value - 1)) == 0;
     }
 
+    // TODO make it a bit more stdish?
     template<class T, uint8_t Size = 128>
     class CircularBuffer
     {
@@ -167,14 +168,21 @@ namespace D3D12Basics
     public:
         using Array = std::array<float, Size>;
 
+        static size_t CalculateCircularIndex(size_t index)
+        {
+            return index & (Size - 1);
+        }
+
         CircularBuffer() : m_values{}, m_nextIndex{}, m_lastIndex{}
         {
         }
 
+        size_t StartIndex() const { return m_nextIndex; }
+
         void Next() 
         { 
-            m_lastIndex = m_nextIndex; 
-            m_nextIndex = (m_nextIndex + 1) & (Size - 1); 
+            m_lastIndex = m_nextIndex;
+            m_nextIndex = CalculateCircularIndex(m_nextIndex + 1);
         }
         
         void SetValue(const T& value) { m_values[m_nextIndex] = value; }
@@ -189,11 +197,13 @@ namespace D3D12Basics
         size_t m_lastIndex;
     };
 
+    // TODO dont like the interface of stopclock and runningtime.
+    // its not obvious how to use it. maybe with the start/stop pair
+    // should be easier
     class StopClock
     {
     public:
-        using SplitTimeBuffer = CircularBuffer<float, 16>;
-        using SplitTimeArray = SplitTimeBuffer::Array;
+        using SplitTimeBuffer = CircularBuffer<float, 32>;
 
         StopClock();
 
@@ -201,9 +211,9 @@ namespace D3D12Basics
 
         void ResetMark();
 
-        const SplitTimeArray& Values() const { return m_splitTimes.Values(); }
+        const SplitTimeBuffer& SplitTimes() const { return m_splitTimes; }
 
-        float LastSplitTime() const { return m_splitTimes.LastValue(); }
+        float AverageSplitTime() const;
 
     private:
         hr_clock::time_point m_last;
@@ -220,7 +230,8 @@ namespace D3D12Basics
 
         void Reset();
 
-        float Value() const;
+        float Time() const;
+
     private:
         hr_clock::time_point m_startTime;
     };

@@ -269,6 +269,8 @@ D3D12SceneRender::D3D12SceneRender(D3D12Gpu& gpu, FileMonitor& fileMonitor, cons
 
 void D3D12SceneRender::LoadGpuResources()
 {
+    RunningTime loadingTime;
+
     // Load shadow resources per light
     const uint8_t lightsCount = static_cast<uint8_t>(m_scene.m_lights.size());
     for (uint8_t i = 0; i < lightsCount && i < 2; ++i)
@@ -286,9 +288,17 @@ void D3D12SceneRender::LoadGpuResources()
         {
             {
                 if (model.m_material.m_shadowReceiver)
-                    gpuMesh.m_forwardTransformsGpuMemHandle = m_gpu.AllocateDynamicMemory(sizeof(ShadingData), L"Dynamic CB - ShadingData " + model.m_name);
+                {
+                    gpuMesh.m_forwardTransformsGpuMemHandle = m_gpu.AllocateDynamicMemory(sizeof(ShadingData), 
+                                                                                          L"Dynamic CB - ShadingData " + model.m_name);
+                    assert(gpuMesh.m_forwardTransformsGpuMemHandle.IsValid());
+                }
                 else
-                    gpuMesh.m_forwardTransformsGpuMemHandle = m_gpu.AllocateDynamicMemory(sizeof(ShadingDataNoShadows), L"Dynamic CB - ShadingData NoShadows" + model.m_name);
+                {
+                    gpuMesh.m_forwardTransformsGpuMemHandle = m_gpu.AllocateDynamicMemory(sizeof(ShadingDataNoShadows),
+                                                                                          L"Dynamic CB - ShadingData NoShadows" + model.m_name);
+                    assert(gpuMesh.m_forwardTransformsGpuMemHandle.IsValid());
+                }
 
                 gpuMesh.m_forwardPassBindings.m_constantBufferViews = { { 0, gpuMesh.m_forwardTransformsGpuMemHandle } };
             }
@@ -342,6 +352,7 @@ void D3D12SceneRender::LoadGpuResources()
             std::wstringstream ss;
             ss << L"Shadow pass" << i << L" Dynamic CB - Transform " + model.m_name;
             gpuMesh.m_shadowsTransformGpuMemHandles[i] = m_gpu.AllocateDynamicMemory(sizeof(Matrix44), ss.str());
+            assert(gpuMesh.m_shadowsTransformGpuMemHandles[i].IsValid());
             gpuMesh.m_shadowPassBindings[i].m_constantBufferViews = { { 0, gpuMesh.m_shadowsTransformGpuMemHandles[i] } };
         }
 
@@ -358,6 +369,7 @@ void D3D12SceneRender::LoadGpuResources()
     }
 
     m_gpuResourcesLoaded = true;
+    m_sceneStats.m_loadingGPUResourcesTime = loadingTime.Time();
 }
 
 void D3D12SceneRender::Update()
@@ -417,16 +429,36 @@ void D3D12SceneRender::Update()
 }
 
 D3D12CmdLists D3D12SceneRender::RecordCmdLists(D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
-                                               D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer)
+                                               D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer,
+                                               enki::TaskScheduler& taskScheduler,
+                                               bool enableParallelCmdLists)
 {
     m_sceneStats.m_forwardPassDrawCallsCount = 0;
     m_sceneStats.m_shadowPassDrawCallsCount = 0;
+    m_sceneStats.m_cmdListsTime.ResetMark();
 
-    // Shadows pass
-    const bool shadowPassDone = RenderShadowPass();
+    bool shadowPassDone = false;
+    if (enableParallelCmdLists)
+    {
+        enki::TaskSet shadowPassTask([this, &shadowPassDone](enki::TaskSetPartition, uint32_t)
+        {
+            shadowPassDone = RenderShadowPass();
+        });
+        taskScheduler.AddTaskSetToPipe(&shadowPassTask);
 
-    // Forward pass
-    RenderForwardPass(renderTarget, depthStencilBuffer);
+        // Forward pass
+        enki::TaskSet forwardPassTask([this, &renderTarget, &depthStencilBuffer](enki::TaskSetPartition, uint32_t)
+        {
+            RenderForwardPass(renderTarget, depthStencilBuffer);
+        });
+        taskScheduler.AddTaskSetToPipe(&forwardPassTask);
+        taskScheduler.WaitforAll();
+    }
+    else
+    {
+        shadowPassDone = RenderShadowPass();
+        RenderForwardPass(renderTarget, depthStencilBuffer);
+    }
 
     // TODO add imgui ui option to render the debug elements
     //RenderDebug(cmdList);
@@ -438,6 +470,8 @@ D3D12CmdLists D3D12SceneRender::RecordCmdLists(D3D12_CPU_DESCRIPTOR_HANDLE rende
         cmdLists.push_back(m_cmdLists[1]->GetCmdList().Get());
     }
     cmdLists.push_back(m_cmdLists.back()->GetCmdList().Get());
+
+    m_sceneStats.m_cmdListsTime.Mark();
 
     return cmdLists;
 }
@@ -479,7 +513,7 @@ bool D3D12SceneRender::RenderShadowPass()
     
     const size_t lightsCount = m_shadowResPerLight.size();
 
-    m_sceneStats.m_shadowPassCmdListTime.Mark();
+    m_sceneStats.m_shadowPassCmdListTime.ResetMark();
 
     for (size_t i = 0; i < lightsCount; ++i)
     {
@@ -549,13 +583,15 @@ bool D3D12SceneRender::RenderShadowPass()
         m_cmdLists[i]->Close();
     }
 
+    m_sceneStats.m_shadowPassCmdListTime.Mark();
+
     return true;
 }
 
 void D3D12SceneRender::RenderForwardPass(D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
                                          D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer)
 {
-    m_sceneStats.m_forwardPassCmdListTime.Mark();
+    m_sceneStats.m_forwardPassCmdListTime.ResetMark();
 
     const D3D12GraphicsCmdListPtr& forwardPasCmdList = m_cmdLists.back();
     forwardPasCmdList->Open();
@@ -609,6 +645,8 @@ void D3D12SceneRender::RenderForwardPass(D3D12_CPU_DESCRIPTOR_HANDLE renderTarge
     }
 
     forwardPasCmdList->Close();
+
+    m_sceneStats.m_forwardPassCmdListTime.Mark();
 }
 
 void D3D12SceneRender::RenderDebug(ID3D12GraphicsCommandListPtr cmdList)

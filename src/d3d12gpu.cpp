@@ -273,7 +273,7 @@ D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :    m_isWaitableForPres
     CreateDevice(adapter);
     CheckFeatureSupport();
 
-    m_dynamicMemoryAllocator = std::make_unique<D3D12DynamicBufferAllocator>(m_state->m_device, g_64kb);
+    m_dynamicMemoryAllocator = std::make_unique<D3D12DynamicBufferAllocator>(m_state->m_device, g_64kb, g_128kb);
     assert(m_dynamicMemoryAllocator);
 
     CreateCommandInfrastructure();
@@ -325,9 +325,13 @@ bool D3D12Gpu::IsFrameFinished(uint64_t frameId)
 // TODO think about how to use the debugname of a dynamic resource
 D3D12GpuMemoryHandle D3D12Gpu::AllocateDynamicMemory(size_t sizeBytes, const std::wstring& /*debugName*/)
 {
-    // TODO what happens when sizeInBytes is bigger than 64kb? fix this
-    assert(sizeBytes < g_64kb);
-
+    if (sizeBytes > g_128kb)
+    {
+        // assert(sizeBytes < g_128kb);
+        OutputDebugString(L"D3D12Gpu::AllocateDynamicMemory. sizeBytes is bigger than the big page size g_128kb\n");
+        return {};
+    }
+ 
     DynamicMemoryAlloc allocation;
 
     for (unsigned int i = 0; i < D3D12GpuConfig::m_framesInFlight; ++i)

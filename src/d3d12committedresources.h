@@ -77,7 +77,7 @@ namespace D3D12Basics
 
     // Straightforward free list allocator with first fit strategy. No coalescing.
     // Grows a page when cant find a suitable space.
-    // Page is aligned to the smallest 64kb multiple of pageSizeInBytes
+    // Page is aligned to the smallest 64kb  or 128kb multiple of pageSizeInBytes
     // TODO implement buddy allocator
     // NOTE: D3D12_RESOURCE_DIMENSION is D3D12_RESOURCE_DIMENSION_BUFFER on the D3D12_RESOURCE_DESC
     // used when calling to CreateCommittedResource
@@ -85,8 +85,9 @@ namespace D3D12Basics
     {
     public:
         // NOTE pageSizeInBytes doesnt have to be aligned as it will be aligned
-        // to 64kb internally by default
-        D3D12DynamicBufferAllocator(ID3D12DevicePtr device, size_t pageSizeInBytes);
+        // to 64kb or 128kb internally by default
+        D3D12DynamicBufferAllocator(ID3D12DevicePtr device, size_t smallPageSizeInBytes,
+                                    size_t bigPageSizeInBytes);
 
         ~D3D12DynamicBufferAllocator();
 
@@ -117,10 +118,14 @@ namespace D3D12Basics
 
         ID3D12DevicePtr m_device;
 
-        const size_t m_pageSizeInBytes;
+        const size_t m_smallPageSizeInBytes;
+        const size_t m_bigPageSizeInBytes;
 
-        std::vector<Page> m_pages;
+        std::vector<Page> m_smallPages;
+        std::vector<Page> m_bigPages;
 
-        void AllocatePage();
+        void AllocatePage(size_t papageSizeInBytesgeSize, std::vector<Page>& pages);
+        void AllocateSmallPage();
+        void AllocateBigPage();
     };
 }

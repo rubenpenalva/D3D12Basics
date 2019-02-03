@@ -10,15 +10,22 @@
 #include "filemonitor.h"
 #include "d3d12pipelinestate.h"
 
+// thirdparty libraries include
+#include "imgui/imgui.h"
+#include "enkiTS/src/TaskScheduler.h"
+
 namespace D3D12Basics
 {
     struct SceneStats
     {
+        float m_loadingGPUResourcesTime = 0.0f;
+
         uint32_t m_shadowPassDrawCallsCount;
         uint32_t m_forwardPassDrawCallsCount;
 
         StopClock m_shadowPassCmdListTime;
         StopClock m_forwardPassCmdListTime;
+        StopClock m_cmdListsTime;
     };
 
     class D3D12SceneRender
@@ -35,7 +42,9 @@ namespace D3D12Basics
         void Update();
 
         D3D12CmdLists RecordCmdLists(D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
-                                     D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer);
+                                     D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer,
+                                     enki::TaskScheduler& taskScheduler,
+                                     bool enableParallelCmdLists);
 
         const SceneStats& GetStats() const { return m_sceneStats; }
 

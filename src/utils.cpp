@@ -8,6 +8,7 @@
 #include <iostream>
 #include <numeric>
 #include <fstream>
+#include <algorithm>
 
 // thirdparty libraries include
 #include "imgui/imgui.h"
@@ -259,6 +260,12 @@ void StopClock::ResetMark()
     m_last = hr_clock::now();
 }
 
+float StopClock::AverageSplitTime() const
+{
+    const auto& splitimes = m_splitTimes.Values();
+    return std::accumulate(splitimes.begin(), splitimes.end(), 0.0f) / splitimes.size();
+}
+
 void StopClock::AddSplitTime(const hr_clock::time_point& begin, const hr_clock::time_point& end)
 {
     m_splitTimes.SetValue(std::chrono::duration<float>(end - begin).count());
@@ -273,7 +280,7 @@ void RunningTime::Reset()
     m_startTime = hr_clock::now();
 }
 
-float RunningTime::Value() const 
+float RunningTime::Time() const 
 { 
     return std::chrono::duration<float>(hr_clock::now() - m_startTime).count();
 }

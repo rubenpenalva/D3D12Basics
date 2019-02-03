@@ -145,11 +145,6 @@ ID3D12CommandList* D3D12ImGui::EndFrame(D3D12_CPU_DESCRIPTOR_HANDLE renderTarget
 
     if (drawData->CmdListsCount == 0)
     {
-        // NOTE not the best way of handling the transition of the backbuffer but
-        // it is good enough for now
-        auto rtToPresent = m_gpu.SwapChainTransition(RenderTarget_To_Present);
-        cmdList->ResourceBarrier(1, &rtToPresent);
-
         m_cmdList->Close();
         return nullptr;
     }
@@ -183,11 +178,6 @@ ID3D12CommandList* D3D12ImGui::EndFrame(D3D12_CPU_DESCRIPTOR_HANDLE renderTarget
 
     if (!m_pipelineState.ApplyState(cmdList))
     {
-        // NOTE not the best way of handling the transition of the backbuffer but
-        // it is good enough for now
-        auto rtToPresent = m_gpu.SwapChainTransition(RenderTarget_To_Present);
-        cmdList->ResourceBarrier(1, &rtToPresent);
-
         m_cmdList->Close();
         return nullptr;
     }
@@ -222,11 +212,6 @@ ID3D12CommandList* D3D12ImGui::EndFrame(D3D12_CPU_DESCRIPTOR_HANDLE renderTarget
         }
         vertexOffset += cmd_list->VtxBuffer.Size;
     }
-
-    // NOTE not the best way of handling the transition of the backbuffer but
-    // it is good enough for now
-    auto rtToPresent = m_gpu.SwapChainTransition(RenderTarget_To_Present);
-    cmdList->ResourceBarrier(1, &rtToPresent);
 
     m_cmdList->Close();
 

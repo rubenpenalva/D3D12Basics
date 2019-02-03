@@ -22,7 +22,8 @@ using namespace D3D12Basics;
 namespace 
 {
     static const float g_showSceneLoadedUITime = 5.0f;
-
+    static const float g_defaultClearColor[4] = { 0.0f, 0.2f, 0.4f, 1.0f };
+    static const float g_shadowMapClearColor[4] = { 0.0f };
 
     float ImGuiPlotGetter(const void* data, int index)
     {
@@ -90,6 +91,12 @@ D3D12BasicsEngine::D3D12BasicsEngine(const Settings& settings,
 
     m_imgui = std::make_unique<D3D12ImGui>(m_window->GetHWND(), m_gpu, m_fileMonitor);
     assert(m_imgui);
+
+    m_preCmdList = m_gpu.CreateCmdList(L"Pre render");
+    assert(m_preCmdList);
+
+    m_postCmdList = m_gpu.CreateCmdList(L"Post render");
+    assert(m_postCmdList);
 
     m_taskScheduler.Initialize();
 
@@ -358,15 +365,20 @@ void D3D12BasicsEngine::RenderFrame()
 {
     ImGui::Render();
 
+    SetupCmdLists();
+
+    D3D12CmdLists cmdLists;
+    cmdLists.push_back(m_preCmdList->GetCmdList().Get());
+
     const auto& depthBufferViewHandle = m_gpu.GetViewCPUHandle(m_depthBuffer.m_dsv);
     const auto& backbufferRT = m_gpu.SwapChainBackBufferViewHandle();
-
-    // TODO #6 add a pre/post cmd list to setup the swapchain rt transitions
-    auto cmdLists = m_sceneRender->RecordCmdLists(backbufferRT, depthBufferViewHandle, 
+    auto sceneRenderCmdLists = m_sceneRender->RecordCmdLists(backbufferRT, depthBufferViewHandle, 
                                                   m_taskScheduler, m_enableParallelCmdsLits);
     auto imguiCmdList = m_imgui->EndFrame(backbufferRT, depthBufferViewHandle);
     assert(imguiCmdList);
+    cmdLists.insert(cmdLists.end(), sceneRenderCmdLists.begin(), sceneRenderCmdLists.end());
     cmdLists.push_back(imguiCmdList);
+    cmdLists.push_back(m_postCmdList->GetCmdList().Get());
     m_gpu.ExecuteCmdLists(cmdLists);
 }
 
@@ -396,4 +408,39 @@ void D3D12BasicsEngine::CreateDepthBuffer()
 
     m_depthBuffer.m_dsv = m_gpu.CreateDepthStencilView(m_depthBuffer.m_memHandle, DXGI_FORMAT_D24_UNORM_S8_UINT);
     assert(m_depthBuffer.m_dsv.IsValid());
+}
+
+void D3D12BasicsEngine::SetupCmdLists()
+{
+    const auto& backbufferRT = m_gpu.SwapChainBackBufferViewHandle();
+    const auto& depthBufferViewHandle = m_gpu.GetViewCPUHandle(m_depthBuffer.m_dsv);
+
+    {
+        m_preCmdList->Open();
+
+        ID3D12GraphicsCommandListPtr cmdList = m_preCmdList->GetCmdList();
+
+        auto presentToRT = m_gpu.SwapChainTransition(Present_To_RenderTarget);
+        cmdList->ResourceBarrier(1, &presentToRT);
+
+        cmdList->OMSetRenderTargets(1, &backbufferRT, FALSE, &depthBufferViewHandle);
+
+        cmdList->ClearDepthStencilView(depthBufferViewHandle, 
+                                       D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
+                                       1.0f, 0, 0, nullptr);
+        cmdList->ClearRenderTargetView(backbufferRT, g_defaultClearColor, 0, nullptr);
+
+        m_preCmdList->Close();
+    }
+
+    {
+        m_postCmdList->Open();
+
+        ID3D12GraphicsCommandListPtr cmdList = m_postCmdList->GetCmdList();
+
+        auto rtToPresent = m_gpu.SwapChainTransition(RenderTarget_To_Present);
+        cmdList->ResourceBarrier(1, &rtToPresent);
+
+        m_postCmdList->Close();
+    }
 }

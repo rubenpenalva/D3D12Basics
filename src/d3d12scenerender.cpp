@@ -12,9 +12,6 @@ using namespace D3D12Basics;
 
 namespace
 {
-    static const float g_defaultClearColor[4]   = { 0.0f, 0.2f, 0.4f, 1.0f };
-    static const float g_shadowMapClearColor[4] = { 0.0f };
-
     static const size_t g_quadVertexSizeBytes = 5 * sizeof(float);
     static const size_t g_quadVBSizeBytes = 4 * g_quadVertexSizeBytes;
     static const size_t g_quadIndicesCount = 6;
@@ -598,15 +595,7 @@ void D3D12SceneRender::RenderForwardPass(D3D12_CPU_DESCRIPTOR_HANDLE renderTarge
 
     ID3D12GraphicsCommandListPtr cmdList = forwardPasCmdList->GetCmdList();
 
-    // TODO probably not the best place to have this but good enough for now
-    auto presentToRT = m_gpu.SwapChainTransition(Present_To_RenderTarget);
-    cmdList->ResourceBarrier(1, &presentToRT);
-
     cmdList->OMSetRenderTargets(1, &renderTarget, FALSE, &depthStencilBuffer);
-
-    cmdList->ClearDepthStencilView(depthStencilBuffer, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
-                                   1.0f, 0, 0, nullptr);
-    cmdList->ClearRenderTargetView(renderTarget, g_defaultClearColor, 0, nullptr);
 
     UpdateViewportScissor(cmdList, m_gpu.GetCurrentResolution());
 

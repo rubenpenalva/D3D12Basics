@@ -46,6 +46,7 @@ namespace D3D12Basics
         using CameraControllerPtr   = std::unique_ptr<CameraController>;
         using AppControllerPtr      = std::unique_ptr<AppController>;
 
+        // TODO really hate this stats code.
         struct CachedFrameStats
         {
             StopClock::SplitTimeBuffer               m_presentTime;
@@ -106,6 +107,9 @@ namespace D3D12Basics
         float           m_cachedDeltaTime;
         float           m_cachedTotalTime;
 
+        D3D12GraphicsCmdListPtr m_preCmdList;
+        D3D12GraphicsCmdListPtr m_postCmdList;
+
         Scene                                           m_scene;
         std::thread                                     m_sceneLoaderThread;
         std::atomic<bool>                               m_sceneLoadingDone;
@@ -146,5 +150,7 @@ namespace D3D12Basics
         void RenderFrame();
 
         void CreateDepthBuffer();
+
+        void SetupCmdLists();
     };
 }

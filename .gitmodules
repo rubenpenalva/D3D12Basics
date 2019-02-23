@@ -3,5 +3,5 @@
 	url = https://github.com/rubenpenalva/imgui
 [submodule "thirdparty/enkiTS"]
 	path = thirdparty/enkiTS
-	url = https://github.com/dougbinks/enkiTS
+	url = https://github.com/rubenpenalva/enkiTS
 	branch = C++11

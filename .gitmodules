@@ -4,3 +4,4 @@
 [submodule "thirdparty/enkiTS"]
 	path = thirdparty/enkiTS
 	url = https://github.com/rubenpenalva/enkiTS
+	branch = C++11

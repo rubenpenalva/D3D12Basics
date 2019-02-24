@@ -1,0 +1,9 @@
+Next project thoughts
+=====================
+* Minimize the use of size_t. 
+    Is there a good reason for using size_t everywhere?
+    what about just using an int?
+* Minimize the use of comptrs. Only use them when needed otherwise use naked ptrs.
+* Get rid of std::wstringstream to format strings. Use somekind of safe printf?
+* Management of the frame and scene stats is terrible. Rework it.
+* Rework the game loop to consume way less cpu. Better power efficiency.

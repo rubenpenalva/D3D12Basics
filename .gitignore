@@ -9,5 +9,3 @@ packages.config
 *.db
 
 imgui\.ini
-src/api_sketch.h
-docs/notes.txt

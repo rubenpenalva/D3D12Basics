@@ -103,6 +103,9 @@ namespace
 
 namespace D3D12Basics
 {
+    const uint32_t D3D12Gpu::m_smallPageSize   = g_64kb;
+    const uint32_t D3D12Gpu::m_bigPageSize     = g_4mb;
+
     struct D3D12GpuShareableState
     {
         ID3D12DevicePtr m_device{};
@@ -203,8 +206,10 @@ void D3D12CmdListTimeStamp::End()
 D3D12GraphicsCmdList::D3D12GraphicsCmdList(D3D12GpuShareableState* gpuState,
                                            D3D12CommittedResourceAllocator* committedAllocator,
                                            UINT64 cmdQueueTimestampFrequency,
+                                           FrameStats::NamedCmdListTimes& cmdListsTimes,
                                            StopClock::SplitTimeBuffer& splitTimes,
-                                           const std::wstring& debugName) :     m_gpuState(gpuState)
+                                           const std::wstring& debugName)   :   m_gpuState(gpuState), 
+                                                                                m_cmdListsTimes(cmdListsTimes)
 {
     assert(m_gpuState);
     assert(m_gpuState->m_device);
@@ -233,13 +238,13 @@ D3D12GraphicsCmdList::D3D12GraphicsCmdList(D3D12GpuShareableState* gpuState,
                                                           cmdQueueTimestampFrequency, splitTimes);
     assert(m_timeStamp);
 
-    std::wstringstream ss;
-    ss << debugName << L" ID3D12GraphicsCommandList 0x" 
-                    << std::ios::uppercase << std::ios::hex << m_cmdList.Get();
-    m_debugName = ss.str();
+    m_debugName = debugName;
 }
 
-D3D12GraphicsCmdList::~D3D12GraphicsCmdList() = default;
+D3D12GraphicsCmdList::~D3D12GraphicsCmdList()
+{
+    m_cmdListsTimes.erase(m_debugName);
+};
 
 void D3D12GraphicsCmdList::Open()
 {
@@ -262,7 +267,7 @@ void D3D12GraphicsCmdList::Close()
 }
 
 D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :    m_isWaitableForPresentEnabled(isWaitableForPresentEnabled),
-                                                             m_nextHandleId(0), m_currentFrame(0)
+                                                             m_nextHandleId(0), m_currentFrame(0), m_stacksSetSize(1)
 {
     m_state = std::make_unique<D3D12GpuShareableState>();
     assert(m_state);
@@ -273,7 +278,9 @@ D3D12Gpu::D3D12Gpu(bool isWaitableForPresentEnabled)    :    m_isWaitableForPres
     CreateDevice(adapter);
     CheckFeatureSupport();
 
-    m_dynamicMemoryAllocator = std::make_unique<D3D12DynamicBufferAllocator>(m_state->m_device, g_64kb, g_128kb);
+    m_dynamicMemoryAllocator = std::make_unique<D3D12DynamicBufferAllocator>(m_state->m_device, 
+                                                                             m_smallPageSize, 
+                                                                             m_bigPageSize);
     assert(m_dynamicMemoryAllocator);
 
     CreateCommandInfrastructure();
@@ -325,10 +332,13 @@ bool D3D12Gpu::IsFrameFinished(uint64_t frameId)
 // TODO think about how to use the debugname of a dynamic resource
 D3D12GpuMemoryHandle D3D12Gpu::AllocateDynamicMemory(size_t sizeBytes, const std::wstring& /*debugName*/)
 {
-    if (sizeBytes > g_128kb)
+    if (sizeBytes > m_bigPageSize)
     {
-        // assert(sizeBytes < g_128kb);
-        OutputDebugString(L"D3D12Gpu::AllocateDynamicMemory. sizeBytes is bigger than the big page size g_128kb\n");
+        // assert(sizeBytes < m_bigPageSize);
+        std::wstringstream converter;
+        converter   << L"D3D12Gpu::AllocateDynamicMemory. sizeBytes is bigger than the big page size " 
+                    << m_bigPageSize << "\n";
+        OutputDebugString(converter.str().c_str());
         return {};
     }
  
@@ -374,7 +384,8 @@ D3D12GpuMemoryHandle D3D12Gpu::AllocateStaticMemory(const std::vector<D3D12_SUBR
 D3D12GpuMemoryHandle D3D12Gpu::AllocateStaticMemory(const D3D12_RESOURCE_DESC& desc, D3D12_RESOURCE_STATES initialState, 
                                                     const D3D12_CLEAR_VALUE* clearValue, const std::wstring& debugName)
 {
-    ID3D12ResourcePtr resource = CreateResourceHeap(m_state->m_device, desc, ResourceHeapType::DefaultHeap, initialState, clearValue);
+    ID3D12ResourcePtr resource = CreateResourceHeap(m_state->m_device, desc, ResourceHeapType::DefaultHeap, 
+                                                    initialState, clearValue);
     assert(resource);
     resource->SetName(debugName.c_str());
 
@@ -564,11 +575,12 @@ const D3D12_CPU_DESCRIPTOR_HANDLE& D3D12Gpu::SwapChainBackBufferViewHandle() con
 
 D3D12GraphicsCmdListPtr D3D12Gpu::CreateCmdList(const std::wstring& debugName)
 {
-    FrameStats::NamedCmdListTime cmdListTime{ debugName, {} };
-    m_frameStats.m_cmdListTimes.push_back(std::make_unique<FrameStats::NamedCmdListTime>(std::move(cmdListTime)));
+    assert(m_frameStats.m_cmdListTimes.find(debugName) == m_frameStats.m_cmdListTimes.end());
+    m_frameStats.m_cmdListTimes[debugName] = std::make_unique<StopClock::SplitTimeBuffer>();
     return std::make_unique<D3D12GraphicsCmdList>(m_state.get(), m_committedResourceAllocator.get(),
                                                   m_cmdQueueTimestampFrequency, 
-                                                  m_frameStats.m_cmdListTimes.back()->second, 
+                                                  m_frameStats.m_cmdListTimes,
+                                                  *m_frameStats.m_cmdListTimes[debugName],
                                                   debugName);
 }
 
@@ -602,8 +614,8 @@ void D3D12Gpu::PresentFrame()
     m_state->m_currentFrameIndex = (m_state->m_currentFrameIndex + 1) % D3D12GpuConfig::m_framesInFlight;
     m_currentFrame = m_gpuSync->GetNextFrameId();
 
-    m_gpuDescriptorRingBuffer->NextStack();
-    m_gpuDescriptorRingBuffer->ClearStack();
+    m_gpuDescriptorRingBuffer->NextStacksSet();
+    m_gpuDescriptorRingBuffer->ClearStacksSet();
 
     // TODO destroy retired buffers depending on if the frames they were bound are
     // still in flight.
@@ -660,7 +672,18 @@ void D3D12Gpu::OnResize(const Resolution& resolution)
     m_swapChain->Resize(swapChainDisplayMode);
 }
 
-void D3D12Gpu::SetBindings(ID3D12GraphicsCommandListPtr cmdList, const D3D12Bindings& bindings)
+void D3D12Gpu::UpdateConcurrentBindersCount(unsigned int concurrentBindersCount)
+{
+    if (concurrentBindersCount == m_stacksSetSize)
+        return;
+
+    m_gpuSync->WaitAll();
+
+    m_gpuDescriptorRingBuffer->UpdateStacksSetSize(concurrentBindersCount);
+}
+
+void D3D12Gpu::SetBindings(ID3D12GraphicsCommandListPtr cmdList, const D3D12Bindings& bindings, 
+                           unsigned int concurrentBinderIndex)
 {
     for (auto& constants : bindings.m_32BitConstants)
     {
@@ -694,7 +717,7 @@ void D3D12Gpu::SetBindings(ID3D12GraphicsCommandListPtr cmdList, const D3D12Bind
     // TODO figure out how to copy the descriptors in batches (maybe having arrays of views?) if possible
     for (auto& cpuDescriptorTable : bindings.m_descriptorTables)
     {
-        D3D12_GPU_DESCRIPTOR_HANDLE descriptorTableHandle = m_gpuDescriptorRingBuffer->CurrentDescriptor();
+        D3D12_GPU_DESCRIPTOR_HANDLE descriptorTableHandle = m_gpuDescriptorRingBuffer->CurrentDescriptor(concurrentBinderIndex);
 
         for (auto viewHandle : cpuDescriptorTable.m_views)
         {
@@ -733,8 +756,8 @@ void D3D12Gpu::SetBindings(ID3D12GraphicsCommandListPtr cmdList, const D3D12Bind
                 }
             }
 
-            m_gpuDescriptorRingBuffer->CopyToDescriptor(1, descriptorHandle);
-            m_gpuDescriptorRingBuffer->NextDescriptor();
+            m_gpuDescriptorRingBuffer->CopyToDescriptor(1, descriptorHandle, concurrentBinderIndex);
+            m_gpuDescriptorRingBuffer->NextDescriptor(concurrentBinderIndex);
         }
 
         cmdList->SetGraphicsRootDescriptorTable(static_cast<UINT>(cpuDescriptorTable.m_bindingSlot), 
@@ -837,8 +860,14 @@ DXGI_MODE_DESC1 D3D12Gpu::FindClosestDisplayModeMatch(DXGI_FORMAT format, const 
     modeToMatch.Height = resolution.m_height;
     DXGI_MODE_DESC1 closestMatch;
 
-    auto result = m_output1->FindClosestMatchingMode1(&modeToMatch, &closestMatch, m_state->m_device.Get());
-    // FindClosestMatchingMode1 doesn't work with a remote desktop connection
+    // NOTE this does not work anymore with a recent windows update.
+    // The error is DXGI ERROR: IDXGIOutput::FindClosestMatchingMode: pConcernedDevice doesn't support the 
+    // IDXGIDevice interface [ MISCELLANEOUS ERROR #69: ]
+    // https://docs.microsoft.com/en-us/windows/desktop/api/dxgi1_2/nf-dxgi1_2-idxgioutput1-findclosestmatchingmode1
+    //auto result = m_output1->FindClosestMatchingMode1(&modeToMatch, &closestMatch, m_state->m_device.Get());
+    auto result = m_output1->FindClosestMatchingMode1(&modeToMatch, &closestMatch, nullptr);
+    
+    // NOTE FindClosestMatchingMode1 doesn't work with a remote desktop connection
     // Find the safest resolution possible
     if (result == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE)
     {
@@ -882,7 +911,7 @@ IDXGIAdapterPtr D3D12Gpu::CreateDXGIInfrastructure()
     AssertIfFailed(CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, IID_PPV_ARGS(&m_factory)));
     assert(m_factory);
 
-    Microsoft::WRL::ComPtr<IDXGIAdapter4> adapter;
+    Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
     Microsoft::WRL::ComPtr<IDXGIOutput> adapterOutput;
     for (unsigned int adapterIndex = 0; ; ++adapterIndex)
     {
@@ -921,7 +950,7 @@ IDXGIAdapterPtr D3D12Gpu::CreateDXGIInfrastructure()
 
 void D3D12Gpu::CreateDescriptorHeaps()
 {
-	const uint32_t maxDescriptors = 65536;
+	const uint32_t maxDescriptors = 131072;
     m_dsvDescPool = std::make_unique<D3D12DSVDescriptorPool>(m_state->m_device, maxDescriptors);
     assert(m_dsvDescPool);
 

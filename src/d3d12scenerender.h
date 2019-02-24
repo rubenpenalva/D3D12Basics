@@ -44,9 +44,12 @@ namespace D3D12Basics
         D3D12CmdLists RecordCmdLists(D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
                                      D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer,
                                      enki::TaskScheduler& taskScheduler,
-                                     bool enableParallelCmdLists);
+                                     bool enableParallelCmdLists,
+                                     size_t drawCallsCount);
 
         const SceneStats& GetStats() const { return m_sceneStats; }
+
+        size_t GpuMeshesCount() const { return m_gpuMeshCache.size(); }
 
     private:
         enum class PipelineStateId
@@ -101,7 +104,8 @@ namespace D3D12Basics
         D3D12GpuViewHandle m_nullTexture;
 
         std::unordered_map<std::wstring, D3D12GpuViewHandle> m_textureCache;
-        std::unordered_map<size_t, GPUMesh> m_gpuMeshCache;
+        std::unordered_map<size_t, size_t>  m_gpuMeshCache;
+        std::vector<GPUMesh>                m_gpuMeshes;
 
         bool m_gpuResourcesLoaded;
         
@@ -110,17 +114,61 @@ namespace D3D12Basics
         D3D12GpuMemoryHandle        m_quadVb;
         D3D12GpuMemoryHandle        m_quadIb;
 
-        std::vector<D3D12GraphicsCmdListPtr> m_cmdLists;
+        std::vector<D3D12GraphicsCmdListPtr> m_forwardCmdLists;
+        std::vector<D3D12GraphicsCmdListPtr> m_shadowCmdLists;
+        
         SceneStats m_sceneStats;
+
+        size_t m_lastDrawCallsCount;
+
+        unsigned int m_shadowPassBinderOffset;
+        unsigned int m_forwardPassBinderOffset;
+
+        std::vector<TaskSetPtr> m_renderTasks;
+
+        std::atomic<uint32_t> m_shadowPassDrawCallsCount;
+        std::atomic<uint32_t> m_forwardPassDrawCallsCount;
 
         D3D12GpuViewHandle CreateTexture(const std::wstring& textureFile);
 
         void CreateDebugResources();
 
-        bool RenderShadowPass();
+        void SetupRenderDepthFromLight(ID3D12GraphicsCommandListPtr cmdList, size_t lightIndex, bool clear = true);
 
-        void RenderForwardPass(D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
-                               D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer);
+        void RenderDepthFromLight(ID3D12GraphicsCommandListPtr cmdList, size_t lightIndex,
+                                  size_t meshStartIndex, size_t meshEndIndex,
+                                  unsigned int concurrentBinderIndex);
+
+        TaskSetPtr CreateRenderDepthFromLightTask(size_t lightIndex, size_t cmdListStartIndex,
+                                                  size_t cmdListEndIndex, size_t drawCallsCount);
+
+        bool RenderShadowPass(enki::TaskScheduler& taskScheduler, size_t drawCallsCount, bool enableParallelCmdLists);
+
+        void RenderForwardPassMeshRange(const D3D12GraphicsCmdListPtr& d3d12CmdList,
+                                        D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
+                                        D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer,
+                                        size_t meshStartIndex, size_t meshEndIndex,
+                                        unsigned int concurrentBinderIndex);
+
+        TaskSetPtr CreateForwardPassTask(D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
+                                         D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer,
+                                         size_t drawCallsCount);
+
+        void RenderForwardPass(enki::TaskScheduler& taskScheduler, 
+                               D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
+                               D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer,
+                               size_t drawCallsCount,
+                               bool enableParallelCmdLists);
+
+        void UpdateCmdLists(size_t drawCallsCount, bool enableParallelCmdLists);
+
+        void ResetCmdLists(unsigned int concurrentBinders);
+
+        void AddShadowResourcesBarrier(ID3D12GraphicsCommandListPtr cmdList, 
+                                       D3D12_RESOURCE_STATES stateBefore,
+                                       D3D12_RESOURCE_STATES stateAfter);
+
+        size_t CalculateCmdListsCount(size_t drawCallsCount);
 
         void RenderDebug(ID3D12GraphicsCommandListPtr cmdList);
 

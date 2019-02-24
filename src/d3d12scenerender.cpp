@@ -7,6 +7,7 @@
 // c++ includes
 #include <thread>
 #include <sstream>
+#include <cmath>
 
 using namespace D3D12Basics;
 
@@ -240,28 +241,15 @@ D3D12SceneRender::D3D12SceneRender(D3D12Gpu& gpu, FileMonitor& fileMonitor, cons
     m_defaultMaterialFixedColorPipeState(gpu, fileMonitor, g_defaultMaterialFixedColorPipeDesc, L"D3D12 default material - fixed color"),
     m_defaultMaterialFixedColorNoShadowsPipeState(gpu, fileMonitor, g_defaultMaterialFixedColorNoShadowsPipeDesc, L"D3D12 default material - fixed color no shadows"),
     m_shadowPipeState(gpu, fileMonitor, g_shadowPipeDesc, L"D3D12 depth only"),
-    m_shadowDebugPipeState(gpu, fileMonitor, g_shadowDebugPipeDesc, L"D3D12 depth only debug")
+    m_shadowDebugPipeState(gpu, fileMonitor, g_shadowDebugPipeDesc, L"D3D12 depth only debug"),
+    m_lastDrawCallsCount(0),
+    m_shadowPassBinderOffset(0),
+    m_forwardPassBinderOffset(0)
 {
     m_defaultTexture = CreateDefaultTexture2D(m_gpu);
     m_nullTexture = CreateNullTexture2D(m_gpu);
 
     CreateDebugResources();
-
-    // Create 3 cmd lists : one per shadow pass and one forward pass
-    {
-        const uint8_t lightsCount = static_cast<uint8_t>(m_scene.m_lights.size());
-        const size_t cmdListsCount = lightsCount + 1;
-        m_cmdLists.resize(cmdListsCount);
-        for (size_t i = 0; i < lightsCount; ++i)
-        {
-            std::wstringstream ss;
-            ss << L"Shadow pass " << i;
-            m_cmdLists[i] = m_gpu.CreateCmdList(ss.str());
-            assert(m_cmdLists[i]);
-        }
-        m_cmdLists[cmdListsCount - 1] = m_gpu.CreateCmdList(L"Forward pass");
-        assert(m_cmdLists[cmdListsCount - 1]);
-    }
 }
 
 void D3D12SceneRender::LoadGpuResources()
@@ -362,7 +350,8 @@ void D3D12SceneRender::LoadGpuResources()
         gpuMesh.m_vertexSizeBytes = meshData.VertexSizeBytes();
         gpuMesh.m_indexBufferSizeBytes = meshData.IndexBufferSizeBytes();
         gpuMesh.m_indicesCount = meshData.IndicesCount();
-        m_gpuMeshCache[model.m_id] = std::move(gpuMesh);
+        m_gpuMeshes.push_back(std::move(gpuMesh));
+        m_gpuMeshCache[model.m_id] = m_gpuMeshes.size() - 1;
     }
 
     m_gpuResourcesLoaded = true;
@@ -393,7 +382,10 @@ void D3D12SceneRender::Update()
     for (auto& model : m_scene.m_models)
     {
         assert(m_gpuMeshCache.count(model.m_id));
-        auto& gpuMesh = m_gpuMeshCache[model.m_id];
+        const size_t gpuMeshIndex = m_gpuMeshCache[model.m_id];
+        assert(m_gpuMeshes.size() > gpuMeshIndex);
+        auto& gpuMesh = m_gpuMeshes[gpuMeshIndex];
+
         Matrix44 worldCameraProj = (model.m_transform * worldToCameraClip).Transpose();
         Matrix44 worldLightProj1 = (model.m_transform * worldToLightClip[0]).Transpose();
         Matrix44 worldLightProj2 = (model.m_transform * worldToLightClip[1]).Transpose();
@@ -428,33 +420,39 @@ void D3D12SceneRender::Update()
 D3D12CmdLists D3D12SceneRender::RecordCmdLists(D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
                                                D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer,
                                                enki::TaskScheduler& taskScheduler,
-                                               bool enableParallelCmdLists)
+                                               bool enableParallelCmdLists,
+                                               size_t drawCallsCount)
 {
-    m_sceneStats.m_forwardPassDrawCallsCount = 0;
-    m_sceneStats.m_shadowPassDrawCallsCount = 0;
+    m_shadowPassDrawCallsCount.store(0, std::memory_order_relaxed);
+    m_forwardPassDrawCallsCount.store(0, std::memory_order_relaxed);
     m_sceneStats.m_cmdListsTime.ResetMark();
 
-    bool shadowPassDone = false;
+    if (!m_gpuResourcesLoaded)
+        return {};
+
+    if (!drawCallsCount)
+        drawCallsCount = m_gpuMeshes.size();
+
+    // Shadow and forward cmd lists count varies depending on the execution model and
+    // the number of draw calls configured
+    UpdateCmdLists(drawCallsCount, enableParallelCmdLists);
+
     if (enableParallelCmdLists)
     {
-        enki::TaskSet shadowPassTask([this, &shadowPassDone](enki::TaskSetPartition, uint32_t)
-        {
-            shadowPassDone = RenderShadowPass();
-        });
-        taskScheduler.AddTaskSetToPipe(&shadowPassTask);
-
-        // Forward pass
-        enki::TaskSet forwardPassTask([this, &renderTarget, &depthStencilBuffer](enki::TaskSetPartition, uint32_t)
-        {
-            RenderForwardPass(renderTarget, depthStencilBuffer);
-        });
-        taskScheduler.AddTaskSetToPipe(&forwardPassTask);
-        taskScheduler.WaitforAll();
+        m_sceneStats.m_forwardPassCmdListTime.ResetMark();
+        m_sceneStats.m_shadowPassCmdListTime.ResetMark();
     }
-    else
+
+    bool shadowPassDone = RenderShadowPass(taskScheduler, drawCallsCount, enableParallelCmdLists);
+    
+    RenderForwardPass(taskScheduler, renderTarget, depthStencilBuffer, drawCallsCount, enableParallelCmdLists);
+
+    if (enableParallelCmdLists)
     {
-        shadowPassDone = RenderShadowPass();
-        RenderForwardPass(renderTarget, depthStencilBuffer);
+        m_sceneStats.m_forwardPassCmdListTime.Mark();
+        m_sceneStats.m_shadowPassCmdListTime.Mark();
+        taskScheduler.WaitforAll();
+        m_renderTasks.clear();
     }
 
     // TODO add imgui ui option to render the debug elements
@@ -463,12 +461,17 @@ D3D12CmdLists D3D12SceneRender::RecordCmdLists(D3D12_CPU_DESCRIPTOR_HANDLE rende
     D3D12CmdLists cmdLists;
     if (shadowPassDone)
     {
-        cmdLists.push_back(m_cmdLists[0]->GetCmdList().Get());
-        cmdLists.push_back(m_cmdLists[1]->GetCmdList().Get());
+        for (auto& cmdList : m_shadowCmdLists)
+            cmdLists.push_back(cmdList->GetCmdList().Get());
     }
-    cmdLists.push_back(m_cmdLists.back()->GetCmdList().Get());
+    for (auto& cmdList : m_forwardCmdLists)
+        cmdLists.push_back(cmdList->GetCmdList().Get());
 
     m_sceneStats.m_cmdListsTime.Mark();
+
+    m_lastDrawCallsCount = drawCallsCount;
+    m_sceneStats.m_forwardPassDrawCallsCount = m_forwardPassDrawCallsCount.load(std::memory_order_relaxed);
+    m_sceneStats.m_shadowPassDrawCallsCount = m_shadowPassDrawCallsCount.load(std::memory_order_relaxed);
 
     return cmdLists;
 }
@@ -503,105 +506,150 @@ void D3D12SceneRender::CreateDebugResources()
     m_quadIb = m_gpu.AllocateStaticMemory(&indices[0], g_quadIBSizeBytes, L"ib - screen quad");
 }
 
-bool D3D12SceneRender::RenderShadowPass()
+void D3D12SceneRender::SetupRenderDepthFromLight(ID3D12GraphicsCommandListPtr cmdList, size_t lightIndex, bool clear)
+{
+    assert(lightIndex < m_shadowResPerLight.size());
+
+    auto& shadowRes = m_shadowResPerLight[lightIndex];
+    cmdList->OMSetRenderTargets(0, nullptr, FALSE, &shadowRes.m_shadowTextureDSVCPUHandle);
+    if (clear)
+        cmdList->ClearDepthStencilView(shadowRes.m_shadowTextureDSVCPUHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+}
+
+void D3D12SceneRender::RenderDepthFromLight(ID3D12GraphicsCommandListPtr cmdList, size_t lightIndex,
+                                            size_t meshStartIndex, size_t meshEndIndex, 
+                                            unsigned int concurrentBinderIndex)
+{
+    UpdateViewportScissor(cmdList, g_shadowMapResolution);
+
+    if (!m_shadowPipeState.ApplyState(cmdList))
+        return;
+
+    for (size_t i = meshStartIndex; i < meshEndIndex; ++i)
+    {
+        auto& gpuMesh = m_gpuMeshes[i];
+
+        m_gpu.SetBindings(cmdList, gpuMesh.m_shadowPassBindings[lightIndex], 
+                          concurrentBinderIndex + m_shadowPassBinderOffset);
+        m_gpu.SetVertexBuffer(cmdList, gpuMesh.m_vertexBuffer, gpuMesh.m_vertexBufferSizeBytes, gpuMesh.m_vertexSizeBytes);
+        m_gpu.SetIndexBuffer(cmdList, gpuMesh.m_indexBuffer, gpuMesh.m_indexBufferSizeBytes);
+        cmdList->DrawIndexedInstanced(static_cast<UINT>(gpuMesh.m_indicesCount), 1, 0, 0, 0);
+        m_shadowPassDrawCallsCount++;
+    }
+}
+
+TaskSetPtr D3D12SceneRender::CreateRenderDepthFromLightTask(size_t lightIndex, size_t cmdListStartIndex, 
+                                                            size_t cmdListEndIndex, size_t drawCallsCount)
+{
+    const uint32_t setSize = static_cast<uint32_t>(m_gpuMeshes.size());
+    const uint32_t minRange = static_cast<uint32_t>(drawCallsCount);
+    const uint32_t maxRange = static_cast<uint32_t>(drawCallsCount);
+    TaskSetPtr renderDepthFromLightTask = std::make_unique<enki::TaskSet>(setSize, minRange, maxRange,
+                                           [this, lightIndex, 
+                                            cmdListStartIndex, cmdListEndIndex, 
+                                            drawCallsCount](enki::TaskSetPartition range, uint32_t)
+    {
+        size_t rangeStart = static_cast<size_t>(range.start);
+        size_t rangeEnd = static_cast<size_t>(range.end);
+        size_t cmdListIndex =   cmdListStartIndex + 
+                                static_cast<size_t>(std::ceilf(static_cast<float>(rangeEnd) / drawCallsCount)) - 1;
+
+        m_shadowCmdLists[cmdListIndex]->Open();
+        auto cmdList = m_shadowCmdLists[cmdListIndex]->GetCmdList();
+
+        const bool isFirstCmdList = cmdListIndex == 0;
+        if (isFirstCmdList)
+        {
+            AddShadowResourcesBarrier(cmdList, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                                      D3D12_RESOURCE_STATE_DEPTH_WRITE);
+        }
+
+        SetupRenderDepthFromLight(cmdList, lightIndex, isFirstCmdList);
+
+        RenderDepthFromLight(cmdList, lightIndex, rangeStart, rangeEnd, static_cast<unsigned int>(cmdListIndex));
+
+        if (cmdListIndex == m_shadowCmdLists.size() - 1)
+        {
+            AddShadowResourcesBarrier(cmdList, D3D12_RESOURCE_STATE_DEPTH_WRITE,
+                                      D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        }
+        
+        m_shadowCmdLists[cmdListIndex]->Close();
+    });
+    assert(renderDepthFromLightTask);
+
+    return std::move(renderDepthFromLightTask);
+}
+
+bool D3D12SceneRender::RenderShadowPass(enki::TaskScheduler& taskScheduler, size_t drawCallsCount, 
+                                        bool enableParallelCmdLists)
 {
     if (m_shadowResPerLight.empty())
         return false;
-    
+
     const size_t lightsCount = m_shadowResPerLight.size();
 
-    m_sceneStats.m_shadowPassCmdListTime.ResetMark();
-
-    for (size_t i = 0; i < lightsCount; ++i)
+    if (!enableParallelCmdLists)
     {
-        m_cmdLists[i]->Open();
-    }
+        m_sceneStats.m_shadowPassCmdListTime.ResetMark();
 
-    // Note batching transitions on the first cmdlist
-    std::vector<D3D12_RESOURCE_BARRIER> barriersDepthBufferReadWrite(lightsCount);
-    for (size_t i = 0; i < lightsCount; ++i)
-    {
-        auto& memHandle = m_shadowResPerLight[i].m_shadowTexture.m_memHandle;
+        assert(m_shadowCmdLists.size() == 1);
+        const size_t maxDrawCallsCount = m_gpuMeshes.size();
+        m_shadowCmdLists[0]->Open();
+        auto cmdList = m_shadowCmdLists[0]->GetCmdList();
 
-        barriersDepthBufferReadWrite[i].Type                    = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        barriersDepthBufferReadWrite[i].Flags                   = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-        barriersDepthBufferReadWrite[i].Transition.StateBefore  = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-        barriersDepthBufferReadWrite[i].Transition.StateAfter   = D3D12_RESOURCE_STATE_DEPTH_WRITE;
-        barriersDepthBufferReadWrite[i].Transition.Subresource  = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        barriersDepthBufferReadWrite[i].Transition.pResource    = m_gpu.GetResource(memHandle);
-    }
-    auto firstCmdList = m_cmdLists[0]->GetCmdList();
-    firstCmdList->ResourceBarrier(static_cast<UINT>(barriersDepthBufferReadWrite.size()), 
-                                  &barriersDepthBufferReadWrite[0]);
-
-    size_t lightIndex = 0;
-    for (const auto& shadowRes : m_shadowResPerLight)
-    {
-        auto cmdList = m_cmdLists[lightIndex]->GetCmdList();
-        assert(cmdList);
-
-        cmdList->OMSetRenderTargets(0, nullptr, FALSE, &shadowRes.m_shadowTextureDSVCPUHandle);
-
-        cmdList->ClearDepthStencilView(shadowRes.m_shadowTextureDSVCPUHandle, D3D12_CLEAR_FLAG_DEPTH,
-                                        1.0f, 0, 0, nullptr);
-
-        UpdateViewportScissor(cmdList, g_shadowMapResolution);
-
-        if (!m_shadowPipeState.ApplyState(cmdList))
-            continue;
-
-        for (auto& gpuMeshPair : m_gpuMeshCache)
+        AddShadowResourcesBarrier(cmdList, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, 
+                                  D3D12_RESOURCE_STATE_DEPTH_WRITE);
+        const unsigned int concurrentCmdListIndex = 0;
+        for (size_t lightIndex = 0; lightIndex < lightsCount; ++lightIndex)
         {
-            auto& gpuMesh = gpuMeshPair.second;
-
-            m_gpu.SetBindings(cmdList, gpuMesh.m_shadowPassBindings[lightIndex]);
-            m_gpu.SetVertexBuffer(cmdList, gpuMesh.m_vertexBuffer, gpuMesh.m_vertexBufferSizeBytes, gpuMesh.m_vertexSizeBytes);
-            m_gpu.SetIndexBuffer(cmdList, gpuMesh.m_indexBuffer, gpuMesh.m_indexBufferSizeBytes);
-            cmdList->DrawIndexedInstanced(static_cast<UINT>(gpuMesh.m_indicesCount), 1, 0, 0, 0);
-            m_sceneStats.m_shadowPassDrawCallsCount++;
+            SetupRenderDepthFromLight(cmdList, lightIndex);
+            RenderDepthFromLight(cmdList, lightIndex, 0, m_gpuMeshes.size(), concurrentCmdListIndex);
         }
 
-        ++lightIndex;
-    }
+        AddShadowResourcesBarrier(cmdList, D3D12_RESOURCE_STATE_DEPTH_WRITE,
+                                  D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
-    // batching transitions on the last cmdlist
-    for (size_t i = 0; i < lightsCount; ++i)
+        m_shadowCmdLists[0]->Close();
+
+        m_sceneStats.m_shadowPassCmdListTime.Mark();
+    }
+    else
     {
-        barriersDepthBufferReadWrite[i].Transition.StateBefore = D3D12_RESOURCE_STATE_DEPTH_WRITE;
-        barriersDepthBufferReadWrite[i].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-        barriersDepthBufferReadWrite[i].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    }
-    auto lastCmdList = m_cmdLists[lightsCount - 1]->GetCmdList();
-    lastCmdList->ResourceBarrier(static_cast<UINT>(barriersDepthBufferReadWrite.size()), 
-                                 &barriersDepthBufferReadWrite[0]);
+        const size_t totalCmdListsCount = m_shadowCmdLists.size();
+        const size_t cmdListCountPerLight = CalculateCmdListsCount(drawCallsCount);
 
-    for (size_t i = 0; i < lightsCount; ++i)
-    {
-        m_cmdLists[i]->Close();
+        for (size_t lightIndex = 0; lightIndex < lightsCount; ++lightIndex)
+        {
+            size_t cmdListStartIndex = lightIndex * cmdListCountPerLight;
+            size_t cmdListEndIndex = cmdListStartIndex + cmdListCountPerLight;
+            auto lightTask = CreateRenderDepthFromLightTask(lightIndex, cmdListStartIndex,
+                                                            cmdListEndIndex, drawCallsCount);
+            taskScheduler.AddTaskSetToPipe(lightTask.get());
+            m_renderTasks.push_back(std::move(lightTask));
+        }
     }
-
-    m_sceneStats.m_shadowPassCmdListTime.Mark();
 
     return true;
 }
 
-void D3D12SceneRender::RenderForwardPass(D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
-                                         D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer)
+void D3D12SceneRender::RenderForwardPassMeshRange(const D3D12GraphicsCmdListPtr& d3d12CmdList,
+                                                  D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
+                                                  D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer,
+                                                  size_t meshStartIndex, size_t meshEndIndex,
+                                                  unsigned int concurrentBinderIndex)
 {
-    m_sceneStats.m_forwardPassCmdListTime.ResetMark();
+    d3d12CmdList->Open();
 
-    const D3D12GraphicsCmdListPtr& forwardPasCmdList = m_cmdLists.back();
-    forwardPasCmdList->Open();
-
-    ID3D12GraphicsCommandListPtr cmdList = forwardPasCmdList->GetCmdList();
+    ID3D12GraphicsCommandListPtr cmdList = d3d12CmdList->GetCmdList();
 
     cmdList->OMSetRenderTargets(1, &renderTarget, FALSE, &depthStencilBuffer);
 
     UpdateViewportScissor(cmdList, m_gpu.GetCurrentResolution());
 
-    for (auto& gpuMeshPair : m_gpuMeshCache)
+    for (size_t i = meshStartIndex; i < meshEndIndex; ++i)
     {
-        auto& gpuMesh = gpuMeshPair.second;
+        auto& gpuMesh = m_gpuMeshes[i];
 
         // TODO generalize this into a material system
         if (gpuMesh.m_pipelineStateId == PipelineStateId::StdMaterial)
@@ -626,16 +674,158 @@ void D3D12SceneRender::RenderForwardPass(D3D12_CPU_DESCRIPTOR_HANDLE renderTarge
                 continue;
         }
 
-        m_gpu.SetBindings(cmdList, gpuMesh.m_forwardPassBindings);
-        m_gpu.SetVertexBuffer(cmdList, gpuMesh.m_vertexBuffer, gpuMesh.m_vertexBufferSizeBytes, gpuMesh.m_vertexSizeBytes);
+        m_gpu.SetBindings(cmdList, gpuMesh.m_forwardPassBindings, 
+                          concurrentBinderIndex + m_forwardPassBinderOffset);
+        m_gpu.SetVertexBuffer(cmdList, gpuMesh.m_vertexBuffer, gpuMesh.m_vertexBufferSizeBytes, 
+                              gpuMesh.m_vertexSizeBytes);
         m_gpu.SetIndexBuffer(cmdList, gpuMesh.m_indexBuffer, gpuMesh.m_indexBufferSizeBytes);
         cmdList->DrawIndexedInstanced(static_cast<UINT>(gpuMesh.m_indicesCount), 1, 0, 0, 0);
-        m_sceneStats.m_forwardPassDrawCallsCount++;
+
+        m_forwardPassDrawCallsCount++;
     }
 
-    forwardPasCmdList->Close();
+    d3d12CmdList->Close();
+}
 
-    m_sceneStats.m_forwardPassCmdListTime.Mark();
+TaskSetPtr D3D12SceneRender::CreateForwardPassTask(D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
+                                                   D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer,
+                                                   size_t drawCallsCount)
+{
+    const uint32_t setSize = static_cast<uint32_t>(m_gpuMeshes.size());
+    const uint32_t minRange = static_cast<uint32_t>(drawCallsCount);
+    const uint32_t maxRange = static_cast<uint32_t>(drawCallsCount);
+    TaskSetPtr forwardPassTask = std::make_unique<enki::TaskSet>(setSize, minRange, maxRange,
+                                                                [this, renderTarget, depthStencilBuffer,
+                                                                drawCallsCount](enki::TaskSetPartition range, uint32_t)
+    {
+        size_t rangeStart = static_cast<size_t>(range.start);
+        size_t rangeEnd = static_cast<size_t>(range.end);
+        size_t cmdListIndex = static_cast<size_t>(std::ceilf(static_cast<float>(rangeEnd) / drawCallsCount)) - 1;
+
+        RenderForwardPassMeshRange(m_forwardCmdLists[cmdListIndex], renderTarget, 
+                                   depthStencilBuffer, rangeStart, rangeEnd, 
+                                   static_cast<unsigned int>(cmdListIndex));
+    });
+
+    return forwardPassTask;
+}
+
+void D3D12SceneRender::RenderForwardPass(enki::TaskScheduler& taskScheduler,
+                                         D3D12_CPU_DESCRIPTOR_HANDLE renderTarget,
+                                         D3D12_CPU_DESCRIPTOR_HANDLE depthStencilBuffer,
+                                         size_t drawCallsCount,
+                                         bool enableParallelCmdLists)
+{
+    if (enableParallelCmdLists)
+    {
+        TaskSetPtr forwardPassTask = CreateForwardPassTask(renderTarget, depthStencilBuffer, drawCallsCount);
+        taskScheduler.AddTaskSetToPipe(forwardPassTask.get());
+        m_renderTasks.push_back(std::move(forwardPassTask));
+    }
+    else
+    {
+        m_sceneStats.m_forwardPassCmdListTime.ResetMark();
+
+        assert(m_forwardCmdLists.size() == 1);
+        const unsigned int cmdListIndex = 0;
+        RenderForwardPassMeshRange(m_forwardCmdLists[0], renderTarget,
+                                   depthStencilBuffer, 0, m_gpuMeshes.size(), cmdListIndex);
+
+        m_sceneStats.m_forwardPassCmdListTime.Mark();
+    }
+}
+
+// Note m_forwardPassBinderOffset is always set to 0. Why is it a variable then? It makes reasoning about 
+// the concurrency approach to setting the bindings very clear.
+void D3D12SceneRender::UpdateCmdLists(size_t drawCallsCount, bool enableParallelCmdLists)
+{
+    const size_t shadowCmdListsCount = m_shadowCmdLists.size();
+    const size_t forwardCmdListsCount = m_forwardCmdLists.size();
+    if (!enableParallelCmdLists)
+    {
+        if (shadowCmdListsCount != 1)
+        {
+            ResetCmdLists(1);
+            m_shadowCmdLists.push_back(m_gpu.CreateCmdList(L"Shadow cmd list single thread"));
+            m_forwardCmdLists.push_back(m_gpu.CreateCmdList(L"Forward cmd list single thread"));
+
+            m_shadowPassBinderOffset = 0;
+            m_forwardPassBinderOffset = 0;
+        }
+    }
+    else
+    {
+        const size_t lightsCount = m_shadowResPerLight.size();
+        const size_t newShadowCmdlistsCount = lightsCount * CalculateCmdListsCount(drawCallsCount);
+        const size_t newForwardCmdlistsCount = CalculateCmdListsCount(drawCallsCount);
+        if (shadowCmdListsCount != newShadowCmdlistsCount || m_lastDrawCallsCount != drawCallsCount)
+        {
+            const unsigned int concurrentBinders = static_cast<unsigned int>(newShadowCmdlistsCount +
+                                                                             newForwardCmdlistsCount);
+            ResetCmdLists(concurrentBinders);
+
+            for (size_t i = 0; i < newShadowCmdlistsCount; ++i)
+            {
+                std::wstringstream converter;
+                converter << L"Shadow cmd list " << i << " for drawCallsCount " << drawCallsCount;
+                m_shadowCmdLists.push_back(m_gpu.CreateCmdList(converter.str()));
+            }
+            for (size_t i = 0; i < newForwardCmdlistsCount; ++i)
+            {
+                std::wstringstream converter;
+                converter << L"Forward cmd list " << i << " for drawCallsCount " << drawCallsCount;
+                m_forwardCmdLists.push_back(m_gpu.CreateCmdList(converter.str()));
+            }
+            m_shadowPassBinderOffset = static_cast<unsigned int>(newForwardCmdlistsCount);
+            m_forwardPassBinderOffset = 0;
+        }
+    }
+}
+
+void D3D12SceneRender::ResetCmdLists(unsigned int concurrentBinders)
+{
+    assert((!m_shadowCmdLists.empty() && !m_forwardCmdLists.empty()) ||
+           (m_shadowCmdLists.empty() && m_forwardCmdLists.empty()));
+
+    if (m_shadowCmdLists.empty())
+        return;
+
+    // Note concurrent binders count is set now so the gpu can 
+    // clear the descriptor allocation stacks when waiting for all
+    // to work to be done.
+    // Note this function will flush the gpu
+    m_gpu.UpdateConcurrentBindersCount(concurrentBinders);
+
+    m_shadowCmdLists.clear();
+    m_forwardCmdLists.clear();
+}
+
+void D3D12SceneRender::AddShadowResourcesBarrier(ID3D12GraphicsCommandListPtr cmdList,
+                                                 D3D12_RESOURCE_STATES stateBefore,
+                                                 D3D12_RESOURCE_STATES stateAfter)
+{
+    const size_t lightsCount = m_shadowResPerLight.size();
+
+    // Note batching transitions on the first cmdlist
+    std::vector<D3D12_RESOURCE_BARRIER> barriersDepthBufferReadWrite(lightsCount);
+    for (size_t i = 0; i < lightsCount; ++i)
+    {
+        auto& memHandle = m_shadowResPerLight[i].m_shadowTexture.m_memHandle;
+
+        barriersDepthBufferReadWrite[i].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barriersDepthBufferReadWrite[i].Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+        barriersDepthBufferReadWrite[i].Transition.StateBefore = stateBefore;
+        barriersDepthBufferReadWrite[i].Transition.StateAfter = stateAfter;
+        barriersDepthBufferReadWrite[i].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        barriersDepthBufferReadWrite[i].Transition.pResource = m_gpu.GetResource(memHandle);
+    }
+
+    cmdList->ResourceBarrier(static_cast<UINT>(barriersDepthBufferReadWrite.size()), &barriersDepthBufferReadWrite[0]);
+}
+
+size_t D3D12SceneRender::CalculateCmdListsCount(size_t drawCallsCount)
+{
+    return static_cast<size_t>(std::ceilf(m_gpuMeshes.size() / static_cast<float>(drawCallsCount)));
 }
 
 void D3D12SceneRender::RenderDebug(ID3D12GraphicsCommandListPtr cmdList)
@@ -651,7 +841,8 @@ void D3D12SceneRender::RenderDebug(ID3D12GraphicsCommandListPtr cmdList)
             bindings.m_descriptorTables = { texturesDescriptorTable };
         }
 
-        m_gpu.SetBindings(cmdList, bindings);
+        const unsigned int concurrentBinderIndex = 0;
+        m_gpu.SetBindings(cmdList, bindings, concurrentBinderIndex);
         m_gpu.SetVertexBuffer(cmdList, m_quadVb, g_quadVBSizeBytes, g_quadVertexSizeBytes);
         m_gpu.SetIndexBuffer(cmdList, m_quadIb, g_quadIBSizeBytes);
         cmdList->DrawIndexedInstanced(static_cast<UINT>(g_quadIndicesCount), 1, 0, 0, 0);

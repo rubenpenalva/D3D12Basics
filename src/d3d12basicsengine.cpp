@@ -73,7 +73,8 @@ D3D12BasicsEngine::D3D12BasicsEngine(const Settings& settings,
                                                         m_scene(std::move(scene)), 
                                                         m_fileMonitor(L"./data"),
                                                         m_enableParallelCmdsLits(false),
-                                                        m_sceneLoadingTime(0.0f)
+                                                        m_sceneLoadingTime(0.0f),
+                                                        m_drawCallsCount(0)
 {
     m_window = std::make_unique<CustomWindow>(m_gpu.GetSafestResolutionSupported());
     assert(m_window);
@@ -104,7 +105,7 @@ D3D12BasicsEngine::D3D12BasicsEngine(const Settings& settings,
 
 #if LOAD_SCENE
     // NOTE: delaying load scene to the last thing to avoid concurrent issues when creating gpu memory.
-    // TODO: #6. find a proper solution for this when working on concurrent cmd lists
+    // not pretty but good enough for this project
     LoadSceneData(settings.m_dataWorkingPath);
 #endif
 }
@@ -148,11 +149,12 @@ void D3D12BasicsEngine::RunFrame(void(*UpdateScene)(Scene& scene, float totalTim
             m_sceneRender->LoadGpuResources();
             
             m_sceneLoadedUIStart.Reset();
+
+            SceneLoaded();
         }
 
         assert(m_sceneRender->AreGpuResourcesLoaded());
 
-        // TODO #6 add timers to the scene render update and the update scene
         m_sceneRender->Update();
 
         UpdateScene(m_scene, m_cachedTotalTime);
@@ -272,7 +274,7 @@ void D3D12BasicsEngine::ShowMainUI()
     const float DISTANCE = 10.0f;
     ImVec2 window_pos = ImVec2(DISTANCE, DISTANCE);
     ImVec2 window_pos_pivot = ImVec2(0.0f, 0.0f);
-    ImGui::SetNextWindowSize({ 700, 600 });
+    ImGui::SetNextWindowSize({ 900, 600 });
     ImGui::SetNextWindowBgAlpha(0.3f); // Transparent background
     const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                                          ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
@@ -283,10 +285,15 @@ void D3D12BasicsEngine::ShowMainUI()
     auto sceneStats = m_sceneRender->GetStats();
   
     ImGui::Begin("", nullptr, windowFlags);
-    ImGui::Checkbox("Enable parallel cmdlists", &m_enableParallelCmdsLits);
+    if (m_sceneLoadingDone)
+    {
+        ImGui::Checkbox("Enable parallel cmdlists", &m_enableParallelCmdsLits);
+        if (m_enableParallelCmdsLits)
+            ImGui::SliderInt("Drawcalls per cmdlist", &m_drawCallsCount, 1, 
+                              static_cast<int>(m_sceneRender->GpuMeshesCount()));
+    }
 
     static bool pausePlots = false;
-    ImGui::SameLine();
     bool pausePlotsOld = pausePlots;
     ImGui::Checkbox("Pause plots", &pausePlots);
     if (pausePlots && pausePlotsOld != pausePlots)
@@ -328,11 +335,11 @@ void D3D12BasicsEngine::ShowMainUI()
                       m_cachedStats.m_enabled ? m_cachedStats.m_frameStats.m_frameTime :
                                                 frameStats.m_frameTime.SplitTimes(),
                       frameStats.m_frameTime.AverageSplitTime());
-    ShowSplitTimesUI("CPU: shadow pass cmd list time", 
+    ShowSplitTimesUI("CPU: shadow pass cmd list(s) time", 
                       m_cachedStats.m_enabled ? m_cachedStats.m_sceneStats.m_shadowPassCmdListTime : 
                                                 sceneStats.m_shadowPassCmdListTime.SplitTimes(),
                       sceneStats.m_shadowPassCmdListTime.AverageSplitTime());
-    ShowSplitTimesUI("CPU: forward pass cmd list time",
+    ShowSplitTimesUI("CPU: forward pass cmd list(s) time",
                       m_cachedStats.m_enabled ? m_cachedStats.m_sceneStats.m_forwardPassCmdListTime : 
                                                 sceneStats.m_forwardPassCmdListTime.SplitTimes(),
                       sceneStats.m_forwardPassCmdListTime.AverageSplitTime());
@@ -344,12 +351,14 @@ void D3D12BasicsEngine::ShowMainUI()
     const size_t cmdListTimesCount = frameStats.m_cmdListTimes.size();
     assert(!m_cachedStats.m_enabled ||
             (m_cachedStats.m_enabled && cmdListTimesCount == m_cachedStats.m_frameStats.m_cmdListTimes.size()));
-    for (size_t i = 0; i < cmdListTimesCount; ++i)
+    size_t i = 0;
+    for (auto& cmdListTime : frameStats.m_cmdListTimes)
     {
-        ShowSplitTimesUI(("GPU: " + ConvertFromUTF16ToUTF8(frameStats.m_cmdListTimes[i]->first)).c_str(),
+        ShowSplitTimesUI(("GPU: " + ConvertFromUTF16ToUTF8(cmdListTime.first)).c_str(),
                          m_cachedStats.m_enabled ? m_cachedStats.m_frameStats.m_cmdListTimes[i] :
-                         frameStats.m_cmdListTimes[i]->second,
-                         frameStats.m_cmdListTimes[i]->second.LastValue());
+                         *cmdListTime.second,
+                         cmdListTime.second->LastValue());
+        ++i;
     }
     ShowTimeUI("CPU: delta time", m_cachedDeltaTime);
     ShowTimeUI("CPU: total time", m_cachedTotalTime);
@@ -373,7 +382,8 @@ void D3D12BasicsEngine::RenderFrame()
     const auto& depthBufferViewHandle = m_gpu.GetViewCPUHandle(m_depthBuffer.m_dsv);
     const auto& backbufferRT = m_gpu.SwapChainBackBufferViewHandle();
     auto sceneRenderCmdLists = m_sceneRender->RecordCmdLists(backbufferRT, depthBufferViewHandle, 
-                                                  m_taskScheduler, m_enableParallelCmdsLits);
+                                                             m_taskScheduler, m_enableParallelCmdsLits,
+                                                             m_drawCallsCount);
     auto imguiCmdList = m_imgui->EndFrame(backbufferRT, depthBufferViewHandle);
     assert(imguiCmdList);
     cmdLists.insert(cmdLists.end(), sceneRenderCmdLists.begin(), sceneRenderCmdLists.end());
@@ -443,4 +453,10 @@ void D3D12BasicsEngine::SetupCmdLists()
 
         m_postCmdList->Close();
     }
+}
+
+void D3D12BasicsEngine::SceneLoaded()
+{
+    if (m_drawCallsCount == 0)
+        m_drawCallsCount = static_cast<int>(m_sceneRender->GpuMeshesCount());
 }

@@ -37,7 +37,7 @@ namespace D3D12Basics
     public:
         // Note maxDescriptors is the max number of descriptors in the heap
         D3D12DescriptorStackAllocator(unsigned int descriptorHandleIncrementSize, ID3D12DescriptorHeap* descriptorHeap,
-            unsigned int maxDescriptors, unsigned int descriptorHeapOffset = 0);
+                                      unsigned int maxDescriptors, unsigned int descriptorHeapOffset = 0);
 
         D3D12DescriptorAllocation* Allocate();
 
@@ -263,73 +263,144 @@ D3D12DescriptorAllocation* D3D12DSVDescriptorPool::CreateDSV(ID3D12ResourcePtr r
     return handle;
 }
 
-D3D12GPUDescriptorRingBuffer::D3D12GPUDescriptorRingBuffer(ID3D12DevicePtr d3d12Device, unsigned int maxHeaps,
-                                                           unsigned int maxDescriptorsPerHeap)  :   m_d3d12Device(d3d12Device), m_ringBufferSize(maxHeaps),
-                                                                                                    m_currentAllocation(nullptr), m_currentHeap(0)
+D3D12GPUDescriptorRingBuffer::D3D12GPUDescriptorRingBuffer(ID3D12DevicePtr d3d12Device, 
+                                                           unsigned int maxHeaps,
+                                                           unsigned int maxDescriptorsPerHeap)  :   m_d3d12Device(d3d12Device), 
+                                                                                                    m_ringBufferSize(maxHeaps),
+                                                                                                    m_stacksSetSize(0),
+                                                                                                    m_currentStackAllocatorSet(0),
+                                                                                                    m_maxDescriptorsPerHeap(maxDescriptorsPerHeap),
+                                                                                                    m_descriptorHandleIncrementSize(0)
 {
     assert(d3d12Device);
     assert(m_ringBufferSize > 0);
-    assert(maxDescriptorsPerHeap > 0);
+    assert(m_maxDescriptorsPerHeap > 0);
+    assert(m_stacksSetSize == 0);
 
     const auto type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    m_descriptorHeap = CreateDescriptorHeap(d3d12Device, type, true, maxDescriptorsPerHeap * static_cast<unsigned int>(m_ringBufferSize));
-    auto descriptorHandleIncrementSize = d3d12Device->GetDescriptorHandleIncrementSize(type);
+    m_descriptorHeap = CreateDescriptorHeap(d3d12Device, type, true, 
+                                            maxDescriptorsPerHeap * static_cast<unsigned int>(m_ringBufferSize));
+    m_descriptorHandleIncrementSize = d3d12Device->GetDescriptorHandleIncrementSize(type);
+    assert(m_descriptorHandleIncrementSize != 0);
 
-    for (unsigned int i = 0; i < m_ringBufferSize; ++i)
-    {
-        const auto descriptorHeapOffset = maxDescriptorsPerHeap * i;
-        auto allocator = std::make_unique<D3D12DescriptorStackAllocator>(descriptorHandleIncrementSize, 
-                                                                         m_descriptorHeap.Get(), 
-                                                                         maxDescriptorsPerHeap, descriptorHeapOffset);
-        assert(allocator);
-        m_allocators.emplace_back(std::move(allocator));
-    }
-
-    NextDescriptor();
+    m_descriptorHeapOffsets.resize(m_ringBufferSize);
+    m_stackAllocatorsSets.resize(m_ringBufferSize);
+    UpdateStacksSetSize(1);
 }
 
 D3D12GPUDescriptorRingBuffer::~D3D12GPUDescriptorRingBuffer()
 {
 }
 
-D3D12_GPU_DESCRIPTOR_HANDLE D3D12GPUDescriptorRingBuffer::CurrentDescriptor() const
+D3D12_GPU_DESCRIPTOR_HANDLE D3D12GPUDescriptorRingBuffer::CurrentDescriptor(unsigned int stacksIndex) const
 {
-    assert(m_currentAllocation);
+    assert(stacksIndex < m_currentStackDescriptorAllocations.size());
+    assert(m_currentStackDescriptorAllocations[stacksIndex]);
 
-    return m_currentAllocation->m_gpuHandle;
+    return m_currentStackDescriptorAllocations[stacksIndex]->m_gpuHandle;
 }
 
-void D3D12GPUDescriptorRingBuffer::NextDescriptor()
+void D3D12GPUDescriptorRingBuffer::NextDescriptor(size_t stacksIndex)
 {
-    assert(m_currentHeap < m_allocators.size());
-    m_currentAllocation = m_allocators[m_currentHeap]->Allocate();
-
-    // TODO resize the heap
-    assert(m_currentAllocation);
+    NextDescriptor(m_currentStackAllocatorSet, stacksIndex);
 }
 
-void D3D12GPUDescriptorRingBuffer::NextStack()
+void D3D12GPUDescriptorRingBuffer::NextStacksSet()
 {
-    m_currentHeap = (m_currentHeap + 1) % m_ringBufferSize;
+    m_currentStackAllocatorSet = (m_currentStackAllocatorSet + 1) % m_ringBufferSize;
 }
 
-void D3D12GPUDescriptorRingBuffer::CopyToDescriptor(unsigned int numDescriptors, D3D12_CPU_DESCRIPTOR_HANDLE srcDescriptorRangeStart)
+void D3D12GPUDescriptorRingBuffer::CopyToDescriptor(unsigned int numDescriptors, 
+                                                    D3D12_CPU_DESCRIPTOR_HANDLE srcDescriptorRangeStart,
+                                                    unsigned int stackIndex)
 {
-    assert(m_currentAllocation);
-    D3D12_CPU_DESCRIPTOR_HANDLE destDescriptorRangeStart = m_currentAllocation->m_cpuHandle;
+    assert(stackIndex < m_currentStackDescriptorAllocations.size());
+    assert(m_currentStackDescriptorAllocations[stackIndex]);
+
+    D3D12_CPU_DESCRIPTOR_HANDLE destDescriptorRangeStart = m_currentStackDescriptorAllocations[stackIndex]->m_cpuHandle;
     D3D12_DESCRIPTOR_HEAP_TYPE  descriptorHeapsType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 
-    m_d3d12Device->CopyDescriptorsSimple(numDescriptors, destDescriptorRangeStart, srcDescriptorRangeStart, descriptorHeapsType);
+    m_d3d12Device->CopyDescriptorsSimple(numDescriptors, destDescriptorRangeStart, 
+                                         srcDescriptorRangeStart, descriptorHeapsType);
 }
 
-void D3D12GPUDescriptorRingBuffer::ClearStack()
+void D3D12GPUDescriptorRingBuffer::UpdateStacksSetSize(unsigned int stacksSetSize)
 {
-    m_allocators[m_currentHeap]->Clear();
-    NextDescriptor();
+    if (stacksSetSize == m_stacksSetSize)
+        return;
+    
+    m_stacksSetSize = stacksSetSize;
+
+    for (unsigned int allocatorsSetIndex = 0; allocatorsSetIndex < m_ringBufferSize; ++allocatorsSetIndex)
+    {
+        const unsigned int descriptorHeapOffset =   m_maxDescriptorsPerHeap *
+                                                    static_cast<unsigned int>(allocatorsSetIndex);
+        m_descriptorHeapOffsets[allocatorsSetIndex] = descriptorHeapOffset;
+
+        auto& stackAllocatorsSet = m_stackAllocatorsSets[allocatorsSetIndex];
+        stackAllocatorsSet.resize(m_stacksSetSize);
+
+        FillStackAllocatorSet(stackAllocatorsSet, descriptorHeapOffset);
+    }
+
+    const size_t stackAllocatorsSetIndex = m_currentStackAllocatorSet;
+    auto& stackAllocatorsSet = m_stackAllocatorsSets[stackAllocatorsSetIndex];
+    m_currentStackDescriptorAllocations.resize(m_stacksSetSize);
+    const size_t stackAllocatorsSetSize = stackAllocatorsSet.size();
+    for (size_t stackAllocatorIndex = 0; stackAllocatorIndex < stackAllocatorsSetSize; ++stackAllocatorIndex)
+    {
+        NextDescriptor(stackAllocatorsSetIndex, stackAllocatorIndex);
+    }
+}
+
+void D3D12GPUDescriptorRingBuffer::ClearStacksSet()
+{
+    assert(m_stackAllocatorsSets.size() > m_currentStackAllocatorSet);
+
+    auto& stackAllocatorsSet = m_stackAllocatorsSets[m_currentStackAllocatorSet];
+
+    const size_t stackAllocatorsSetSize = stackAllocatorsSet.size();
+    for (size_t stackAllocatorIndex = 0; stackAllocatorIndex < stackAllocatorsSetSize; ++stackAllocatorIndex)
+    {
+        assert(stackAllocatorsSet[stackAllocatorIndex]);
+        stackAllocatorsSet[stackAllocatorIndex]->Clear();
+        NextDescriptor(m_currentStackAllocatorSet, stackAllocatorIndex);
+    }
+}
+
+// Note descriptorHeapOffset is the offset from the beginning of the stacks set.
+void D3D12GPUDescriptorRingBuffer::FillStackAllocatorSet(DescriptorStackAllocators& stackAllocatorsSet,
+                                                         unsigned int descriptorHeapOffset)
+{
+    const unsigned int stackAllocatorsSetSize = static_cast<unsigned int>(stackAllocatorsSet.size());
+    const unsigned int maxDescriptorsPerStackHeap = m_maxDescriptorsPerHeap / stackAllocatorsSetSize;
+    for (unsigned int stackIndex = 0; stackIndex < stackAllocatorsSetSize; ++stackIndex)
+    {
+        const unsigned int descriptorHeapOffsetWRTStack = descriptorHeapOffset + maxDescriptorsPerStackHeap * stackIndex;
+        auto stackAllocator = std::make_unique<D3D12DescriptorStackAllocator>(m_descriptorHandleIncrementSize,
+                                                                              m_descriptorHeap.Get(),
+                                                                              maxDescriptorsPerStackHeap,
+                                                                              descriptorHeapOffsetWRTStack);
+        assert(stackAllocator);
+        stackAllocatorsSet[stackIndex] = std::move(stackAllocator);
+    }
+}
+
+void D3D12GPUDescriptorRingBuffer::NextDescriptor(size_t stackAllocatorsSetIndex, size_t stacksIndex)
+{
+    assert(stackAllocatorsSetIndex < m_stackAllocatorsSets.size());
+    auto& stackAllocarsSet = m_stackAllocatorsSets[stackAllocatorsSetIndex];
+
+    assert(stacksIndex < stackAllocarsSet.size());
+    assert(stacksIndex < m_currentStackDescriptorAllocations.size());
+    m_currentStackDescriptorAllocations[stacksIndex] = stackAllocarsSet[stacksIndex]->Allocate();
+
+    // TODO resize the heap
+    assert(m_currentStackDescriptorAllocations[stacksIndex]);
 }
 
 D3D12CBV_SRV_UAVDescriptorBuffer::D3D12CBV_SRV_UAVDescriptorBuffer(ID3D12DevicePtr d3d12Device, 
-                                                                 unsigned int initialSize) : D3D12DescriptorBuffer(d3d12Device, initialSize)
+                                                                   unsigned int initialSize) : D3D12DescriptorBuffer(d3d12Device, initialSize)
 {
 }
 

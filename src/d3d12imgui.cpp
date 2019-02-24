@@ -188,7 +188,8 @@ ID3D12CommandList* D3D12ImGui::EndFrame(D3D12_CPU_DESCRIPTOR_HANDLE renderTarget
     //UpdateViewportScissor(cmdList, m_gpu.GetCurrentResolution());
 
     cmdList->RSSetViewports(1, &m_defaultViewport);
-    m_gpu.SetBindings(cmdList, bindings);
+    const unsigned int binderIndex = 0;
+    m_gpu.SetBindings(cmdList, bindings, binderIndex);
     m_gpu.SetVertexBuffer(cmdList, m_vertexBuffer, m_vertexBufferSizeBytes, sizeof(ImDrawVert));
     m_gpu.SetIndexBuffer(cmdList, m_indexBuffer, m_indexBufferSizeBytes);
 

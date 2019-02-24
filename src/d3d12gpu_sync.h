@@ -36,10 +36,11 @@ namespace D3D12Basics
     private:
         ID3D12CommandQueuePtr m_cmdQueue;
 
-        const uint64_t      m_maxFramesInFlight;
+        const uint64_t  m_maxFramesInFlight;
 
-        HANDLE          m_event;
-        ID3D12FencePtr  m_fence;
+        std::vector <HANDLE>        m_events;
+        std::vector<ID3D12FencePtr> m_fences;
+        unsigned int                m_currentFrameIndex;
         UINT64          m_waitedFenceValue;
         UINT64          m_currentFenceValue;
         UINT64          m_nextFenceValue;
@@ -52,5 +53,7 @@ namespace D3D12Basics
         void SignalWork();
 
         void WaitForFence(UINT64 fenceValue);
+
+        void NextFrame();
     };
 }

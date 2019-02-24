@@ -82,44 +82,69 @@ namespace D3D12Basics
         ID3D12DevicePtr m_d3d12Device;
     };
 
-    // This is a ring buffer of descriptor stacks in a single gpu descriptor heap (CBV_SRV_UAV)
-    // Every stack will be used in a different frame to guarantee no concurrency issues
+    // This is a ring buffer of descriptor stacks sets in a single gpu descriptor heap (CBV_SRV_UAV)
+    // Every stacks set will be used in a different frame to guarantee no concurrency issues.
+    // When using a stacks set, every stack will be used by a different thread to guarantee no concurrency issues
+    // Set of stacks -> cpu/gpu concurrency -> one per frame
+    // Stacks in a set -> cpu/cpu concurrency -> one per thread
+    // maxDescriptorsPerHeap is the number of descriptors that the stacks set will hold.
     class D3D12GPUDescriptorRingBuffer
     {
     public:
-        D3D12GPUDescriptorRingBuffer(ID3D12DevicePtr d3d12Device, unsigned int maxHeaps, unsigned int maxDescriptorsPerHeap);
+        D3D12GPUDescriptorRingBuffer(ID3D12DevicePtr d3d12Device, unsigned int maxHeaps, 
+                                     unsigned int maxDescriptorsPerHeap);
 
         ~D3D12GPUDescriptorRingBuffer();
 
-        D3D12_GPU_DESCRIPTOR_HANDLE CurrentDescriptor() const;
+        D3D12_GPU_DESCRIPTOR_HANDLE CurrentDescriptor(unsigned int stackIndex = 0) const;
 
-        // Moves to the next descriptor in the current ringbuffer stack 
-        void NextDescriptor();
+        // Moves to the next descriptor in the current ringbuffer stacks set in the stackIndex stack of the set 
+        void NextDescriptor(size_t stackIndex = 0);
 
-        // Moves to the next ringbuffer stack
-        void NextStack();
+        // Moves to the next ringbuffer stacks set
+        void NextStacksSet();
 
-        // Copy numDescriptors starting from srcDescriptorRangeStart to the current ringbuffer stack
-        // starting from the current descriptor
-        void CopyToDescriptor(unsigned int numDescriptors, D3D12_CPU_DESCRIPTOR_HANDLE srcDescriptorRangeStart);
+        // Copy numDescriptors starting from srcDescriptorRangeStart to a stack of index stackIndex
+        // of the current ringbuffer stack set starting from the current descriptor
+        void CopyToDescriptor(unsigned int numDescriptors, D3D12_CPU_DESCRIPTOR_HANDLE srcDescriptorRangeStart,
+                              unsigned int stackIndex = 0);
 
-        // This clears the current stack. Its not synced with the gpu. This has to be called
+        void UpdateStacksSetSize(unsigned int stacksSetSize);
+
+        // This clears the current stacks set. Its not synced with the gpu. This has to be called
         // when the stack is no longer in flight.
-        void ClearStack();
+        void ClearStacksSet();
 
         // d3d12 objects access
         ID3D12DescriptorHeapPtr GetDescriptorHeap() const { return m_descriptorHeap; }
 
     private:
+        using DescriptorStackAllocators     = std::vector<D3D12DescriptorStackAllocatorPtr>;
+        using DescriptorStackAllocatorsSets = std::vector<DescriptorStackAllocators>;
+        
         ID3D12DevicePtr m_d3d12Device;
+
+        unsigned int m_maxDescriptorsPerHeap;
+        unsigned int m_descriptorHandleIncrementSize;
 
         size_t m_ringBufferSize;
 
-        ID3D12DescriptorHeapPtr                         m_descriptorHeap;
-        std::vector<D3D12DescriptorStackAllocatorPtr>   m_allocators;
+        // TODO change name to m_stackAllocatorsSetSize
+        size_t m_stacksSetSize;
 
-        size_t                          m_currentHeap;
-        D3D12DescriptorAllocation*      m_currentAllocation;
+        std::vector<unsigned int> m_descriptorHeapOffsets;
+
+        ID3D12DescriptorHeapPtr         m_descriptorHeap;
+        DescriptorStackAllocatorsSets   m_stackAllocatorsSets;
+
+        size_t m_currentStackAllocatorSet;
+        
+        // Note: one current descriptor per stack in the set
+        std::vector<D3D12DescriptorAllocation*> m_currentStackDescriptorAllocations;
+
+        void FillStackAllocatorSet(DescriptorStackAllocators& stackAllocatorsSet, unsigned int descriptorHeapOffset);
+
+        void NextDescriptor(size_t stackAllocatorsSetIndex, size_t stackIndex);
     };
 
     // This is a growing array of cpu descriptors

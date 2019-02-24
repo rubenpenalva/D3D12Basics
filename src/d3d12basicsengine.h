@@ -62,10 +62,13 @@ namespace D3D12Basics
                 m_waitForFenceTime = frameStats.m_waitForFenceTime.SplitTimes();
                 m_frameTime = frameStats.m_frameTime.SplitTimes();
                 size_t cmdListTimesCount = frameStats.m_cmdListTimes.size();
+                m_cmdListTimes.clear();
                 m_cmdListTimes.resize(cmdListTimesCount);
-                for (size_t i = 0; i < cmdListTimesCount; ++i)
+                size_t i = 0;
+                for (auto& cmdListTime : frameStats.m_cmdListTimes)
                 {
-                    m_cmdListTimes[i] = frameStats.m_cmdListTimes[i]->second;
+                    m_cmdListTimes[i] = *cmdListTime.second;
+                    ++i;
                 }
 
                 return *this;
@@ -137,6 +140,8 @@ namespace D3D12Basics
 
         bool m_enableParallelCmdsLits;
 
+        int m_drawCallsCount;
+
         void ProcessWindowEvents();
 
         void ProcessUserEvents();
@@ -152,5 +157,7 @@ namespace D3D12Basics
         void CreateDepthBuffer();
 
         void SetupCmdLists();
+
+        void SceneLoaded();
     };
 }

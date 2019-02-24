@@ -203,7 +203,8 @@ namespace D3D12Basics
     class StopClock
     {
     public:
-        using SplitTimeBuffer = CircularBuffer<float, 32>;
+        using SplitTimeBuffer       = CircularBuffer<float, 32>;
+        using SplitTimeBufferPtr    = std::unique_ptr<SplitTimeBuffer>;
 
         StopClock();
 

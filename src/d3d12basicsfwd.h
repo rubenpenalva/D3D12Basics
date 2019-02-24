@@ -7,6 +7,11 @@
 // d3d12 fwd decls
 #include "d3d12fwd.h"
 
+namespace enki
+{
+    class TaskSet;
+}
+
 namespace D3D12Basics
 {
     struct D3D12GpuRenderTask;
@@ -41,4 +46,5 @@ namespace D3D12Basics
     using D3D12CommittedResourceAllocatorPtr    = std::unique_ptr<D3D12CommittedResourceAllocator>;
     using D3D12ImGuiPtr                         = std::unique_ptr<D3D12ImGui>;
     using D3D12SceneRenderPtr                   = std::unique_ptr<D3D12SceneRender>;
+    using TaskSetPtr                            = std::unique_ptr<enki::TaskSet>;
 }

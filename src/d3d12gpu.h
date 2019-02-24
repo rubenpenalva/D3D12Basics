@@ -37,8 +37,8 @@ namespace D3D12Basics
         StopClock m_waitForFenceTime;
         StopClock m_frameTime;
 
-        using NamedCmdListTime = std::pair<std::wstring, StopClock::SplitTimeBuffer>;
-        std::vector<std::unique_ptr<NamedCmdListTime>> m_cmdListTimes;
+        using NamedCmdListTimes = std::unordered_map<std::wstring, StopClock::SplitTimeBufferPtr>;
+        NamedCmdListTimes m_cmdListTimes;
     };
 
     struct D3D12GpuHandle
@@ -114,8 +114,8 @@ namespace D3D12Basics
     {
     public:
         D3D12GraphicsCmdList(D3D12GpuShareableState* gpuState, D3D12CommittedResourceAllocator* committedAllocator,
-                             UINT64 cmdQueueTimestampFrequency, StopClock::SplitTimeBuffer& splitTimes,
-                             const std::wstring& debugName);
+                             UINT64 cmdQueueTimestampFrequency, FrameStats::NamedCmdListTimes& cmdListsTimes,
+                             StopClock::SplitTimeBuffer& splitTimes, const std::wstring& debugName);
 
         // Note Forcing the compiler to use a definition of the destructor in order to
         // not trigger a default inline destructor usage. In that case the compiler will
@@ -130,9 +130,10 @@ namespace D3D12Basics
         ID3D12GraphicsCommandListPtr GetCmdList() const { return m_cmdList; }
 
     private:
-        D3D12GpuShareableState*     m_gpuState;
-        std::wstring                m_debugName;
-        D3D12CmdListTimeStampPtr    m_timeStamp;
+        D3D12GpuShareableState*         m_gpuState;
+        std::wstring                    m_debugName;
+        D3D12CmdListTimeStampPtr        m_timeStamp;
+        FrameStats::NamedCmdListTimes&  m_cmdListsTimes;
 
         ID3D12GraphicsCommandListPtr    m_cmdList;
         ID3D12CommandAllocatorPtr       m_cmdAllocators[D3D12GpuConfig::m_framesInFlight];
@@ -226,7 +227,9 @@ namespace D3D12Basics
         // Others
         // NOTE not sure about these ones here. Exposing too much detail? 
         //      move them to other classes ie, an extended cmd list class?
-        void SetBindings(ID3D12GraphicsCommandListPtr cmdList, const D3D12Bindings& bindings);
+        void UpdateConcurrentBindersCount(unsigned int concurrentBidnersCount);
+        void SetBindings(ID3D12GraphicsCommandListPtr cmdList, const D3D12Bindings& bindings, 
+                         unsigned int concurrentBinderIndex);
         void SetVertexBuffer(ID3D12GraphicsCommandListPtr cmdList, D3D12GpuMemoryHandle memHandle,
                              size_t vertexBufferSizeBytes, size_t vertexSizeBytes);
         void SetIndexBuffer(ID3D12GraphicsCommandListPtr cmdList, D3D12GpuMemoryHandle memHandle,
@@ -271,6 +274,9 @@ namespace D3D12Basics
             D3D12DynamicBufferAllocation    m_allocation[D3D12GpuConfig::m_framesInFlight];
         };
 
+        static const uint32_t   m_smallPageSize;
+        static const uint32_t   m_bigPageSize;
+
         // dxgi data
         IDXGIFactoryPtr         m_factory;
         IDXGIOutput1Ptr         m_output1;
@@ -278,7 +284,7 @@ namespace D3D12Basics
         D3D12Basics::Resolution m_safestResolution;
 
         // d3d12 data
-        // TODO #6. this is used by cmdlist and other classes as internal data not exposed to
+        // Note this is used by cmdlist and other classes as internal data not exposed to
         // the user of that class. This way D3D12Gpu doesnt have to expose the data thats
         // required by the other classes like cmdlist
         D3D12GpuShareableStatePtr m_state;
@@ -314,6 +320,8 @@ namespace D3D12Basics
         std::vector<D3D12GpuMemoryViewPtr>  m_memoryViews;
 
         FrameStats                              m_frameStats;
+
+        unsigned int m_stacksSetSize;
 
         DisplayModes EnumerateDisplayModes(DXGI_FORMAT format);
 
